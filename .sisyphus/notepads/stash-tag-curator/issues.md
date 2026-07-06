@@ -43,3 +43,9 @@
   - Added `onRecoveryAction(run, action)` to `RunHistoryPanel` that maps the action to a `taskName` and dispatches via the existing `jobState.dispatch({ taskName, argsMap: { run_id }, label, argsLabel, onComplete })` flow (same generic `runPluginTask` mutation, no new GraphQL queries). Refreshes the snapshot on completion.
 - **Constraints honored**: no backend Python changes, no manifest change, no new GraphQL queries, no `console.log`/`eval`/`innerHTML`/`document.write`/`dangerouslySetInnerHTML`, reuses `BSButton`/`BSFormGroup`/`BSFormControl`/`ModalShell` helpers.
 - **Verification**: `node --check` passes; `validate.py stash-tag-curator` prints `OK`; `tests/ui/` 27 passed; full suite (excluding soak) 944 passed, 1 skipped, 0 failures; LSP diagnostics clean; grep for the four task names returns 7 matches in actual dispatch code (OPERATIONS array + `onRecoveryAction` map).
+
+## 2026-07-06 Boulder completion
+
+- **Status**: All 32 implementation tasks complete; F1–F4 Final Verification Wave all APPROVE; `v0.1.0` tagged at `7dce2a5`.
+- **Blocker**: The active plan has zero remaining tasks. The boulder continuation directive keeps firing, but there is no next task to move to within this plan.
+- **Next step**: Activate a new plan or assign a new task to continue.
