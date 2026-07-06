@@ -456,7 +456,7 @@
             task_name: (job && job.task_name) || descLabel || null,
             label: (job && job.label) || descLabel || null,
             args_label: (job && job.args_label) || null,
-            status: status,
+            status: j.status,
             progress: typeof j.progress === "number" ? j.progress : 0,
             description: j.description || null,
             error: j.error || null,
@@ -466,17 +466,17 @@
           };
           setPollError(null);
           setJob(updated);
-          if (isTerminalStatus(status)) {
+          if (isTerminalStatus(j.status)) {
             persistActiveJob(null);
             clearTimer();
-            setResult({ status: status, finalJob: updated });
+            setResult({ status: j.status, finalJob: updated });
             if (onCompleteRef.current) {
               onCompleteRef.current(updated);
               onCompleteRef.current = null;
             }
             // Auto-dismiss successful terminal jobs after a short delay so the
             // panel doesn't linger and make the UI feel stuck.
-            if (!updated.error && (status === "FINISHED" || status === "COMPLETE" || status === "COMPLETED")) {
+            if (!updated.error && (j.status === "FINISHED" || j.status === "COMPLETE" || j.status === "COMPLETED")) {
               timerRef.current = setTimeout(() => {
                 dismiss();
               }, 5000);

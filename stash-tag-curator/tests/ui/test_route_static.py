@@ -142,6 +142,59 @@ def test_job_polling_loop() -> None:
     assert "terminal" in text.lower() or "TERMINAL" in text
 
 
+def test_pollonce_refs_use_jdotstatus() -> None:
+    """pollOnce must read status from the findJob response, not the bare
+    ``window.status`` global.
+
+    Regression for the bug where the polling loop built the updated job
+    object with ``status: status`` (referencing the empty-string browser
+    global ``window.status``) instead of ``status: j.status``. The result
+    was that ``isTerminalStatus(status)`` always returned false and the
+    dashboard's "Active job" panel spun forever at 0% even after Stash
+    marked the job FINISHED.
+    """
+    text = _read_ui()
+    # Locate the pollOnce callback body. It is defined inside useJob and
+    # contains the unique ``const j = (data && data.findJob) || null;`` line.
+    m = re.search(r"const j = \(data && data\.findJob\)[\s\S]{0,3500}\},", text)
+    assert m is not None, "could not locate pollOnce body"
+    body = m.group(0)
+    # Inside pollOnce, status references must read from j (the response).
+    # The bare ``status`` identifier resolves to window.status (always ""),
+    # which never matches TERMINAL_STATUSES.
+    assert re.search(r"\bstatus:\s*status\b", body) is None, (
+        "pollOnce must not build the updated job with `status: status` "
+        "(resolves to window.status); use `status: j.status`"
+    )
+    assert re.search(r"\bisTerminalStatus\(\s*status\s*\)", body) is None, (
+        "pollOnce must call isTerminalStatus(j.status), not the bare "
+        "`status` global"
+    )
+    assert "j.status" in body, (
+        "pollOnce must reference j.status when mapping the findJob response"
+    )
+
+    # Also assert globally: the pattern `status: status,` in an object literal
+    # is almost always a window.status leak. Allow it only inside a function
+    # whose body also declares `const status` or `let status` (i.e. shadowed).
+    leaked = []
+    for match in re.finditer(r"\bstatus:\s*status\b", text):
+        # Walk back to the enclosing function and check for a local
+        # `const status`, `let status`, or `var status` declaration.
+        start = max(0, match.start() - 1500)
+        preceding = text[start:match.start()]
+        # Strip nested function bodies so we don't match a declaration in a
+        # sibling function. Keep it simple: look for the most recent
+        # `function` keyword and check the slice between it and the match.
+        last_fn = preceding.rfind("function")
+        scope = preceding[last_fn:] if last_fn != -1 else preceding
+        if not re.search(r"\b(?:const|let|var)\s+status\b", scope):
+            leaked.append(match.start())
+    assert not leaked, (
+        f"found {len(leaked)} `status: status` reference(s) with no enclosing "
+        f"const/let/var status declaration; these leak window.status"
+    )
+
 def test_cancel_uses_stash_stop_job() -> None:
     """Cancellation routes through Stash ``stopJob`` (D5/D21 - SIGKILL)."""
     text = _read_ui()
