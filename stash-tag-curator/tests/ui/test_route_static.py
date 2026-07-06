@@ -291,7 +291,7 @@ def test_run_history_rollback_confirm_gated() -> None:
     text = _read_ui()
     assert "RollbackConfirmModal" in text
     assert "rollback_available" in text
-    assert re.search(r'taskName\s*:\s*["\']Rollback["\']', text) is not None
+    assert re.search(r'taskName\s*:\s*["\']Rollback a Run["\']', text) is not None
     assert "confirmRollback" in text
 
 

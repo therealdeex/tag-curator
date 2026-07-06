@@ -264,7 +264,7 @@
     {
       key: "dryRebuild",
       label: "Dry-Run Full Library Rebuild",
-      taskName: "DryRebuild",
+      taskName: "Dry-Run Full Library Rebuild",
       destructive: false,
       scope:
         "Simulate a full library rebuild across every scene. No mutations are performed; a dry-run proposal is written for review.",
@@ -275,7 +275,7 @@
     {
       key: "rebuild",
       label: "Full Library Rebuild",
-      taskName: "Rebuild",
+      taskName: "Full Library Rebuild",
       destructive: true,
       scope:
         "Re-derive every scene's tags from provider metadata. CURATOR-owned tags are fully replaced; protected tags are preserved.",
@@ -286,7 +286,7 @@
     {
       key: "processNew",
       label: "Process New and Unprocessed",
-      taskName: "ProcessNew",
+      taskName: "Process Never-Processed",
       destructive: true,
       scope:
         "Run the curation pass over scenes that have no prior curator state. Tag sets are fully replaced per the active rules.",
@@ -297,7 +297,7 @@
     {
       key: "reprocessStale",
       label: "Reprocess Stale",
-      taskName: "ReprocessStale",
+      taskName: "Reprocess Stale",
       destructive: true,
       scope:
         "Re-run the curation pass over scenes whose last processing predates the current rules or provider fingerprint.",
@@ -308,7 +308,7 @@
     {
       key: "enrich",
       label: "Enrich from Performer Metadata",
-      taskName: "Enrich",
+      taskName: "Enrich from Performer Metadata",
       destructive: true,
       scope:
         "Derive additional tags from performer metadata (cast, demographics, body, theme) without a full provider re-scrape.",
@@ -319,7 +319,7 @@
     {
       key: "cleanupSafe",
       label: "Remove Unused Tags",
-      taskName: "CleanupSafe",
+      taskName: "Cleanup Safe-Global Orphans",
       destructive: true,
       scope:
         "Identify orphaned tags across the library and remove tags with zero associations that are not owned by the curator or marked protected. A two-step flow: dry-run proposal first, then execute.",
@@ -331,7 +331,7 @@
     {
       key: "rollback",
       label: "Rollback a Run",
-      taskName: "Rollback",
+      taskName: "Rollback a Run",
       destructive: true,
       scope:
         "Revert the effects of a prior run by restoring each affected scene's recorded pre-run tag set. Conflict policy: skip-with-warning.",
@@ -343,7 +343,7 @@
     {
       key: "resumeRun",
       label: "Resume Interrupted Run",
-      taskName: "ResumeRun",
+      taskName: "Resume Interrupted Run",
       destructive: true,
       scope:
         "Resume an interrupted rebuild-family run from its last checkpoint. Reconciles pending mutations and continues processing.",
@@ -355,7 +355,7 @@
     {
       key: "abandonRun",
       label: "Abandon Interrupted Run",
-      taskName: "AbandonRun",
+      taskName: "Abandon Interrupted Run",
       destructive: true,
       scope:
         "Mark an interrupted run as abandoned and release its lock if still held. Keeps history for audit.",
@@ -367,7 +367,7 @@
     {
       key: "forceRelease",
       label: "Force Release Stale Run",
-      taskName: "ForceRelease",
+      taskName: "Force Release Stale Run",
       destructive: true,
       scope:
         "Audited override: release a stale singleton run lock. Use only when the lock holder is dead (e.g. after SIGKILL).",
@@ -379,7 +379,7 @@
     {
       key: "undoCleanup",
       label: "Undo Cleanup",
-      taskName: "UndoCleanup",
+      taskName: "Undo Cleanup",
       destructive: true,
       scope:
         "Restore tags removed by a prior cleanup run using the recorded deletion journal.",
@@ -391,7 +391,7 @@
     {
       key: "validateRules",
       label: "Validate Rules",
-      taskName: "ValidateRules",
+      taskName: "Validate Rules",
       destructive: false,
       scope:
         "Read-only structural and semantic validation of the active rules file. No mutations.",
@@ -1767,7 +1767,7 @@
       setSaveResultError(null);
       setConflictOpen(false);
       jobState.dispatch({
-        taskName: "SaveMapping",
+        taskName: "Save Mapping Edit",
         argsMap: argsMap,
         label: "Save Mapping Edit",
         argsLabel: pendingCount + " change" + (pendingCount === 1 ? "" : "s"),
@@ -2339,7 +2339,7 @@
       }
       setRollbackTarget(null);
       jobState.dispatch({
-        taskName: "Rollback",
+        taskName: "Rollback a Run",
         argsMap: { run_id: runId, policy: "skip-with-warning" },
         label: "Rollback run " + runId,
         argsLabel: "run_id=" + runId,
@@ -2366,9 +2366,9 @@
       const runId = String((run && run.run_id) || "").trim();
       if (!runId || !action) return;
       const taskNameByAction = {
-        resume_run: "ResumeRun",
-        abandon_run: "AbandonRun",
-        force_release: "ForceRelease",
+        resume_run: "Resume Interrupted Run",
+        abandon_run: "Abandon Interrupted Run",
+        force_release: "Force Release Stale Run",
       };
       const taskName = taskNameByAction[action];
       if (!taskName) return;

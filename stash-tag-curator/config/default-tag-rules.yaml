@@ -1,4 +1,4 @@
-# stash-tag-curator/config/default-tag-rules.yml
+# stash-tag-curator/config/default-tag-rules.yaml
 # Canonical source of truth for the Tag Engine v3 tag taxonomy.
 #
 # Bundled immutable default. On first run the engine copies this file to

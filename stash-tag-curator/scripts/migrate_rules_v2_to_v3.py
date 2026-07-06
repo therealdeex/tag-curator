@@ -4,7 +4,7 @@
 Reads a v2 ``tag-rules.yml`` (sections: ``axes``, ``detail_tags``,
 ``blacklist``, ``legacy``) and emits a v3 ``tag-rules.yml`` (top-level keys:
 ``version, prefixes, canonical_tags, mappings, derived, protected, legacy``)
-matching the structure of ``config/default-tag-rules.yml`` and validating
+matching the structure of ``config/default-tag-rules.yaml`` and validating
 against ``config/tag-rules.schema.json``.
 
 Usage::
@@ -70,7 +70,7 @@ RULE_MAPPED_AXES = frozenset(
 # (labels are derived at runtime from the finite `derived` bucket sets).
 COMPUTED_AXES = frozenset({"CAST", "DEMO", "AGE", "ERA", "STUDIO"})
 
-# v3 top-level key order (schema-required, documented in default-tag-rules.yml).
+# v3 top-level key order (schema-required, documented in default-tag-rules.yaml).
 V3_TOP_LEVEL_ORDER = (
     "version", "prefixes", "canonical_tags", "mappings",
     "derived", "protected", "legacy",
@@ -272,7 +272,7 @@ DEFER_TAGS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # These sections encode the v3 computed-axis bucket taxonomy and the
 # protected-tag policy. They are new in v3 (no v2 analogue) and are carried as
-# canonical defaults identical to config/default-tag-rules.yml.
+# canonical defaults identical to config/default-tag-rules.yaml.
 
 DERIVED_DEFAULTS: "OrderedDict[str, Any]" = OrderedDict([
     ("age_buckets", [

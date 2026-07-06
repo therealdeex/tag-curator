@@ -1,5 +1,4 @@
 name: "Stash Tag Curator"
-id: stash-tag-curator
 description: >-
   Hybrid raw+UI plugin that curates scene tags from provider metadata using
   configurable mapping rules, with reversible cleanup, run history, and a

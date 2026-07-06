@@ -89,7 +89,7 @@ schema migration.
 
 #### Rules system (v3)
 
-- Default v3 rules file `config/default-tag-rules.yml` (about 150 KB, 1034
+- Default v3 rules file `config/default-tag-rules.yaml` (about 150 KB, 1034
   mappings across 12 axes). Shipped immutable. On first run it is copied to
   `<data-dir>/tag-rules.yml`, which becomes the active source of truth. The
   bundled default is never touched again.

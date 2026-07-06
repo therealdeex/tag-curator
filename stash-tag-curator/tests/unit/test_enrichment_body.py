@@ -26,7 +26,7 @@ from curator.enrichment import (
     derive_weight_tags,
 )
 
-# Mirrors config/default-tag-rules.yml derived.height_buckets (contiguous,
+# Mirrors config/default-tag-rules.yaml derived.height_buckets (contiguous,
 # non-overlapping, sentinel open ends at 230).
 HEIGHT_BUCKETS: list[dict[str, object]] = [
     {"min": 100, "max": 149, "label": "BODY: Height <150cm"},
@@ -36,7 +36,7 @@ HEIGHT_BUCKETS: list[dict[str, object]] = [
     {"min": 180, "max": 230, "label": "BODY: Height 180+cm"},
 ]
 
-# Mirrors config/default-tag-rules.yml derived.weight_buckets.
+# Mirrors config/default-tag-rules.yaml derived.weight_buckets.
 WEIGHT_BUCKETS: list[dict[str, object]] = [
     {"min": 35, "max": 49, "label": "BODY: Weight <50kg"},
     {"min": 50, "max": 59, "label": "BODY: Weight 50-59kg"},

@@ -23,7 +23,7 @@ import pytest
 
 from curator.enrichment import derive_ethnicity_tags
 
-# Mirrors config/default-tag-rules.yml derived.ethnicity_aliases.
+# Mirrors config/default-tag-rules.yaml derived.ethnicity_aliases.
 ETHNICITY_ALIASES: dict[str, list[str]] = {
     "Caucasian": ["Caucasian", "White"],
     "Black": ["Black", "African American"],

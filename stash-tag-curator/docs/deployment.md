@@ -26,7 +26,7 @@ Confirm the layout before the first run:
       stash-tag-curator.yml
       curator/
       config/
-        default-tag-rules.yml      # immutable bundled default
+        default-tag-rules.yaml      # immutable bundled default
         tag-rules.schema.json
       ...
   stash-tag-curator-data/          # active state (NOT replaced on upgrade)

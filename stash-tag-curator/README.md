@@ -14,7 +14,7 @@ the plugin package so a plugin upgrade never overwrites your data.
 - **Target:** Stash v0.31.1
 - **Runtime:** Python `>= 3.10`, PyYAML `>= 6.0`
 - **Data directory:** `<server_connection.Dir>/stash-tag-curator-data/`
-- **Default rules:** `config/default-tag-rules.yml` (immutable, v3 schema)
+- **Default rules:** `config/default-tag-rules.yaml` (immutable, v3 schema)
 - **Active rules:** `<data-dir>/tag-rules.yml`
 - **Rule schema:** `config/tag-rules.schema.json`
 
@@ -112,7 +112,7 @@ keys server-side. Before the first rebuild:
 
 ### Active rules
 
-On the first run, the curator copies the bundled `config/default-tag-rules.yml`
+On the first run, the curator copies the bundled `config/default-tag-rules.yaml`
 into `<data-dir>/tag-rules.yml` and uses that copy as the source of truth from
 then on. The bundled default is never touched again. To change mappings, edit
 `<data-dir>/tag-rules.yml` or use the dashboard's rules editor, then run
@@ -189,7 +189,7 @@ To update:
 5. Run **Dry-Run Full Library Rebuild** before any destructive work against the
    updated rules.
 
-If the bundled `config/default-tag-rules.yml` shipped rule changes you want,
+If the bundled `config/default-tag-rules.yaml` shipped rule changes you want,
 copy the deltas into `<data-dir>/tag-rules.yml` by hand. The curator never
 overwrites your active rules on upgrade. The rules file carries a `version`
 field; with `strict_version=true`, a schema mismatch halts the run with a clear

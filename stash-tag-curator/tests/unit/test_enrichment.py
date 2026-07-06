@@ -31,7 +31,7 @@ from curator.enrichment import (
     validate_buckets,
 )
 
-# Buckets mirroring config/default-tag-rules.yml derived.age_buckets.
+# Buckets mirroring config/default-tag-rules.yaml derived.age_buckets.
 # Labels include the AGE: prefix (as the real v3 config does).
 DEFAULT_AGE_BUCKETS = [
     {"min": 18, "max": 22, "label": "AGE: 18-22"},

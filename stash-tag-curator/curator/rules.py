@@ -1,6 +1,6 @@
 """Runtime loader, validator and index for the v3 tag-rules taxonomy (T8).
 
-Loads ``config/default-tag-rules.yml`` (the bundled immutable v3 source of
+Loads ``config/default-tag-rules.yaml`` (the bundled immutable v3 source of
 truth) or an operator-managed active copy, validates it structurally (JSON
 Schema) and semantically (collector), and exposes two precomputed indices:
 
@@ -78,7 +78,7 @@ _MODULE_DIR = Path(__file__).resolve().parent
 _PLUGIN_ROOT = _MODULE_DIR.parent
 
 #: Bundled immutable default rules file.
-DEFAULT_RULES_PATH = _PLUGIN_ROOT / "config" / "default-tag-rules.yml"
+DEFAULT_RULES_PATH = _PLUGIN_ROOT / "config" / "default-tag-rules.yaml"
 #: Bundled JSON Schema (v3) for the rules file.
 DEFAULT_SCHEMA_PATH = _PLUGIN_ROOT / "config" / "tag-rules.schema.json"
 

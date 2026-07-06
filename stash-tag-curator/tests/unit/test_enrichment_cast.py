@@ -24,7 +24,7 @@ import pytest
 from curator.enrichment import CAST_EMIT_ORDER, derive_cast_tag
 
 
-# Mirrors config/default-tag-rules.yml derived.cast_taxonomy.
+# Mirrors config/default-tag-rules.yaml derived.cast_taxonomy.
 CAST_TAXONOMY: dict[str, object] = {
     "gender_order": ["M", "F", "TM", "TF", "NB", "I", "U"],
     "gender_map": {

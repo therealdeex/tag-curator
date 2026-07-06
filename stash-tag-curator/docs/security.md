@@ -46,7 +46,7 @@ are never executed, parsed as code, or written to a path.
 
 ## YAML confined to the plugin directory
 
-The curator reads two YAML sources. The bundled `config/default-tag-rules.yml`
+The curator reads two YAML sources. The bundled `config/default-tag-rules.yaml`
 is immutable and ships in the package. The active `<data-dir>/tag-rules.yml`
 lives under Stash's config directory, outside the plugin package. The active
 file is the only rules source the engine consults after first-run bootstrap,
