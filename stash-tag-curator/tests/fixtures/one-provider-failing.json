@@ -1,0 +1,42 @@
+{
+  "label": "one-provider-failing: StashDB errors out, TPDB succeeds (engine should preserve StashDB-failed scenes and use TPDB where it matched)",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql" },
+        "match_variables": true
+      },
+      "response": {
+        "data": null,
+        "errors": [
+          {
+            "message": "stash-box request failed: context deadline exceeded",
+            "path": ["scrapeMultiScenes"],
+            "extensions": { "endpoint": "https://stashdb.example/graphql", "code": "UPSTREAM_TIMEOUT" }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id tags { name stored_id } } }",
+        "variables": { "endpoint": "https://theporndb.example/graphql" },
+        "match_variables": true
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Baseline Scene 1 (TPDB only)",
+                "remote_site_id": "tpdb-0001",
+                "tags": [{ "name": "Oral", "stored_id": null }]
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

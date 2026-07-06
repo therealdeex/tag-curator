@@ -1,0 +1,37 @@
+{
+  "label": "unique-match: single StashDB fingerprint hit for scene 1",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title date code remote_site_id fingerprints { type value } tags { name stored_id } performers { name stored_id } studio { name stored_id } } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["1"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Baseline Scene 1 (Scraped)",
+                "date": "2024-06-15",
+                "code": "SYN-001",
+                "remote_site_id": "stashdb-0001",
+                "fingerprints": [
+                  { "type": "phash", "value": "phash-00000001" }
+                ],
+                "tags": [
+                  { "name": "Blowjob", "stored_id": "100" },
+                  { "name": "Vaginal Sex", "stored_id": null },
+                  { "name": "Caucasian", "stored_id": null }
+                ],
+                "performers": [
+                  { "name": "Synthetic Performer 1", "stored_id": "p001" }
+                ],
+                "studio": { "name": "Synthetic Studio A", "stored_id": "ss1" }
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

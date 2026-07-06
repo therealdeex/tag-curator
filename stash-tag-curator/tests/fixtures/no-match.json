@@ -1,0 +1,16 @@
+{
+  "label": "no-match: fingerprint lookup returns zero provider results",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["11"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": []
+        }
+      }
+    }
+  ]
+}

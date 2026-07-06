@@ -1,0 +1,38 @@
+{
+  "label": "tag-create-race: derived-tag pre-pass tries to create a canonical tag that a concurrent run already inserted; provider/TagCreate returns an 'already exists' error so the engine must re-resolve rather than duplicate",
+  "interactions": [
+    {
+      "request": {
+        "query": "mutation TagCreate($input: TagCreateInput!) { tagCreate(input: $input) { id name } }",
+        "variables": { "input": { "name": "DEMO: Caucasian (F)" } }
+      },
+      "response": {
+        "data": null,
+        "errors": [
+          {
+            "message": "tag named 'DEMO: Caucasian (F)' already exists",
+            "path": ["tagCreate"],
+            "extensions": { "code": "DUPLICATE_TAG", "existing_id": "5550" }
+          }
+        ],
+        "http_status": 200
+      }
+    },
+    {
+      "request": {
+        "query": "query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) { findTags(filter: $filter, tag_filter: $tag_filter) { count tags { id name } } }",
+        "variables": { "tag_filter": { "name": { "modifier": "EQUALS", "value": "DEMO: Caucasian (F)" } } }
+      },
+      "response": {
+        "data": {
+          "findTags": {
+            "count": 1,
+            "tags": [{ "id": "5550", "name": "DEMO: Caucasian (F)" }]
+          }
+        },
+        "http_status": 200
+      },
+      "reusable": true
+    }
+  ]
+}

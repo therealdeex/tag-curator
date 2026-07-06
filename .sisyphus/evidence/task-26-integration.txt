@@ -1,0 +1,20 @@
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /home/shahram/dev/stash-plugins/tag-ops/stash-tag-curator
+configfile: pytest.ini
+plugins: cov-7.1.0, hypothesis-6.156.1, anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 10 items
+
+stash-tag-curator/tests/integration/test_cycle_1k.py::test_full_cycle_dry_rebuild_rerun_rollback_1k PASSED [ 10%]
+stash-tag-curator/tests/integration/test_idempotent_rerun.py::test_second_run_emits_zero_scene_update PASSED [ 20%]
+stash-tag-curator/tests/integration/test_migration_real_v2.py::test_real_v2_file_is_1294_lines PASSED [ 30%]
+stash-tag-curator/tests/integration/test_migration_real_v2.py::test_migration_is_zero_loss_collisions_defers_deterministic PASSED [ 40%]
+stash-tag-curator/tests/integration/test_rollback_roundtrip.py::test_clean_restore_roundtrips_to_pre_run_tags PASSED [ 50%]
+stash-tag-curator/tests/integration/test_rollback_roundtrip.py::test_conflict_skip_with_warning_leaves_scene_untouched PASSED [ 60%]
+stash-tag-curator/tests/integration/test_rollback_roundtrip.py::test_force_overwrite_restores_regardless_of_conflict PASSED [ 70%]
+stash-tag-curator/tests/integration/test_rollback_roundtrip.py::test_deleted_target_tag_id_is_skipped_and_logged PASSED [ 80%]
+stash-tag-curator/tests/integration/test_rollback_roundtrip.py::test_rollback_of_rollback_round_trips_back PASSED [ 90%]
+stash-tag-curator/tests/integration/test_stale_lock_recovery.py::test_stale_lock_detected_and_force_released_before_resume PASSED [100%]
+
+======================== 10 passed in 81.26s (0:01:21) =========================

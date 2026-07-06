@@ -1,0 +1,42 @@
+{
+  "label": "rate-limited-429: provider returns 429 + Retry-After on first call, then 200 with data on retry (ordered FIFO replay)",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql" }
+      },
+      "response": {
+        "data": null,
+        "errors": [
+          {
+            "message": "rate limited",
+            "extensions": { "code": "RATE_LIMITED", "endpoint": "https://stashdb.example/graphql" }
+          }
+        ],
+        "http_status": 429,
+        "headers": { "Retry-After": "1" }
+      }
+    },
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql" }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Baseline Scene 1 (after backoff)",
+                "remote_site_id": "stashdb-0001",
+                "tags": [{ "name": "Blowjob", "stored_id": "100" }]
+              }
+            ]
+          ]
+        },
+        "http_status": 200
+      }
+    }
+  ]
+}

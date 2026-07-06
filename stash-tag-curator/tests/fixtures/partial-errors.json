@@ -1,0 +1,32 @@
+{
+  "label": "partial-errors: HTTP 200 with BOTH data and errors (GraphQL partial) -- client must raise on errors presence even though data is populated",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["1", "2"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Scene 1 partial ok",
+                "remote_site_id": "stashdb-0001"
+              }
+            ],
+            null
+          ]
+        },
+        "errors": [
+          {
+            "message": "partial scrape failure for scene 2",
+            "path": ["scrapeMultiScenes", 1],
+            "extensions": { "code": "PARTIAL_SCRAPE" }
+          }
+        ],
+        "http_status": 200
+      }
+    }
+  ]
+}

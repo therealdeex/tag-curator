@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stash-plugins.local/stash-tag-curator/config/tag-rules.schema.json",
+  "title": "Stash Tag Curator v3 rules taxonomy",
+  "description": "Validates the v3 rules structure consumed by curator/rules.py (T8). Structural invariants live here; semantic invariants (cross-bucket partial-overlap ranges, canonical-tag reference integrity, normalization collisions, min<=max per bucket) are enforced by the Python runtime validator T8 — pure JSON Schema 2020-12 cannot compare sibling values. See .sisyphus/plans/stash-tag-curator.md T3 and planning-handoff.md L750-789, L793.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "prefixes", "canonical_tags", "mappings", "derived", "protected", "legacy"],
+
+  "properties": {
+    "version": {
+      "const": 3,
+      "description": "Rules schema version. v3 is the migrated taxonomy (D13)."
+    },
+
+    "prefixes": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly the 12 axis keys (5 computed + 7 rule-mapped), each mapping to its tag-name prefix string. Mirrors config_loader.EXPECTED_PREFIX_KEYS.",
+      "required": ["CAST", "DEMO", "ACT", "BODY", "AGE", "THEME", "SET", "WARD", "KINK", "PROD", "ERA", "STUDIO"],
+      "properties": {
+        "CAST":   { "type": "string", "minLength": 1 },
+        "DEMO":   { "type": "string", "minLength": 1 },
+        "ACT":    { "type": "string", "minLength": 1 },
+        "BODY":   { "type": "string", "minLength": 1 },
+        "AGE":    { "type": "string", "minLength": 1 },
+        "THEME":  { "type": "string", "minLength": 1 },
+        "SET":    { "type": "string", "minLength": 1 },
+        "WARD":   { "type": "string", "minLength": 1 },
+        "KINK":   { "type": "string", "minLength": 1 },
+        "PROD":   { "type": "string", "minLength": 1 },
+        "ERA":    { "type": "string", "minLength": 1 },
+        "STUDIO": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "canonical_tags": {
+      "type": "object",
+      "description": "Axis name -> array of canonical tag names. Keys MUST be one of the 12 axis names (any subset may appear; computed axes are typically present as empty arrays since their tags are derived at runtime). Every non-empty canonical name must carry an axis prefix.",
+      "propertyNames": {
+        "enum": ["CAST", "DEMO", "ACT", "BODY", "AGE", "THEME", "SET", "WARD", "KINK", "PROD", "ERA", "STUDIO"]
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "pattern": "^[A-Z]+: .+" }
+      }
+    },
+
+    "mappings": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Normalized source key (strip().lower().rstrip(',')) -> mapping rule. map and ignore are mutually exclusive by construction: 'map'/'detail' REQUIRE outputs, 'ignore' FORBIDS outputs. 'defer' (Issue 10) carries pending-review entries and leaves outputs optional.",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/mapping" }
+    },
+
+    "derived": { "$ref": "#/$defs/derived" },
+
+    "protected": { "$ref": "#/$defs/protected" },
+
+    "legacy": { "$ref": "#/$defs/legacy" }
+  },
+
+  "$defs": {
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition"],
+      "properties": {
+        "disposition": {
+          "enum": ["map", "detail", "ignore", "defer"],
+          "description": "map=emit outputs; detail=emit outputs as detail tags; ignore=drop silently (no outputs allowed); defer=pending human review (outputs optional)."
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Destination tag(s). Required for map/detail; forbidden for ignore; optional for defer. A single source key MAY map to many outputs (one-to-many)."
+        },
+        "notes": {
+          "description": "Audit rationale (migrated from v2 comments, collision reviews, flagged mis-mappings).",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+          ]
+        },
+        "provider": {
+          "description": "Provider(s) this mapping is scoped to (e.g. stashdb, tpdb). Omit for all-provider applicability.",
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "comment": "map -> outputs REQUIRED (rejects map without outputs)",
+          "if": {
+            "required": ["disposition"],
+            "properties": { "disposition": { "const": "map" } }
+          },
+          "then": { "required": ["outputs"] }
+        },
+        {
+          "comment": "detail -> outputs REQUIRED",
+          "if": {
+            "required": ["disposition"],
+            "properties": { "disposition": { "const": "detail" } }
+          },
+          "then": { "required": ["outputs"] }
+        },
+        {
+          "comment": "ignore -> outputs FORBIDDEN (map/ignore mutual exclusivity, D-impl / handoff L793)",
+          "if": {
+            "required": ["disposition"],
+            "properties": { "disposition": { "const": "ignore" } }
+          },
+          "then": { "not": { "required": ["outputs"] } }
+        }
+      ]
+    },
+
+    "bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max", "label"],
+      "description": "A single numeric bucket for age/height/weight. min/max are inclusive integer bounds; T2 represents open-ended terminals with a sentinel upper bound (e.g. age 60+ -> max 200), so both are integers. NOTE: pure JSON Schema 2020-12 cannot compare siblings, so min<=max per bucket and cross-bucket range partial-overlap are enforced by T8; this schema rejects duplicate bucket definitions via uniqueItems on the enclosing array.",
+      "properties": {
+        "min": { "type": "integer", "minimum": 0 },
+        "max": { "type": "integer", "minimum": 0 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "bucketArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Ordered list of numeric buckets. uniqueItems rejects fully-overlapping (duplicate) bucket definitions; deep partial-overlap detection (e.g. [18-30] vs [23-29]) is the Python runtime validator T8's responsibility per the inherited notepad wisdom.",
+      "items": { "$ref": "#/$defs/bucket" }
+    },
+
+    "eraBucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "description": "A single era bucket. Either bound may be omitted to denote an open-ended terminal (e.g. Pre-2000 omits min_year; 2020s omits max_year).",
+      "properties": {
+        "min_year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "max_year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "derived": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "age_buckets",
+        "height_buckets",
+        "weight_buckets",
+        "era_buckets",
+        "age_gender_qualify",
+        "age_min_valid",
+        "height_gender_qualify",
+        "height_unit",
+        "height_min_valid",
+        "height_max_valid",
+        "weight_gender_qualify",
+        "weight_unit",
+        "weight_min_valid",
+        "weight_max_valid",
+        "studio_passthrough",
+        "ethnicity_aliases",
+        "ethnicity_owned_prefixes",
+        "country_aliases",
+        "cast_taxonomy",
+        "married_irl_tag"
+      ],
+      "properties": {
+        "age_buckets": {
+          "$ref": "#/$defs/bucketArray",
+          "description": "Calendar-age buckets (D9/Issue 5). Default: AGE: 18-22, 23-29, 30-39, 40-49, 50-59, 60+."
+        },
+        "height_buckets": {
+          "$ref": "#/$defs/bucketArray",
+          "description": "Performer height buckets in configured height_unit, default cm (D9/Issue 4)."
+        },
+        "weight_buckets": {
+          "$ref": "#/$defs/bucketArray",
+          "description": "Performer weight buckets in configured weight_unit, default kg (D9/Issue 4)."
+        },
+        "era_buckets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/eraBucket" },
+          "description": "Release-era buckets. (D6 removed automatic ERA: emission; the bucket catalog is retained for config completeness.)"
+        },
+        "age_gender_qualify": { "type": "boolean", "description": "Emit gender-qualified age tags (AGE: <bucket> (<Gender>))." },
+        "age_min_valid": { "type": "integer", "minimum": 0, "description": "Sanity floor for computed age; below -> data-quality failure." },
+        "height_gender_qualify": { "type": "boolean" },
+        "height_unit": { "type": "string", "enum": ["cm", "in"], "description": "Canonical unit for height buckets." },
+        "height_min_valid": { "type": "integer", "minimum": 0 },
+        "height_max_valid": { "type": "integer", "minimum": 0 },
+        "weight_gender_qualify": { "type": "boolean" },
+        "weight_unit": { "type": "string", "enum": ["kg", "lb"], "description": "Canonical unit for weight buckets." },
+        "weight_min_valid": { "type": "integer", "minimum": 0 },
+        "weight_max_valid": { "type": "integer", "minimum": 0 },
+        "studio_passthrough": { "type": "boolean", "description": "Pass studio name through as a STUDIO: tag." },
+
+        "ethnicity_aliases": {
+          "type": "object",
+          "propertyNames": { "type": "string", "minLength": 1 },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "Variant spellings that canonicalize to the key."
+          },
+          "description": "Canonical ethnicity -> array of variant spellings (Caucasian==White, African American==Black, ...)."
+        },
+        "ethnicity_owned_prefixes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^DEMO: .+", "description": "Exact tag name or prefix owned by the ethnicity subsystem." },
+          "description": "Explicit set of tag-name patterns the ethnicity subsystem owns and may override on enrichment (Issue 11 / D9 narrow override)."
+        },
+        "country_aliases": {
+          "type": "object",
+          "propertyNames": { "type": "string", "minLength": 1 },
+          "additionalProperties": { "type": "string", "minLength": 1 },
+          "description": "ISO code / variant -> country name (emitted as 'DEMO: Country - <Name>'). May be empty when no aliases are configured."
+        },
+        "cast_taxonomy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gender_order", "gender_map", "group_total_ceiling", "group_per_gender_cap", "group_label", "unknown_label", "emit_order_strict"],
+          "description": "Cast-composition derivation config (D9/Issue 12). Counts by gender bucket in fixed order; ceiling >=4 total OR >=3 any -> group_label.",
+          "properties": {
+            "gender_order": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Fixed emission order of gender codes, e.g. [M, F, TM, TF, NB, I, U]."
+            },
+            "gender_map": {
+              "type": "object",
+              "propertyNames": { "type": "string", "minLength": 1 },
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Stash gender enum(s) that roll up into this code."
+              },
+              "description": "Code -> list of Stash gender enums (U -> [] for unknown)."
+            },
+            "group_total_ceiling": { "type": "integer", "minimum": 1, "description": "Total-count threshold at/above which the group label is emitted." },
+            "group_per_gender_cap": { "type": "integer", "minimum": 1, "description": "Per-gender count threshold at/above which the group label is emitted." },
+            "group_label": { "type": "string", "pattern": "^[A-Z]+: .+", "description": "Tag emitted when a ceiling is met, e.g. 'CAST: Group'." },
+            "unknown_label": { "type": "string", "pattern": "^[A-Z]+: .+", "description": "Tag emitted for an unknown/empty cast, e.g. 'CAST: Unknown'." },
+            "emit_order_strict": { "type": "boolean", "description": "Emit zero-counts in fixed order when true." }
+          }
+        },
+        "married_irl_tag": {
+          "type": "string",
+          "pattern": "^[A-Z]+: .+",
+          "description": "Tag emitted when any performer carries the Married-IRL tag-id. Default 'THEME: Married IRL'."
+        }
+      }
+    },
+
+    "protected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefixes", "tag_names"],
+      "description": "D18 protected-tag preservation policy. Tags/prefixes listed here are never mutated by cleanup or enrichment override.",
+      "properties": {
+        "prefixes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Tag-name prefixes to preserve (e.g. 'MANUAL:')."
+        },
+        "tag_names": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Exact tag names to preserve."
+        }
+      }
+    },
+
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefixes", "checkpoint_tags", "artifact_suffixes"],
+      "description": "v2 backward-compat artifacts carried forward for audit (config_loader.LEGACY_LIST_KEYS). Not consumed by the v3 engine except for migration provenance.",
+      "properties": {
+        "prefixes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "checkpoint_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "artifact_suffixes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

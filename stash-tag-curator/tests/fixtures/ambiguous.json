@@ -1,0 +1,31 @@
+{
+  "label": "ambiguous: >1 inner ScrapedScene result per scene -> AMBIGUOUS_MATCH",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["12"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Ambiguous Candidate A",
+                "remote_site_id": "stashdb-cand-a",
+                "date": "2024-07-01",
+                "tags": [{ "name": "Vaginal Sex", "stored_id": null }]
+              },
+              {
+                "title": "Ambiguous Candidate B",
+                "remote_site_id": "stashdb-cand-b",
+                "date": "2024-07-01",
+                "tags": [{ "name": "Anal", "stored_id": null }]
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

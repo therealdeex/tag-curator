@@ -1,0 +1,48 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/shahram/dev/stash-plugins/tag-ops/stash-tag-curator
+plugins: cov-7.1.0, anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 38 items
+
+tests/harness/test_cassette.py::test_all_required_cassettes_exist PASSED [  2%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[unique-match] PASSED [  5%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[no-match] PASSED [  7%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[ambiguous] PASSED [ 10%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[both-providers] PASSED [ 13%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[one-provider-failing] PASSED [ 15%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[rate-limited-429] PASSED [ 18%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[malformed] PASSED [ 21%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[partial-errors] PASSED [ 23%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[scene-update-failure] PASSED [ 26%]
+tests/harness/test_cassette.py::test_cassette_loads_and_parses[tag-create-race] PASSED [ 28%]
+tests/harness/test_cassette.py::test_fixtures_directory_has_scene_db PASSED [ 31%]
+tests/harness/test_cassette.py::test_signature_for_query[query FindScenesPage($f: FindFilterType) { findScenes(filter: $f){id} }-FindScenesPage] PASSED [ 34%]
+tests/harness/test_cassette.py::test_signature_for_query[mutation SceneUpdate($i: SceneUpdateInput!) { sceneUpdate(input: $i){id} }-SceneUpdate] PASSED [ 36%]
+tests/harness/test_cassette.py::test_signature_for_query[  \n query GetConfiguration { configuration { general { stashBoxes { endpoint name } } } }-GetConfiguration] PASSED [ 39%]
+tests/harness/test_cassette.py::test_signature_anonymous_falls_back_to_hash PASSED [ 42%]
+tests/harness/test_cassette.py::test_unique_match_replay_returns_scraped_scene PASSED [ 44%]
+tests/harness/test_cassette.py::test_replay_consumes_non_reusable_in_order PASSED [ 47%]
+tests/harness/test_cassette.py::test_cassette_reset_restores_consumed PASSED [ 50%]
+tests/harness/test_cassette.py::test_match_variables_routes_by_endpoint PASSED [ 52%]
+tests/harness/test_cassette.py::test_no_match_returns_empty_provider_list PASSED [ 55%]
+tests/harness/test_cassette.py::test_reusable_interaction_not_consumed PASSED [ 57%]
+tests/harness/test_cassette.py::test_mock_client_replays_unique_match_end_to_end PASSED [ 60%]
+tests/harness/test_cassette.py::test_mock_client_raises_on_partial_errors PASSED [ 63%]
+tests/harness/test_cassette.py::test_mock_client_surfaces_one_provider_failure PASSED [ 65%]
+tests/harness/test_cassette.py::test_mock_client_job_lifecycle PASSED    [ 68%]
+tests/harness/test_cassette.py::test_mock_client_unknown_op_without_cassette_raises PASSED [ 71%]
+tests/harness/test_cassette.py::test_mock_client_resets_state PASSED     [ 73%]
+tests/harness/test_cassette.py::test_http_server_replays_unique_match PASSED [ 76%]
+tests/harness/test_cassette.py::test_http_server_returns_429_then_200 PASSED [ 78%]
+tests/harness/test_cassette.py::test_http_server_health_endpoint PASSED  [ 81%]
+tests/harness/test_cassette.py::test_state_db_creates_cleanly PASSED     [ 84%]
+tests/harness/test_cassette.py::test_state_db_singleton_lock_enforced PASSED [ 86%]
+tests/harness/test_cassette.py::test_state_db_counts_view_works PASSED   [ 89%]
+tests/harness/test_cassette.py::test_state_db_is_in_memory_and_isolated PASSED [ 92%]
+tests/harness/test_cassette.py::test_plugin_dir_is_temporary PASSED      [ 94%]
+tests/harness/test_cassette.py::test_synthetic_scenes_cover_edge_cases PASSED [ 97%]
+tests/harness/test_cassette.py::test_scene_db_envelope_matches_factory PASSED [100%]
+
+============================== 38 passed in 1.60s ==============================

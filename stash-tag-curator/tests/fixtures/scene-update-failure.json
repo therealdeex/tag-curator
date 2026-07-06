@@ -1,0 +1,41 @@
+{
+  "label": "scene-update-failure: scrapeMultiScenes succeeds but the subsequent SceneUpdate mutation returns GraphQL errors (engine must leave the journal row 'pending' and reconcile per D16)",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title remote_site_id tags { name stored_id } } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["1"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Baseline Scene 1",
+                "remote_site_id": "stashdb-0001",
+                "tags": [{ "name": "Blowjob", "stored_id": "100" }]
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "query": "mutation SceneUpdate($input: SceneUpdateInput!) { sceneUpdate(input: $input) { id } }",
+        "variables": { "input": { "id": "1", "tag_ids": ["100"] } }
+      },
+      "response": {
+        "data": null,
+        "errors": [
+          {
+            "message": "scene not found or not editable: 1",
+            "path": ["sceneUpdate"],
+            "extensions": { "code": "NOT_FOUND" }
+          }
+        ],
+        "http_status": 200
+      }
+    }
+  ]
+}

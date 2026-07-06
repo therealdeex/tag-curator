@@ -1,0 +1,808 @@
+/*
+ * Stash Tag Curator — UI styles (T24).
+ *
+ * Every selector is prefixed with `.stash-tag-curator-` and most rules are
+ * scoped under the plugin root `.stash-tag-curator-root` to avoid colliding
+ * with Stash's own Bootstrap-based CSS. The plugin leans on Bootstrap
+ * components (Button / Card / Alert / Badge / Modal / Form / Tabs) for the
+ * heavy lifting; this file only adds layout, spacing, and curator-specific
+ * surface treatments.
+ *
+ * Theme tokens build on Bootstrap's `--bs-*` custom properties which Stash
+ * already loads theme-aware. A `prefers-color-scheme: dark` block supplies
+ * fallback values only for hosts that do NOT define those variables, so the
+ * plugin follows the Stash theme by default and the OS theme as a safety net.
+ *
+ * Standard CSS only — no preprocessor, no build step.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-root {
+  /* 4px spacing scale (expressed in rem so it scales with root font) */
+  --curator-space-1: 0.25rem;
+  --curator-space-2: 0.5rem;
+  --curator-space-3: 0.75rem;
+  --curator-space-4: 1rem;
+  --curator-space-5: 1.5rem;
+  --curator-space-6: 2rem;
+
+  /* Radii (inherit Bootstrap's, fallback otherwise) */
+  --curator-radius-sm: var(--bs-border-radius-sm, 0.2rem);
+  --curator-radius: var(--bs-border-radius, 0.375rem);
+  --curator-radius-lg: var(--bs-border-radius-lg, 0.5rem);
+
+  /* Semantic colors — theme-aware via Bootstrap, with light fallbacks */
+  --curator-muted-fg: var(--bs-secondary-color, #6c757d);
+  --curator-border: var(--bs-border-color, #dee2e6);
+  --curator-surface-bg: var(--bs-tertiary-bg, #f8f9fa);
+  --curator-surface-2-bg: var(--bs-secondary-bg, #e9ecef);
+  --curator-hover-bg: var(--bs-tertiary-bg, #f1f3f5);
+  --curator-stripe-bg: var(--bs-tertiary-bg, rgba(0, 0, 0, 0.02));
+  --curator-primary: var(--bs-primary, #0d6efd);
+  --curator-primary-contrast: var(--bs-primary-bg-subtle, #cfe2ff);
+  --curator-success: var(--bs-success, #198754);
+  --curator-danger: var(--bs-danger, #dc3545);
+  --curator-warning: var(--bs-warning, #ffc107);
+  --curator-info: var(--bs-info, #0dcaf0);
+
+  --curator-font-mono: var(
+    --bs-font-monospace,
+    SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace
+  );
+  --curator-transition: 150ms ease;
+
+  color: var(--bs-body-color, inherit);
+  background: inherit;
+  padding: var(--curator-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-4);
+}
+
+/* Safety-net dark fallback: only takes effect when Stash does NOT define the
+   `--bs-*` tokens (they would win otherwise). Keeps the plugin readable on a
+   dark host even if Bootstrap variables are absent. */
+@media (prefers-color-scheme: dark) {
+  .stash-tag-curator-root {
+    --curator-muted-fg: var(--bs-secondary-color, #9aa4b2);
+    --curator-border: var(--bs-border-color, #343a40);
+    --curator-surface-bg: var(--bs-tertiary-bg, #1c1f24);
+    --curator-surface-2-bg: var(--bs-secondary-bg, #2a2e35);
+    --curator-hover-bg: var(--bs-tertiary-bg, #262a31);
+    --curator-stripe-bg: var(--bs-tertiary-bg, rgba(255, 255, 255, 0.03));
+    --curator-primary-contrast: var(--bs-primary-bg-subtle, #1a3a6e);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Header + layout shell                                               */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-header h2 {
+  margin: 0 0 var(--curator-space-1) 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+}
+
+.stash-tag-curator-tagline {
+  margin: 0;
+  color: var(--curator-muted-fg);
+  font-size: 0.95rem;
+}
+
+.stash-tag-curator-tabs {
+  /* Tab content panels get consistent inner spacing. Bootstrap owns the
+     nav; we only pad the active pane. */
+  margin-top: var(--curator-space-1);
+}
+
+.stash-tag-curator-tabs .tab-content,
+.stash-tag-curator-tabs > div:not(.nav) {
+  padding-top: var(--curator-space-3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared utilities                                                    */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-muted {
+  color: var(--curator-muted-fg);
+}
+
+.stash-tag-curator-mono {
+  font-family: var(--curator-font-mono);
+  font-size: 0.85em;
+}
+
+.stash-tag-curator-mono-trunc {
+  display: inline-block;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.stash-tag-curator-section {
+  margin-top: var(--curator-space-4);
+  padding-top: var(--curator-space-3);
+  border-top: 1px solid var(--curator-border);
+}
+
+/* Avoid a stray top border on the first section in a panel. */
+.stash-tag-curator-dashboard > .stash-tag-curator-section:first-of-type,
+.stash-tag-curator-rulesaudit-body > .stash-tag-curator-section:first-of-type {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+.stash-tag-curator-section h4 {
+  margin: 0 0 var(--curator-space-2) 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.stash-tag-curator-alert {
+  margin: var(--curator-space-2) 0;
+}
+
+.stash-tag-curator-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  padding: var(--curator-space-3);
+  color: var(--curator-muted-fg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard panel                                                     */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--curator-space-2);
+  margin-bottom: var(--curator-space-3);
+}
+
+.stash-tag-curator-updated {
+  font-size: 0.85rem;
+}
+
+.stash-tag-curator-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--curator-space-3);
+}
+
+.stash-tag-curator-stat-card {
+  background: var(--curator-surface-bg);
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius);
+  padding: var(--curator-space-3);
+}
+
+.stash-tag-curator-stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stash-tag-curator-stat-label {
+  margin-top: var(--curator-space-1);
+  color: var(--curator-muted-fg);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Definition lists used for Rules / Last run / Rules-audit kv blocks. */
+.stash-tag-curator-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--curator-space-1) var(--curator-space-3);
+  margin: 0;
+}
+
+.stash-tag-curator-kv dt {
+  color: var(--curator-muted-fg);
+  font-weight: 500;
+}
+
+.stash-tag-curator-kv dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.stash-tag-curator-provider-list,
+.stash-tag-curator-error-list {
+  margin: 0;
+  padding-left: var(--curator-space-5);
+}
+
+.stash-tag-curator-provider-list li {
+  padding: var(--curator-space-1) 0;
+}
+
+.stash-tag-curator-error-item {
+  padding: var(--curator-space-2) 0;
+  border-bottom: 1px dashed var(--curator-border);
+  word-break: break-word;
+}
+
+.stash-tag-curator-error-item:last-child {
+  border-bottom: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Operations panel                                                    */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-operations-help {
+  color: var(--curator-muted-fg);
+  margin-top: 0;
+}
+
+.stash-tag-curator-op-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--curator-space-3);
+  margin-top: var(--curator-space-3);
+}
+
+.stash-tag-curator-op {
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-2);
+  background: var(--curator-surface-bg);
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius);
+  padding: var(--curator-space-3);
+}
+
+.stash-tag-curator-op-label {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  flex-wrap: wrap;
+}
+
+.stash-tag-curator-op-name {
+  font-weight: 600;
+}
+
+.stash-tag-curator-op-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stash-tag-curator-op-scope {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--curator-muted-fg);
+  flex: 1 1 auto;
+}
+
+.stash-tag-curator-op-estimate {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--curator-muted-fg);
+}
+
+.stash-tag-curator-op-button {
+  align-self: flex-start;
+}
+
+/* Confirm-modal body tweaks. The modal chrome itself is Bootstrap Modal; we
+   only style the inner text blocks and the run-id field. */
+.stash-tag-curator-confirm-scope {
+  margin-top: 0;
+}
+
+.stash-tag-curator-confirm-input {
+  margin-top: var(--curator-space-3);
+}
+
+.stash-tag-curator-input-runid {
+  font-family: var(--curator-font-mono);
+}
+
+/* ------------------------------------------------------------------ */
+/* Job status panel                                                    */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-job-panel {
+  background: var(--curator-surface-bg);
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius);
+  padding: var(--curator-space-3) var(--curator-space-4);
+}
+
+.stash-tag-curator-job-panel h4 {
+  margin: 0 0 var(--curator-space-2) 0;
+  font-size: 1rem;
+}
+
+.stash-tag-curator-job-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-2);
+}
+
+.stash-tag-curator-job-row {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.stash-tag-curator-job-badge {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.stash-tag-curator-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  margin-top: var(--curator-space-1);
+}
+
+.stash-tag-curator-progress-track {
+  flex: 1 1 auto;
+  height: 0.6rem;
+  background: var(--curator-surface-2-bg);
+  border-radius: var(--curator-radius-sm);
+  overflow: hidden;
+}
+
+.stash-tag-curator-progress-fill {
+  height: 100%;
+  background: var(--curator-primary);
+  border-radius: var(--curator-radius-sm);
+  transition: width var(--curator-transition);
+  min-width: 0;
+}
+
+.stash-tag-curator-progress-label {
+  font-size: 0.8rem;
+  font-family: var(--curator-font-mono);
+  color: var(--curator-muted-fg);
+  min-width: 3.5ch;
+  text-align: right;
+}
+
+.stash-tag-curator-error {
+  color: var(--curator-danger);
+}
+
+.stash-tag-curator-job-actions {
+  margin-top: var(--curator-space-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal fallback (used only when react-bootstrap Modal is unavailable) */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-modal-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  padding: var(--curator-space-4);
+}
+
+.stash-tag-curator-modal-inner {
+  background: var(--bs-body-bg, #ffffff);
+  color: var(--bs-body-color, inherit);
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius-lg);
+  max-width: 32rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.3);
+}
+
+.stash-tag-curator-modal-lg .stash-tag-curator-modal-inner {
+  max-width: 48rem;
+}
+
+.stash-tag-curator-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--curator-space-3);
+  padding: var(--curator-space-3) var(--curator-space-4);
+  border-bottom: 1px solid var(--curator-border);
+}
+
+.stash-tag-curator-modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.stash-tag-curator-modal-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--curator-muted-fg);
+  cursor: pointer;
+  padding: 0 var(--curator-space-1);
+}
+
+.stash-tag-curator-modal-close:hover {
+  color: var(--curator-danger);
+}
+
+.stash-tag-curator-modal-body {
+  padding: var(--curator-space-4);
+}
+
+.stash-tag-curator-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--curator-space-2);
+  padding: var(--curator-space-3) var(--curator-space-4);
+  border-top: 1px solid var(--curator-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* Toolbars (unmapped / run history / rules audit share a common shape) */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-unmapped-toolbar,
+.stash-tag-curator-runhistory-toolbar,
+.stash-tag-curator-rulesaudit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--curator-space-3);
+}
+
+/* Refresh-only toolbars push the button to the trailing edge. */
+.stash-tag-curator-runhistory-toolbar,
+.stash-tag-curator-rulesaudit-toolbar {
+  justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------------ */
+/* Unmapped-tags review queue                                          */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.stash-tag-curator-search .form-control,
+.stash-tag-curator-input-search {
+  width: 100%;
+}
+
+.stash-tag-curator-unmapped-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-2);
+  flex-wrap: wrap;
+}
+
+.stash-tag-curator-save-mapping {
+  font-weight: 600;
+}
+
+.stash-tag-curator-unmapped-checksum {
+  font-size: 0.85rem;
+  margin-bottom: var(--curator-space-2);
+}
+
+/* Horizontal-scroll wrapper keeps wide tables from blowing out the panel. */
+.stash-tag-curator-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius-sm);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared table styling (unmapped / run history / axis / dispositions) */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-unmapped-table,
+.stash-tag-curator-runhistory-table,
+.stash-tag-curator-axis-table,
+.stash-tag-curator-disposition-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.stash-tag-curator-unmapped-table th,
+.stash-tag-curator-unmapped-table td,
+.stash-tag-curator-runhistory-table th,
+.stash-tag-curator-runhistory-table td,
+.stash-tag-curator-axis-table th,
+.stash-tag-curator-axis-table td,
+.stash-tag-curator-disposition-table th,
+.stash-tag-curator-disposition-table td {
+  padding: var(--curator-space-2) var(--curator-space-3);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--curator-border);
+}
+
+.stash-tag-curator-unmapped-table thead th,
+.stash-tag-curator-runhistory-table thead th,
+.stash-tag-curator-axis-table thead th,
+.stash-tag-curator-disposition-table thead th {
+  background: var(--curator-surface-bg);
+  font-weight: 600;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Zebra striping for readability. */
+.stash-tag-curator-unmapped-table tbody tr:nth-child(even),
+.stash-tag-curator-runhistory-table tbody tr:nth-child(even),
+.stash-tag-curator-axis-table tbody tr:nth-child(even),
+.stash-tag-curator-disposition-table tbody tr:nth-child(even) {
+  background: var(--curator-stripe-bg);
+}
+
+/* Sortable headers (unmapped table). */
+.stash-tag-curator-th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.stash-tag-curator-th-sortable:hover {
+  color: var(--curator-primary);
+}
+
+/* Row interaction cues. */
+.stash-tag-curator-unmapped-row:hover,
+.stash-tag-curator-runhistory-row:hover {
+  background: var(--curator-hover-bg);
+}
+
+.stash-tag-curator-rawtag {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.stash-tag-curator-displayform,
+.stash-tag-curator-seen {
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+/* Disposition radio options (inline chips). */
+.stash-tag-curator-disposition-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--curator-space-1);
+  margin-right: var(--curator-space-3);
+  margin-bottom: var(--curator-space-1);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Map-outputs multi-select (text input + Add button + chip list). */
+.stash-tag-curator-map-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-2);
+  min-width: 16rem;
+}
+
+.stash-tag-curator-map-input-row {
+  display: flex;
+  gap: var(--curator-space-2);
+  align-items: stretch;
+}
+
+.stash-tag-curator-map-input-row .form-control,
+.stash-tag-curator-input-canonical {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stash-tag-curator-add-output {
+  flex: 0 0 auto;
+}
+
+.stash-tag-curator-output-chips.stash-tag-curator-multiselect-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--curator-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stash-tag-curator-output-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--curator-space-1);
+  padding: var(--curator-space-1) var(--curator-space-2);
+  background: var(--curator-primary-contrast);
+  border: 1px solid var(--curator-border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  max-width: 100%;
+}
+
+.stash-tag-curator-output-chip code {
+  font-family: var(--curator-font-mono);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-tag-curator-chip-remove {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--curator-muted-fg);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.stash-tag-curator-chip-remove:hover {
+  color: var(--curator-danger);
+}
+
+.stash-tag-curator-no-outputs {
+  font-size: 0.8rem;
+}
+
+.stash-tag-curator-input-notes {
+  min-width: 10rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Run history panel                                                   */
+/* ------------------------------------------------------------------ */
+
+/* Running rows get a tinted backdrop so active runs stand out. */
+.stash-tag-curator-runhistory-row-running {
+  background: var(--curator-primary-contrast);
+}
+
+.stash-tag-curator-runhistory-row-running:hover {
+  background: var(--curator-primary-contrast);
+  filter: brightness(0.97);
+}
+
+.stash-tag-curator-status-badge {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: capitalize;
+}
+
+/* Clamp long run IDs in their cell; full value is available via `title`. */
+.stash-tag-curator-runid-cell {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-tag-curator-runhistory-actions {
+  white-space: nowrap;
+  display: flex;
+  gap: var(--curator-space-1);
+  justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rules audit panel                                                   */
+/* ------------------------------------------------------------------ */
+
+.stash-tag-curator-rulesaudit-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-2);
+}
+
+.stash-tag-curator-prefix-badge {
+  margin: 2px 4px 2px 0;
+  font-family: var(--curator-font-mono);
+  font-size: 0.78rem;
+}
+
+/* Numeric count columns read better right-aligned + tabular. */
+.stash-tag-curator-axis-table td:last-child,
+.stash-tag-curator-disposition-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive basics — stack on narrow viewports                       */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 640px) {
+  .stash-tag-curator-root {
+    padding: var(--curator-space-2);
+    gap: var(--curator-space-3);
+  }
+
+  .stash-tag-curator-stat-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .stash-tag-curator-op-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* kv lists collapse to a single column; terms get a little top gap. */
+  .stash-tag-curator-kv {
+    grid-template-columns: 1fr;
+    gap: var(--curator-space-1);
+  }
+
+  .stash-tag-curator-kv dt {
+    margin-top: var(--curator-space-2);
+  }
+
+  .stash-tag-curator-kv dt:first-child {
+    margin-top: 0;
+  }
+
+  /* Toolbars stack vertically and stretch their controls. */
+  .stash-tag-curator-dashboard-toolbar,
+  .stash-tag-curator-unmapped-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stash-tag-curator-unmapped-actions {
+    justify-content: space-between;
+  }
+
+  .stash-tag-curator-search {
+    flex-basis: auto;
+  }
+
+  /* Modals shrink to viewport width with comfortable inner padding. */
+  .stash-tag-curator-modal-fallback {
+    padding: var(--curator-space-2);
+  }
+
+  .stash-tag-curator-modal-inner,
+  .stash-tag-curator-modal-lg .stash-tag-curator-modal-inner {
+    max-width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .stash-tag-curator-progress-fill {
+    transition: none;
+  }
+}

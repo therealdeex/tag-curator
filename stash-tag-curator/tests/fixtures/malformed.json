@@ -1,0 +1,27 @@
+{
+  "label": "malformed: provider returns nominally-200 data with a structurally broken ScrapedScene (tags null, performers as string) -- engine must flag rather than crash",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title date remote_site_id tags { name stored_id } performers { name stored_id } } }",
+        "variables": { "endpoint": "https://stashdb.example/graphql", "scene_ids": ["13"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Malformed Provider Payload 13",
+                "date": "not-a-date",
+                "remote_site_id": "",
+                "tags": null,
+                "performers": "this should be a list, not a string",
+                "fingerprints": "also-wrong-type"
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

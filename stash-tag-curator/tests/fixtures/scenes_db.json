@@ -1,0 +1,1989 @@
+{
+  "scenes": [
+    {
+      "id": "1",
+      "title": "Baseline Scene 1",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000001"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "101",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p001",
+          "name": "Performer 1",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0001"
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "Baseline Scene 2",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000002"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "102",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p002",
+          "name": "Performer 2",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0002"
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "Baseline Scene 3",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000003"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "103",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p003",
+          "name": "Performer 3",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0003"
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Baseline Scene 4",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000004"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "104",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p004",
+          "name": "Performer 4",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0004"
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Baseline Scene 5",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000005"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "105",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p005",
+          "name": "Performer 5",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0005"
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Baseline Scene 6",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000006"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "106",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p006",
+          "name": "Performer 6",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0006"
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Baseline Scene 7",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000007"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "107",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p007",
+          "name": "Performer 7",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0007"
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "title": "Baseline Scene 8",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000008"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "108",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p008",
+          "name": "Performer 8",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0008"
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "title": "Baseline Scene 9",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000009"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "109",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p009",
+          "name": "Performer 9",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0009"
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Baseline Scene 10",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000000a"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "110",
+          "name": "Blowjob"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p010",
+          "name": "Performer 10",
+          "gender": "FEMALE",
+          "birthdate": "1996-03-10",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 165,
+          "weight": 55,
+          "measurements": "34B-24-36",
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": [
+        {
+          "endpoint": "https://stashdb.example/graphql",
+          "stash_id": "stashdb-0010"
+        }
+      ]
+    },
+    {
+      "id": "11",
+      "title": "No Cast Scene 11",
+      "date": "2024-07-01",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "zerocast-0000000b"
+            },
+            {
+              "type": "oshash",
+              "value": "oshash-0000000b"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "12",
+      "title": "No Cast Scene 12",
+      "date": "2024-07-01",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "zerocast-0000000c"
+            },
+            {
+              "type": "oshash",
+              "value": "oshash-0000000c"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "13",
+      "title": "No Cast Scene 13",
+      "date": "2024-07-01",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "zerocast-0000000d"
+            },
+            {
+              "type": "oshash",
+              "value": "oshash-0000000d"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "14",
+      "title": "No Cast Scene 14",
+      "date": "2024-07-01",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "zerocast-0000000e"
+            },
+            {
+              "type": "oshash",
+              "value": "oshash-0000000e"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "15",
+      "title": "No Cast Scene 15",
+      "date": "2024-07-01",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "zerocast-0000000f"
+            },
+            {
+              "type": "oshash",
+              "value": "oshash-0000000f"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "16",
+      "title": "Unknown Gender 16",
+      "date": "2024-05-20",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000010"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p016",
+          "name": "Performer 16",
+          "gender": null,
+          "birthdate": "1993-11-02",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 158,
+          "weight": 48,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "17",
+      "title": "Unknown Gender 17",
+      "date": "2024-05-20",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000011"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p017",
+          "name": "Performer 17",
+          "gender": null,
+          "birthdate": "1993-11-02",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 158,
+          "weight": 48,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "18",
+      "title": "Unknown Gender 18",
+      "date": "2024-05-20",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000012"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p018",
+          "name": "Performer 18",
+          "gender": null,
+          "birthdate": "1993-11-02",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 158,
+          "weight": 48,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "19",
+      "title": "Unknown Gender 19",
+      "date": "2024-05-20",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000013"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p019",
+          "name": "Performer 19",
+          "gender": null,
+          "birthdate": "1993-11-02",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 158,
+          "weight": 48,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "20",
+      "title": "Unknown Gender 20",
+      "date": "2024-05-20",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000014"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p020",
+          "name": "Performer 20",
+          "gender": null,
+          "birthdate": "1993-11-02",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 158,
+          "weight": 48,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "21",
+      "title": "Multi-Ethnic Scene 21",
+      "date": "2024-08-11",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000015"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p021",
+          "name": "Performer 21",
+          "gender": "FEMALE",
+          "birthdate": "1994-02-14",
+          "ethnicity": "Asian / Caucasian",
+          "country": "US",
+          "height_cm": 168,
+          "weight": 58,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "22",
+      "title": "Multi-Ethnic Scene 22",
+      "date": "2024-08-11",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000016"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p022",
+          "name": "Performer 22",
+          "gender": "FEMALE",
+          "birthdate": "1994-02-14",
+          "ethnicity": "Latin / Caucasian",
+          "country": "BR",
+          "height_cm": 168,
+          "weight": 58,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "23",
+      "title": "Multi-Ethnic Scene 23",
+      "date": "2024-08-11",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000017"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p023",
+          "name": "Performer 23",
+          "gender": "FEMALE",
+          "birthdate": "1994-02-14",
+          "ethnicity": "Black / Caucasian",
+          "country": "GB",
+          "height_cm": 168,
+          "weight": 58,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "24",
+      "title": "Multi-Ethnic Scene 24",
+      "date": "2024-08-11",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000018"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p024",
+          "name": "Performer 24",
+          "gender": "FEMALE",
+          "birthdate": "1994-02-14",
+          "ethnicity": "Asian / Black",
+          "country": "CA",
+          "height_cm": 168,
+          "weight": 58,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "25",
+      "title": "Multi-Ethnic Scene 25",
+      "date": "2024-08-11",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000019"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p025",
+          "name": "Performer 25",
+          "gender": "FEMALE",
+          "birthdate": "1994-02-14",
+          "ethnicity": "Caucasian / Latin",
+          "country": "MX",
+          "height_cm": 168,
+          "weight": 58,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "26",
+      "title": "Trans Performer Scene 26",
+      "date": "2024-09-03",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001a"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p026",
+          "name": "Performer 26",
+          "gender": "TRANSGENDER_FEMALE",
+          "birthdate": "1995-07-22",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 172,
+          "weight": 64,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "27",
+      "title": "Trans Performer Scene 27",
+      "date": "2024-09-03",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001b"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p027",
+          "name": "Performer 27",
+          "gender": "TRANSGENDER_MALE",
+          "birthdate": "1995-07-22",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 172,
+          "weight": 64,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "28",
+      "title": "Trans Performer Scene 28",
+      "date": "2024-09-03",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001c"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p028",
+          "name": "Performer 28",
+          "gender": "TRANSGENDER_FEMALE",
+          "birthdate": "1995-07-22",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 172,
+          "weight": 64,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "29",
+      "title": "Trans Performer Scene 29",
+      "date": "2024-09-03",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001d"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p029",
+          "name": "Performer 29",
+          "gender": "NON_BINARY",
+          "birthdate": "1995-07-22",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 172,
+          "weight": 64,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "30",
+      "title": "Trans Performer Scene 30",
+      "date": "2024-09-03",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001e"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p030",
+          "name": "Performer 30",
+          "gender": "TRANSGENDER_MALE",
+          "birthdate": "1995-07-22",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 172,
+          "weight": 64,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "31",
+      "title": "Young Performer Scene 31",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000001f"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p031",
+          "name": "Performer 31",
+          "gender": "FEMALE",
+          "birthdate": "2010-06-14",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 160,
+          "weight": 52,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "32",
+      "title": "Young Performer Scene 32",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000020"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p032",
+          "name": "Performer 32",
+          "gender": "FEMALE",
+          "birthdate": "2009-06-16",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 160,
+          "weight": 52,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "33",
+      "title": "Young Performer Scene 33",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000021"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p033",
+          "name": "Performer 33",
+          "gender": "FEMALE",
+          "birthdate": "2007-06-16",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 160,
+          "weight": 52,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "34",
+      "title": "Young Performer Scene 34",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000022"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p034",
+          "name": "Performer 34",
+          "gender": "FEMALE",
+          "birthdate": "2006-06-15",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 160,
+          "weight": 52,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "35",
+      "title": "Young Performer Scene 35",
+      "date": "2024-06-15",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000023"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p035",
+          "name": "Performer 35",
+          "gender": "FEMALE",
+          "birthdate": "2012-01-01",
+          "ethnicity": "Caucasian",
+          "country": "US",
+          "height_cm": 160,
+          "weight": 52,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "36",
+      "title": "No Fingerprints Scene 36",
+      "date": "2024-04-04",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": []
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p036",
+          "name": "Performer 36",
+          "gender": "MALE",
+          "birthdate": "1990-01-01",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 180,
+          "weight": 80,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "37",
+      "title": "No Fingerprints Scene 37",
+      "date": "2024-04-04",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": []
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p037",
+          "name": "Performer 37",
+          "gender": "MALE",
+          "birthdate": "1990-01-01",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 180,
+          "weight": 80,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "38",
+      "title": "No Fingerprints Scene 38",
+      "date": "2024-04-04",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": []
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p038",
+          "name": "Performer 38",
+          "gender": "MALE",
+          "birthdate": "1990-01-01",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 180,
+          "weight": 80,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "39",
+      "title": "No Fingerprints Scene 39",
+      "date": "2024-04-04",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": []
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p039",
+          "name": "Performer 39",
+          "gender": "MALE",
+          "birthdate": "1990-01-01",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 180,
+          "weight": 80,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "40",
+      "title": "No Fingerprints Scene 40",
+      "date": "2024-04-04",
+      "code": null,
+      "details": null,
+      "files": [],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p040",
+          "name": "Performer 40",
+          "gender": "MALE",
+          "birthdate": "1990-01-01",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 180,
+          "weight": 80,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "41",
+      "title": "Married IRL Scene 41",
+      "date": "2024-10-10",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000029"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "241",
+          "name": "Vaginal Sex"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p041",
+          "name": "Performer 41",
+          "gender": "FEMALE",
+          "birthdate": "1992-12-25",
+          "ethnicity": "Latin",
+          "country": "US",
+          "height_cm": 163,
+          "weight": 57,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": [
+            {
+              "id": "9001",
+              "name": "Married IRL"
+            }
+          ]
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "42",
+      "title": "Married IRL Scene 42",
+      "date": "2024-10-10",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002a"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "242",
+          "name": "Vaginal Sex"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p042",
+          "name": "Performer 42",
+          "gender": "FEMALE",
+          "birthdate": "1992-12-25",
+          "ethnicity": "Latin",
+          "country": "US",
+          "height_cm": 163,
+          "weight": 57,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": [
+            {
+              "id": "9001",
+              "name": "Married IRL"
+            }
+          ]
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "43",
+      "title": "Married IRL Scene 43",
+      "date": "2024-10-10",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002b"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "243",
+          "name": "Vaginal Sex"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p043",
+          "name": "Performer 43",
+          "gender": "FEMALE",
+          "birthdate": "1992-12-25",
+          "ethnicity": "Latin",
+          "country": "US",
+          "height_cm": 163,
+          "weight": 57,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": [
+            {
+              "id": "9001",
+              "name": "Married IRL"
+            }
+          ]
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "44",
+      "title": "Married IRL Scene 44",
+      "date": "2024-10-10",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002c"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "244",
+          "name": "Vaginal Sex"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p044",
+          "name": "Performer 44",
+          "gender": "FEMALE",
+          "birthdate": "1992-12-25",
+          "ethnicity": "Latin",
+          "country": "US",
+          "height_cm": 163,
+          "weight": 57,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": [
+            {
+              "id": "9001",
+              "name": "Married IRL"
+            }
+          ]
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "45",
+      "title": "Married IRL Scene 45",
+      "date": "2024-10-10",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002d"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "245",
+          "name": "Vaginal Sex"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p045",
+          "name": "Performer 45",
+          "gender": "FEMALE",
+          "birthdate": "1992-12-25",
+          "ethnicity": "Latin",
+          "country": "US",
+          "height_cm": 163,
+          "weight": 57,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": [
+            {
+              "id": "9001",
+              "name": "Married IRL"
+            }
+          ]
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "46",
+      "title": "Null-Field Scene 46",
+      "date": "2024-03-17",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002e"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p046",
+          "name": "Performer 46",
+          "gender": "FEMALE",
+          "birthdate": "1991-09-09",
+          "ethnicity": null,
+          "country": null,
+          "height_cm": null,
+          "weight": null,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "47",
+      "title": "Null-Field Scene 47",
+      "date": "2024-03-17",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-0000002f"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p047",
+          "name": "Performer 47",
+          "gender": "FEMALE",
+          "birthdate": "1991-09-09",
+          "ethnicity": "Asian",
+          "country": null,
+          "height_cm": null,
+          "weight": 60,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "48",
+      "title": "Null-Field Scene 48",
+      "date": "2024-03-17",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000030"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p048",
+          "name": "Performer 48",
+          "gender": "FEMALE",
+          "birthdate": "1991-09-09",
+          "ethnicity": null,
+          "country": "DE",
+          "height_cm": 170,
+          "weight": null,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "49",
+      "title": "Null-Field Scene 49",
+      "date": "2024-03-17",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000031"
+            }
+          ]
+        }
+      ],
+      "tags": [],
+      "performers": [
+        {
+          "id": "p049",
+          "name": "Performer 49",
+          "gender": "FEMALE",
+          "birthdate": "1991-09-09",
+          "ethnicity": "",
+          "country": "",
+          "height_cm": null,
+          "weight": null,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    },
+    {
+      "id": "50",
+      "title": "Interracial Duo Scene 50",
+      "date": "2024-03-17",
+      "code": null,
+      "details": null,
+      "files": [
+        {
+          "path": "synthetic/clip.mp4",
+          "fingerprints": [
+            {
+              "type": "phash",
+              "value": "phash-00000032"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        {
+          "id": "250",
+          "name": "Threesome"
+        }
+      ],
+      "performers": [
+        {
+          "id": "p050a",
+          "name": "Performer 50A",
+          "gender": "FEMALE",
+          "birthdate": "1991-09-09",
+          "ethnicity": "Asian",
+          "country": "JP",
+          "height_cm": 160,
+          "weight": 50,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        },
+        {
+          "id": "p050b",
+          "name": "Performer 50B",
+          "gender": "MALE",
+          "birthdate": "1988-01-15",
+          "ethnicity": "Black",
+          "country": "US",
+          "height_cm": 185,
+          "weight": 88,
+          "measurements": null,
+          "fake_tits": null,
+          "tattoos": null,
+          "piercings": null,
+          "tags": []
+        }
+      ],
+      "studio": null,
+      "stash_ids": []
+    }
+  ],
+  "stashdb_endpoint": "https://stashdb.example/graphql",
+  "tpdb_endpoint": "https://theporndb.example/graphql",
+  "married_irl_tag_id": "9001",
+  "married_irl_tag_name": "Married IRL",
+  "note": "Fully synthetic fixture data; no real performers or fingerprints."
+}

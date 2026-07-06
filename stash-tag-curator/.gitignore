@@ -1,0 +1,12 @@
+state/
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.zip
+node_modules/
+assets/*.json
+.pytest_cache/
+
+stash-tag-curator-data/
+dist-test/

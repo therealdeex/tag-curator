@@ -1,0 +1,36 @@
+{
+  "label": "unique-tpdb: single TPDB fingerprint hit for scene 1",
+  "interactions": [
+    {
+      "request": {
+        "query": "query ScrapeMultiScenes($endpoint: String!, $scene_ids: [ID!]) { scrapeMultiScenes(source: {stash_box_endpoint: $endpoint}, input: {scene_ids: $scene_ids}) { title date code remote_site_id fingerprints { type value } tags { name stored_id } performers { name stored_id } studio { name stored_id } } }",
+        "variables": { "endpoint": "https://theporndb.example/graphql", "scene_ids": ["1"] }
+      },
+      "response": {
+        "data": {
+          "scrapeMultiScenes": [
+            [
+              {
+                "title": "Baseline Scene 1 (TPDB)",
+                "date": "2024-06-15",
+                "code": "SYN-TPDB-001",
+                "remote_site_id": "tpdb-0001",
+                "fingerprints": [
+                  { "type": "phash", "value": "phash-00000001" }
+                ],
+                "tags": [
+                  { "name": "Oral", "stored_id": null },
+                  { "name": "Brunette", "stored_id": null }
+                ],
+                "performers": [
+                  { "name": "Synthetic Performer 1", "stored_id": "p001" }
+                ],
+                "studio": { "name": "Synthetic Studio TPDB", "stored_id": null }
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
