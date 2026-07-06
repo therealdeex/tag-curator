@@ -686,11 +686,27 @@ class ReportEngine:
         ).fetchone()
         if row is None:
             return None
+        heartbeat = row["heartbeat_ts"]
+        stale = False
+        if heartbeat:
+            try:
+                from datetime import datetime, timezone
+
+                hb_dt = datetime.fromisoformat(heartbeat)
+                if hb_dt.tzinfo is None:
+                    hb_dt = hb_dt.replace(tzinfo=timezone.utc)
+                stale = (datetime.now(timezone.utc) - hb_dt).total_seconds() > 90
+            except ValueError:
+                stale = True
+        else:
+            stale = True
         return {
             "run_id": row["run_id"],
             "operation": row["operation"],
             "started_at": row["started_at"],
-            "heartbeat_ts": row["heartbeat_ts"],
+            "heartbeat_ts": heartbeat,
+            "held": True,
+            "stale": stale,
         }
 
     @staticmethod

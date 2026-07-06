@@ -1,0 +1,142 @@
+- generic [ref=f22e2]:
+  - navigation [ref=f22e7]:
+    - generic [ref=f22e9]:
+      - link "Scenes" [ref=f22e11] [cursor=pointer]:
+        - /url: /scenes
+        - img [ref=f22e12]
+        - text: Scenes
+      - link "Images" [ref=f22e15] [cursor=pointer]:
+        - /url: /images
+        - img [ref=f22e16]
+        - text: Images
+      - link "Groups" [ref=f22e19] [cursor=pointer]:
+        - /url: /groups
+        - img [ref=f22e20]
+        - text: Groups
+      - link "Markers" [ref=f22e23] [cursor=pointer]:
+        - /url: /scenes/markers
+        - img [ref=f22e24]
+        - text: Markers
+      - link "Galleries" [ref=f22e27] [cursor=pointer]:
+        - /url: /galleries
+        - img [ref=f22e28]
+        - text: Galleries
+      - link "Performers" [ref=f22e31] [cursor=pointer]:
+        - /url: /performers
+        - img [ref=f22e32]
+        - text: Performers
+      - link "Studios" [ref=f22e35] [cursor=pointer]:
+        - /url: /studios
+        - img [ref=f22e36]
+        - text: Studios
+      - link "Tags" [ref=f22e39] [cursor=pointer]:
+        - /url: /tags
+        - img [ref=f22e40]
+        - text: Tags
+      - link "Tag Curator" [ref=f22e43] [cursor=pointer]:
+        - /url: /plugin/stash-tag-curator
+        - img [ref=f22e44]
+        - text: Tag Curator
+    - link "Stash" [ref=f22e47] [cursor=pointer]:
+      - /url: /
+      - button "Stash" [ref=f22e48]
+    - generic [ref=f22e49]:
+      - button "Toggle SFW Mode" [ref=f22e51] [cursor=pointer]:
+        - img [ref=f22e52]
+      - link "Donate" [ref=f22e55] [cursor=pointer]:
+        - /url: https://opencollective.com/stashapp
+        - button "Donate" [ref=f22e56]:
+          - img [ref=f22e57]
+          - generic [ref=f22e59]: Donate
+      - link [ref=f22e60] [cursor=pointer]:
+        - /url: /stats
+        - button "Statistics" [ref=f22e61]:
+          - img [ref=f22e62]
+      - link [ref=f22e64] [cursor=pointer]:
+        - /url: /settings
+        - button "Settings" [ref=f22e65]:
+          - img [ref=f22e66]
+      - button "Help" [ref=f22e68] [cursor=pointer]:
+        - img [ref=f22e69]
+      - link "Log out" [ref=f22e71] [cursor=pointer]:
+        - /url: /logout
+        - img [ref=f22e72]
+  - main [ref=f22e75]:
+    - generic [ref=f22e76]:
+      - heading "Stash Tag Curator" [level=2] [ref=f22e77]
+      - paragraph [ref=f22e78]: Curation dashboard, operations, and review queue.
+    - generic [ref=f22e79]:
+      - heading "Active job" [level=4] [ref=f22e80]
+      - generic [ref=f22e81]:
+        - generic [ref=f22e82]:
+          - generic [ref=f22e83]: "Task:"
+          - generic [ref=f22e84]: (unknown)
+          - generic [ref=f22e85]: FINISHED
+        - generic [ref=f22e86]:
+          - generic [ref=f22e87]: "Job ID:"
+          - generic [ref=f22e88]: "1"
+        - generic [ref=f22e91]: 0%
+        - button "Cancel (SIGKILL)" [ref=f22e93] [cursor=pointer]
+    - tablist [ref=f22e94]:
+      - tab "Dashboard" [selected] [ref=f22e95] [cursor=pointer]
+      - tab "Operations" [ref=f22e96] [cursor=pointer]
+      - tab "Unmapped Tags" [ref=f22e97] [cursor=pointer]
+      - tab "Run History" [ref=f22e98] [cursor=pointer]
+      - tab "Rules Audit" [ref=f22e99] [cursor=pointer]
+    - tabpanel "Dashboard" [ref=f22e101]:
+      - generic [ref=f22e102]:
+        - generic [ref=f22e103]:
+          - generic [ref=f22e104]: Updated 7/6/2026, 6:05:47 PM
+          - button "Refresh" [ref=f22e105] [cursor=pointer]
+        - generic [ref=f22e106]:
+          - generic [ref=f22e107]:
+            - generic [ref=f22e108]: "18794"
+            - generic [ref=f22e109]: Total scenes
+          - generic [ref=f22e110]:
+            - generic [ref=f22e111]: "0"
+            - generic [ref=f22e112]: Processed
+          - generic [ref=f22e113]:
+            - generic [ref=f22e114]: "18794"
+            - generic [ref=f22e115]: Never processed
+          - generic [ref=f22e116]:
+            - generic [ref=f22e117]: "0"
+            - generic [ref=f22e118]: Stale
+          - generic [ref=f22e119]:
+            - generic [ref=f22e120]: "0"
+            - generic [ref=f22e121]: Failed
+          - generic [ref=f22e122]:
+            - generic [ref=f22e123]: "0"
+            - generic [ref=f22e124]: Scenes with unmapped tags
+          - generic [ref=f22e125]:
+            - generic [ref=f22e126]: "0"
+            - generic [ref=f22e127]: Unmapped raw-tag count
+        - generic [ref=f22e128]:
+          - heading "Rules" [level=4] [ref=f22e129]
+          - generic [ref=f22e130]:
+            - term [ref=f22e131]: Version
+            - definition [ref=f22e132]: "3"
+            - term [ref=f22e133]: Checksum
+            - definition [ref=f22e134]:
+              - generic [ref=f22e135]: 5dd58db33e0a287f634d98c55748b511d2bddab6503fdbc07efbe941674917d5
+        - generic [ref=f22e136]:
+          - heading "Last successful run" [level=4] [ref=f22e137]
+          - paragraph [ref=f22e138]: No successful runs yet.
+        - generic [ref=f22e139]:
+          - heading "Active job" [level=4] [ref=f22e140]
+          - paragraph [ref=f22e141]: No active job.
+        - generic [ref=f22e142]:
+          - heading "Configured providers" [level=4] [ref=f22e143]
+          - paragraph [ref=f22e144]: None configured.
+        - generic [ref=f22e145]:
+          - heading "Recent errors" [level=4] [ref=f22e146]
+          - list [ref=f22e147]:
+            - listitem [ref=f22e148]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e149]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e150]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e151]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e152]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e153]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e154]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e155]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e156]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f22e157]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry

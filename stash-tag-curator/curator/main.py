@@ -1363,29 +1363,63 @@ def _run_abandon_run(ctx: TaskContext) -> dict[str, Any]:
 def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
     """Force-release the singleton run lock (D5/D17 escape hatch).
 
-    Requires ``run_id``; accepts an optional ``confirmation_token`` (defaults
-    to ``run_id``, matching the held lock's identity).  Delegates to
+    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
+    run_id from the current lock row so the task works from Stash's Tasks
+    UI (which does not prompt for args).  Delegates to
     :meth:`StateDB.force_release`, which writes the audit row BEFORE the
-    DELETE in the same ``BEGIN IMMEDIATE`` transaction.  This handler does NOT
-    acquire the lock -- it is the audited override for stale locks and
+    DELETE in the same ``BEGIN IMMEDIATE`` transaction.  This handler does
+    NOT acquire the lock -- it is the audited override for stale locks and
     acquiring would deadlock against the very row it must clear.
     """
     run_id = str(ctx.args.get("run_id") or "").strip()
-    if not run_id:
-        raise ValueError("force_release requires a 'run_id' arg")
     token = str(ctx.args.get("confirmation_token") or run_id).strip()
     state = ctx.open_state()
     try:
+        # Auto-detect run_id from the current lock when not provided.
+        # This makes the task usable from Stash's Tasks UI, which doesn't
+        # pass custom args.
+        if not token:
+            lock = state.current_lock()
+            if lock is None:
+                return {
+                    "mode": "force_release",
+                    "run_id": None,
+                    "confirmation_token": None,
+                    "released": False,
+                    "message": "no lock to release",
+                }
+            token = str(lock["run_id"])
+            run_id = token
         released = state.force_release(token)
-        return {
-            "mode": "force_release",
-            "run_id": run_id,
-            "confirmation_token": token,
-            "released": released,
-        }
     finally:
         state.close()
 
+    # Regenerate the dashboard snapshot so the UI immediately reflects that
+    # the lock has been released (no manual Dashboard task needed).
+    if released:
+        try:
+            rules = ctx.load_rules()
+            state2 = ctx.open_state()
+            try:
+                reporter = ReportEngine(
+                    state2, rules, ctx.plugin_dir, ctx.data_dir
+                )
+                reporter.configured_providers = _as_list(
+                    ctx.settings.get("enabled_providers")
+                )
+                dashboard = reporter.generate_dashboard(client=ctx.client)
+                reporter.write_snapshot("dashboard", dashboard)
+            finally:
+                state2.close()
+        except Exception as exc:  # pragma: no cover -- best-effort
+            _log(f"force_release dashboard refresh skipped: {exc}")
+
+    return {
+        "mode": "force_release",
+        "run_id": run_id,
+        "confirmation_token": token,
+        "released": released,
+    }
 
 def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:
     """Restore tags destroyed by a prior cleanup run (D20).

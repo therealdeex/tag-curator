@@ -47,6 +47,7 @@
     "STOPPING",
     "STOPPED",
     "REMOVED",
+    "FINISHED",
   ]);
 
   const RUN_PLUGIN_TASK_MUTATION = `
@@ -446,11 +447,14 @@
             clearTimer();
             return;
           }
-          const status = String(j.status || "").toUpperCase();
+          const descLabel =
+            j.description
+              ? String(j.description).replace(/^Running plugin task:\s*/i, "")
+              : null;
           const updated = {
             job_id: targetJobId,
-            task_name: (job && job.task_name) || null,
-            label: (job && job.label) || null,
+            task_name: (job && job.task_name) || descLabel || null,
+            label: (job && job.label) || descLabel || null,
             args_label: (job && job.args_label) || null,
             status: status,
             progress: typeof j.progress === "number" ? j.progress : 0,
@@ -469,6 +473,13 @@
             if (onCompleteRef.current) {
               onCompleteRef.current(updated);
               onCompleteRef.current = null;
+            }
+            // Auto-dismiss successful terminal jobs after a short delay so the
+            // panel doesn't linger and make the UI feel stuck.
+            if (!updated.error && (status === "FINISHED" || status === "COMPLETE" || status === "COMPLETED")) {
+              timerRef.current = setTimeout(() => {
+                dismiss();
+              }, 5000);
             }
           } else {
             persistActiveJob(updated);
@@ -759,6 +770,7 @@
 
   function DashboardPanel(props) {
     const dashboard = props.dashboard;
+    const jobState = props.jobState;
     const data = dashboard.data;
     const loading = dashboard.loading;
 
@@ -903,14 +915,41 @@
         h("h4", null, "Active job"),
         activeJob && activeJob.held
           ? h(
-              BSAlert,
-              { variant: "warning", className: "stash-tag-curator-alert" },
-              "A run lock is currently held",
-              activeJob.run_id ? " (run " + activeJob.run_id + ")" : "",
-              ". ",
-              activeJob.stale
-                ? "The lock appears stale; use Force Release to clear it."
-                : "Reads use the live asset snapshot until the run completes."
+              "div",
+              null,
+              h(
+                BSAlert,
+                { variant: "warning", className: "stash-tag-curator-alert" },
+                "A run lock is currently held",
+                activeJob.run_id ? " (run " + activeJob.run_id + ")" : "",
+                ". ",
+                activeJob.stale
+                  ? "The lock appears stale; use Force Release to clear it."
+                  : "Reads use the live asset snapshot until the run completes."
+              ),
+              activeJob.stale &&
+                jobState &&
+                h(
+                  BSButton,
+                  {
+                    type: "button",
+                    size: "sm",
+                    variant: "warning",
+                    className: "stash-tag-curator-force-release",
+                    disabled: !!(
+                      jobState.job && !isTerminalStatus(jobState.job.status)
+                    ),
+                    onClick: function () {
+                      jobState.dispatch({
+                        taskName: "Force Release Stale Run",
+                        label: "Force Release Stale Run",
+                        argsMap: { task: "ForceRelease", run_id: String(activeJob.run_id) },
+                        argsLabel: "run_id=" + String(activeJob.run_id),
+                      });
+                    },
+                  },
+                  "Force Release"
+                )
             )
           : h("p", { className: "stash-tag-curator-muted" }, "No active job.")
       ),
@@ -2956,7 +2995,7 @@
         h(
           BSTab,
           { eventKey: "dashboard", title: "Dashboard" },
-          h(DashboardPanel, { dashboard: dashboard })
+          h(DashboardPanel, { dashboard: dashboard, jobState: jobState })
         ),
         h(
           BSTab,
@@ -3003,6 +3042,64 @@
   // ------------------------------------------------------------------
   // Route registration
   // ------------------------------------------------------------------
+
+  // ------------------------------------------------------------------
+  // Nav-bar patch: inject a "Tag Curator" tile into the main menu so
+  // the dashboard is reachable without typing the URL. Direct URL
+  // access to /plugin/* returns 404 from Stash's Go server (no SPA
+  // fallback for plugin paths), so a client-side nav link is required.
+  // ------------------------------------------------------------------
+  try {
+    var RRDOM = (api.libraries && api.libraries.ReactRouterDOM) || {};
+    var FAS = (api.libraries && api.libraries.FontAwesomeSolid) || {};
+    var IconCmp = (api.components && api.components.Icon) || null;
+
+    if (api.patch && api.patch.before && RRDOM.NavLink) {
+      var NavLink = RRDOM.NavLink;
+      var navIcon = FAS.faTags || null;
+
+      api.patch.before("MainNavBar.MenuItems", function (props) {
+        var existing =
+          props && props.children != null ? props.children : null;
+        var tile = h(
+          "div",
+          {
+            key: "stash-tag-curator-nav",
+            className: "col-4 col-sm-3 col-md-2 col-lg-auto",
+          },
+          h(
+            NavLink,
+            {
+              exact: true,
+              to: ROUTE_PATH,
+              activeClassName: "active",
+              className:
+                "minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary",
+            },
+            navIcon && IconCmp
+              ? h(IconCmp, {
+                  icon: navIcon,
+                  className:
+                    "nav-menu-icon d-block d-xl-inline mb-2 mb-xl-0",
+                })
+              : null,
+            h("span", null, "Tag Curator")
+          )
+        );
+        return [
+          {
+            children: h(React.Fragment, null, existing, tile),
+          },
+        ];
+      });
+    } else {
+      console.warn(
+        "[stash-tag-curator] nav patch skipped: PluginApi.patch or NavLink unavailable"
+      );
+    }
+  } catch (navError) {
+    console.error("[stash-tag-curator] nav patch failed", navError);
+  }
 
   try {
     api.register.route(ROUTE_PATH, App);

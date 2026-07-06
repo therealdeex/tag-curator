@@ -1,0 +1,144 @@
+- generic [ref=f19e2]:
+  - navigation [ref=f19e7]:
+    - generic [ref=f19e9]:
+      - link "Scenes" [ref=f19e11] [cursor=pointer]:
+        - /url: /scenes
+        - img [ref=f19e12]
+        - text: Scenes
+      - link "Images" [ref=f19e15] [cursor=pointer]:
+        - /url: /images
+        - img [ref=f19e16]
+        - text: Images
+      - link "Groups" [ref=f19e19] [cursor=pointer]:
+        - /url: /groups
+        - img [ref=f19e20]
+        - text: Groups
+      - link "Markers" [ref=f19e23] [cursor=pointer]:
+        - /url: /scenes/markers
+        - img [ref=f19e24]
+        - text: Markers
+      - link "Galleries" [ref=f19e27] [cursor=pointer]:
+        - /url: /galleries
+        - img [ref=f19e28]
+        - text: Galleries
+      - link "Performers" [ref=f19e31] [cursor=pointer]:
+        - /url: /performers
+        - img [ref=f19e32]
+        - text: Performers
+      - link "Studios" [ref=f19e35] [cursor=pointer]:
+        - /url: /studios
+        - img [ref=f19e36]
+        - text: Studios
+      - link "Tags" [ref=f19e39] [cursor=pointer]:
+        - /url: /tags
+        - img [ref=f19e40]
+        - text: Tags
+      - link "Tag Curator" [ref=f19e43] [cursor=pointer]:
+        - /url: /plugin/stash-tag-curator
+        - img [ref=f19e44]
+        - text: Tag Curator
+    - link "Stash" [ref=f19e47] [cursor=pointer]:
+      - /url: /
+      - button "Stash" [ref=f19e48]
+    - generic [ref=f19e49]:
+      - button "Toggle SFW Mode" [ref=f19e51] [cursor=pointer]:
+        - img [ref=f19e52]
+      - link "Donate" [ref=f19e55] [cursor=pointer]:
+        - /url: https://opencollective.com/stashapp
+        - button "Donate" [ref=f19e56]:
+          - img [ref=f19e57]
+          - generic [ref=f19e59]: Donate
+      - link [ref=f19e60] [cursor=pointer]:
+        - /url: /stats
+        - button "Statistics" [ref=f19e61]:
+          - img [ref=f19e62]
+      - link [ref=f19e64] [cursor=pointer]:
+        - /url: /settings
+        - button "Settings" [ref=f19e65]:
+          - img [ref=f19e66]
+      - button "Help" [ref=f19e68] [cursor=pointer]:
+        - img [ref=f19e69]
+      - link "Log out" [ref=f19e71] [cursor=pointer]:
+        - /url: /logout
+        - img [ref=f19e72]
+  - main [ref=f19e75]:
+    - generic [ref=f19e76]:
+      - heading "Stash Tag Curator" [level=2] [ref=f19e77]
+      - paragraph [ref=f19e78]: Curation dashboard, operations, and review queue.
+    - generic [ref=f19e79]:
+      - heading "Active job" [level=4] [ref=f19e80]
+      - generic [ref=f19e81]:
+        - generic [ref=f19e82]:
+          - generic [ref=f19e83]: "Task:"
+          - generic [ref=f19e84]: (unknown)
+          - generic [ref=f19e85]: FINISHED
+        - generic [ref=f19e86]:
+          - generic [ref=f19e87]: "Job ID:"
+          - generic [ref=f19e88]: "2"
+        - generic [ref=f19e91]: 0%
+        - button "Cancel (SIGKILL)" [ref=f19e93] [cursor=pointer]
+    - tablist [ref=f19e94]:
+      - tab "Dashboard" [selected] [ref=f19e95] [cursor=pointer]
+      - tab "Operations" [ref=f19e96] [cursor=pointer]
+      - tab "Unmapped Tags" [ref=f19e97] [cursor=pointer]
+      - tab "Run History" [ref=f19e98] [cursor=pointer]
+      - tab "Rules Audit" [ref=f19e99] [cursor=pointer]
+    - tabpanel "Dashboard" [ref=f19e101]:
+      - generic [ref=f19e102]:
+        - generic [ref=f19e103]:
+          - generic [ref=f19e104]: Updated 7/6/2026, 6:01:53 PM
+          - button "Refresh" [ref=f19e105] [cursor=pointer]
+        - generic [ref=f19e106]:
+          - generic [ref=f19e107]:
+            - generic [ref=f19e108]: "18794"
+            - generic [ref=f19e109]: Total scenes
+          - generic [ref=f19e110]:
+            - generic [ref=f19e111]: "0"
+            - generic [ref=f19e112]: Processed
+          - generic [ref=f19e113]:
+            - generic [ref=f19e114]: "18794"
+            - generic [ref=f19e115]: Never processed
+          - generic [ref=f19e116]:
+            - generic [ref=f19e117]: "0"
+            - generic [ref=f19e118]: Stale
+          - generic [ref=f19e119]:
+            - generic [ref=f19e120]: "0"
+            - generic [ref=f19e121]: Failed
+          - generic [ref=f19e122]:
+            - generic [ref=f19e123]: "0"
+            - generic [ref=f19e124]: Scenes with unmapped tags
+          - generic [ref=f19e125]:
+            - generic [ref=f19e126]: "0"
+            - generic [ref=f19e127]: Unmapped raw-tag count
+        - generic [ref=f19e128]:
+          - heading "Rules" [level=4] [ref=f19e129]
+          - generic [ref=f19e130]:
+            - term [ref=f19e131]: Version
+            - definition [ref=f19e132]: "3"
+            - term [ref=f19e133]: Checksum
+            - definition [ref=f19e134]:
+              - generic [ref=f19e135]: 5dd58db33e0a287f634d98c55748b511d2bddab6503fdbc07efbe941674917d5
+        - generic [ref=f19e136]:
+          - heading "Last successful run" [level=4] [ref=f19e137]
+          - paragraph [ref=f19e138]: No successful runs yet.
+        - generic [ref=f19e139]:
+          - heading "Active job" [level=4] [ref=f19e140]
+          - generic [ref=f19e141]:
+            - alert [ref=f19e142]: A run lock is currently held (run dry_rebuild-test-stale-lock2). The lock appears stale; use Force Release to clear it.
+            - button "Force Release" [disabled] [ref=f19e143]
+        - generic [ref=f19e144]:
+          - heading "Configured providers" [level=4] [ref=f19e145]
+          - paragraph [ref=f19e146]: None configured.
+        - generic [ref=f19e147]:
+          - heading "Recent errors" [level=4] [ref=f19e148]
+          - list [ref=f19e149]:
+            - listitem [ref=f19e150]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e151]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e152]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e153]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e154]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e155]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e156]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e157]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e158]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
+            - listitem [ref=f19e159]: 7/6/2026, 4:14:32 PM transient provider failure; preserved for retry
