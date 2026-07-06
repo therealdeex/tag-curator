@@ -1,0 +1,8 @@
+name: __PLUGIN_NAME__
+description: A scoped CSS-only Stash plugin.
+version: 0.1.0
+url: https://example.invalid/__PLUGIN_ID__
+
+ui:
+  css:
+    - styles.css

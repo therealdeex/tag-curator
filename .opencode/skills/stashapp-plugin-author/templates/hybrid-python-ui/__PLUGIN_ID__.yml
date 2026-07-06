@@ -1,0 +1,23 @@
+name: __PLUGIN_NAME__
+description: A Stash plugin combining a raw Python task with a UI route.
+version: 0.1.0
+url: https://example.invalid/__PLUGIN_ID__
+
+ui:
+  javascript:
+    - ui.js
+  css:
+    - styles.css
+
+exec:
+  - python3
+  - "{pluginDir}/plugin.py"
+interface: raw
+errLog: error
+
+tasks:
+  - name: Run backend task
+    description: Execute the server-side operation.
+    defaultArgs:
+      mode: manual
+      dryRun: "true"

@@ -1,0 +1,10 @@
+.__PLUGIN_CSS_ID__-page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.__PLUGIN_CSS_ID__-page :focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
