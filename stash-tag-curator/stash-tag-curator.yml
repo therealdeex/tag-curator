@@ -112,12 +112,6 @@ tasks:
       Remove orphaned CURATOR-owned tags left behind by earlier runs.
     defaultArgs:
       task: CleanupPlugin
-  - name: Rollback a Run
-    description: >-
-      Revert the effects of a specific prior run using its recorded history
-      snapshot.
-    defaultArgs:
-      task: Rollback
   - name: Validate Rules
     description: >-
       Validate the active rules file against the JSON schema and report any
@@ -155,9 +149,15 @@ tasks:
   - name: Undo Cleanup
     description: >-
       Restore tags removed by a prior cleanup operation using its recorded
-      snapshot.
+      snapshot. Requires a cleanup_run_id arg (use the dashboard Operations panel).
     defaultArgs:
       task: UndoCleanup
+  - name: Rollback a Run
+    description: >-
+      Revert the effects of a specific prior run using its recorded history
+      snapshot. Requires a run_id arg (use the dashboard Operations panel).
+    defaultArgs:
+      task: Rollback
   - name: Dashboard
     description: >-
       Open the curator dashboard route in the UI.

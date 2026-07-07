@@ -113,6 +113,8 @@ Produces a flat `dist/stash-tag-curator.zip` (manifest at archive root, no paren
 - Stash config: `/mnt/stash-virtiofs/stashapp/config.yml`
 - Stash version: v0.31.1, listening on port 9999 (0.0.0.0)
 - Stash logs: `/mnt/stash-virtiofs/stashapp/stash.log`
+- Username: deex
+- Password: 2896770
 
 ### Plugin location
 - Plugin dir: `/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/`
@@ -152,3 +154,4 @@ If a run was killed and left a stale lock:
 bash
 sqlite3 /mnt/stash-virtiofs/stashapp/stash-tag-curator-data/state/curator.db \
   "DELETE FROM run_lock WHERE lock_id=1;"
+

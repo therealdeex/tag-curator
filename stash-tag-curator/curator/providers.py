@@ -51,7 +51,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from .graphql_client import GraphQLClientError, GraphQLResponseError
+from .graphql_client import GraphQLAuthError, GraphQLClientError, GraphQLResponseError
 from .graphql_queries import GET_CONFIGURATION_STASHBOXES, SCRAPE_MULTI_SCENES
 
 __all__ = [
@@ -484,6 +484,12 @@ class ProviderLookup:
                 SCRAPE_MULTI_SCENES,
                 {"endpoint": endpoint.endpoint, "scene_ids": list(scene_ids)},
             )
+        except GraphQLAuthError:
+            # A local-Stash auth failure (401/403) is NEVER transient -- it
+            # would otherwise be misclassified as PROVIDER_UNAVAILABLE, the
+            # run would burn for an hour with every scene marked for retry,
+            # and the dashboard would show zeros.  Re-raise so it fails fast.
+            raise
         except Exception as exc:
             # Catches GraphQLClientError/GraphQLResponseError (real client),
             # tests.harness.GraphQLResponseError (mock), and OSError (network).

@@ -255,12 +255,27 @@ class ReportEngine:
             conn, "SELECT COUNT(*) FROM scene_state"
         )
 
+        # Distinct scenes seen in the latest dry-run proposal set.  Dry runs
+        # never write ``scene_state`` (D10: no mutations), so before the first
+        # full rebuild this is the only signal that scenes were inspected.
+        # The latest proposal set is identified by the max ``created_at``.
+        dry_run_inspected = self._count(
+            conn,
+            "SELECT COUNT(DISTINCT scene_id) FROM dry_run_proposals "
+            "WHERE created_at = (SELECT MAX(created_at) FROM dry_run_proposals)",
+        )
+
         # Total scene count: prefer Stash when available.
         total_scenes = state_total
         if client is not None:
             queried = self._query_total_scenes(client)
             if queried is not None:
                 total_scenes = queried
+        # Fallback: when scene_state is empty and the live Stash count is
+        # unavailable (e.g. auth failure), surface the dry-run-inspected
+        # count so the dashboard is not all-zeros after a dry run.
+        if total_scenes == 0 and dry_run_inspected > 0:
+            total_scenes = dry_run_inspected
         never_processed = max(0, total_scenes - processed)
 
         # Unmapped raw tags: tags observed in scene_raw_tags_current that do
@@ -284,6 +299,7 @@ class ReportEngine:
                 "stale": stale,
                 "failed": failed,
                 "scenes_with_unmapped_tags": scenes_with_unmapped,
+                "dry_run_inspected": dry_run_inspected,
             },
             "unmapped_raw_tag_count": unmapped_count,
             "last_successful_run": self._last_successful_run(conn),
@@ -711,13 +727,28 @@ class ReportEngine:
 
     @staticmethod
     def _recent_errors(conn: Any, limit: int = 10) -> list[dict[str, Any]]:
-        """Return the most recent processing failures (handoff 'recent errors')."""
+        """Return the most recent processing failures from the latest run.
+
+        Scoped to the latest ``run_id`` in ``processing_attempts`` so stale
+        errors from killed/historical runs don't linger once a new run starts.
+        When the table is empty, returns ``[]``.  When the latest run has no
+        errored rows, returns ``[]`` (the dashboard panel hides itself).
+        """
+        # Resolve the latest run_id first; this lets the index on
+        # ``run_id`` (idx_processing_attempts_run) drive the second query.
+        latest = conn.execute(
+            "SELECT run_id FROM processing_attempts "
+            "ORDER BY attempted_at DESC, id DESC LIMIT 1"
+        ).fetchone()
+        if latest is None:
+            return []
+        latest_run_id = latest["run_id"]
         rows = conn.execute(
             "SELECT scene_id, run_id, status, error_message, attempted_at "
             "FROM processing_attempts "
-            "WHERE status = 'failed' OR error_message IS NOT NULL "
-            "ORDER BY attempted_at DESC LIMIT ?",
-            (limit,),
+            "WHERE run_id = ? AND (status = 'failed' OR error_message IS NOT NULL) "
+            "ORDER BY attempted_at DESC, id DESC LIMIT ?",
+            (latest_run_id, limit),
         ).fetchall()
         return [
             {

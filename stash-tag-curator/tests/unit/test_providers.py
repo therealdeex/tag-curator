@@ -37,7 +37,7 @@ from typing import Any
 
 import pytest
 
-from curator.graphql_client import GraphQLClient, GraphQLClientError
+from curator.graphql_client import GraphQLAuthError, GraphQLClient, GraphQLClientError
 from curator.graphql_queries import (
     GET_CONFIGURATION_STASHBOXES,
     SCRAPE_MULTI_SCENES,
@@ -621,6 +621,23 @@ class TestTransientFailureClassification:
             [_scene(1)], [StashBoxEndpoint(STASHDB, "StashDB")]
         )
         assert results["1"].status == PROVIDER_UNAVAILABLE
+
+    def test_auth_error_is_raised_not_swallowed(self) -> None:
+        # A local-Stash 401/403 (GraphQLAuthError) must NOT be classified
+        # as PROVIDER_UNAVAILABLE -- it would otherwise burn the run for an
+        # hour with every scene marked transient.  It must propagate so the
+        # run fails fast with a clear auth message.
+        auth_err = GraphQLAuthError(
+            "Stash rejected authentication (HTTP 401)",
+            http_status=401,
+        )
+        client = FakeClient([
+            lambda _q, _v: (_ for _ in ()).throw(auth_err)
+        ])
+        with pytest.raises(GraphQLAuthError):
+            ProviderLookup(client, {}).lookup(
+                [_scene(1)], [StashBoxEndpoint(STASHDB, "StashDB")]
+            )
 
     def test_malformed_response_maps_to_provider_unavailable(self) -> None:
         # No scrapeMultiScenes key / wrong shape -> provider-side failure.

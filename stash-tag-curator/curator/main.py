@@ -52,7 +52,7 @@ from curator.cleanup import (  # noqa: E402
     CleanupEngine,
     undo_cleanup,
 )
-from curator.graphql_client import GraphQLClient  # noqa: E402
+from curator.graphql_client import GraphQLAuthError, GraphQLClient  # noqa: E402
 from curator.graphql_queries import (  # noqa: E402
     FIND_TAGS_WITH_COUNTS,
     GET_APP_VERSION,
@@ -66,6 +66,7 @@ from curator.processing import (  # noqa: E402
     SCOPE_ALL,
     SCOPE_ENRICH_ONLY,
     SCOPE_FAILED,
+    SCOPE_LOCAL_AUDIT,
     SCOPE_NEVER_PROCESSED,
     SCOPE_STALE_RULES,
     RebuildEngine,
@@ -200,6 +201,25 @@ def _as_list(value: Any) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def _resolve_configured_providers(ctx: "TaskContext") -> list[str]:
+    """Resolve provider names for the dashboard's ``configured_providers" field.
+
+    Prefers the explicit ``enabled_providers`` plugin setting. When that is
+    empty, falls back to live discovery via :class:`ProviderLookup` so the
+    dashboard reflects what Stash actually has configured (D15). The discovery
+    is best-effort: any failure is logged and an empty list is returned so a
+    snapshot regeneration never aborts a successful mutation.
+    """
+    explicit = _as_list(ctx.settings.get("enabled_providers"))
+    if explicit:
+        return explicit
+    try:
+        endpoints = ProviderLookup(ctx.client, ctx.settings).discover_endpoints()
+        return [ep.name for ep in endpoints if ep.name]
+    except Exception as exc:  # pragma: no cover -- best-effort
+        _log(f"provider discovery for dashboard failed (continuing): {exc}")
+        return []
+
 _CAMEL_RE_1 = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
 
@@ -281,6 +301,7 @@ class Preflight:
         self._check_python()
         self._check_yaml()
         self._check_data_dir()
+        self._check_auth()
         self._check_stash_version()
         if self._require_providers:
             self._check_stashboxes()
@@ -339,6 +360,33 @@ class Preflight:
             self._record("data_dir_writable", "pass", str(self._data_dir))
         except OSError as exc:
             self._record("data_dir_writable", "fail", f"{self._data_dir}: {exc}")
+
+    def _check_auth(self) -> None:
+        """Probe whether the client can authenticate to local Stash.
+
+        A 401/403 here means the plugin's ``stash_api_key`` is unset or
+        invalid against an auth-requiring Stash.  Surfacing this in preflight
+        (rather than 401-ing an hour into a rebuild) gives the operator an
+        immediate, actionable message.
+        """
+        try:
+            self._client.submit(GET_APP_VERSION)
+        except GraphQLAuthError as exc:
+            self._record(
+                "stash_auth", "fail",
+                "Stash rejected authentication (HTTP 401/403); "
+                "set the 'Stash API Key' plugin setting to a valid key",
+                detail=str(exc),
+            )
+        except Exception:
+            # Other transport errors are surfaced by the downstream version
+            # check; auth check stays neutral here.
+            self._record(
+                "stash_auth", "warn",
+                "could not probe auth (will surface in stash_version check)",
+            )
+        else:
+            self._record("stash_auth", "pass", "authenticated")
 
     def _check_stash_version(self) -> None:
         try:
@@ -884,6 +932,52 @@ def _record_run(
         )
 
 
+def _record_run_start(
+    state: StateDB,
+    run_id: str,
+    operation: str,
+    rules_sha: str,
+    scope: "str | None" = None,
+) -> None:
+    """Insert a ``runs`` row as ``status='running'`` up-front (fail-safe).
+
+    Pairs with :func:`_record_run_end`.  Recording the start BEFORE the
+    engine work means an error or kill mid-run still leaves a visible row
+    (previously the row was only written inside the ``try`` after the call
+    that raises, so every failure left an empty ``runs`` table and a
+    dashboard with ``last_successful_run: null``).
+    """
+    now = _now_iso()
+    scope_json = json.dumps({"name": scope}) if scope else None
+    with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
+        state.connection.execute(
+            "INSERT INTO runs "
+            "(run_id, operation, status, rules_sha, started_at, ended_at, "
+            " scope_json, totals_json, error_message) "
+            "VALUES (?, ?, 'running', ?, ?, NULL, ?, NULL, NULL)",
+            (run_id, operation, rules_sha, now, scope_json),
+        )
+
+
+def _record_run_end(
+    state: StateDB,
+    run_id: str,
+    *,
+    status: str,
+    totals: "dict[str, Any] | None" = None,
+    error: "str | None" = None,
+) -> None:
+    """Update a ``runs`` row to its terminal status (pairs with _start)."""
+    now = _now_iso()
+    totals_json = json.dumps(totals, default=str) if totals else None
+    with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
+        state.connection.execute(
+            "UPDATE runs SET status = ?, ended_at = ?, totals_json = ?, "
+            "error_message = ? WHERE run_id = ?",
+            (status, now, totals_json, error, run_id),
+        )
+
+
 def _regenerate_snapshots(ctx: TaskContext, rules: Rules, state: StateDB) -> None:
     """Write the dashboard snapshot after a mutation task (D14 dual-write).
 
@@ -893,7 +987,7 @@ def _regenerate_snapshots(ctx: TaskContext, rules: Rules, state: StateDB) -> Non
     """
     try:
         reporter = ReportEngine(state, rules, ctx.plugin_dir, ctx.data_dir)
-        reporter.configured_providers = _as_list(ctx.settings.get("enabled_providers"))
+        reporter.configured_providers = _resolve_configured_providers(ctx)
         dashboard = reporter.generate_dashboard(client=ctx.client)
         reporter.write_snapshot("dashboard", dashboard)
     except Exception as exc:  # pragma: no cover -- best-effort
@@ -999,6 +1093,12 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
     """
     scope_name = _REBUILD_SCOPES[mode]
     dry_run = _as_bool(ctx.args.get("dryRun"), default=(mode == "dry_rebuild"))
+    # ``dry_rebuild`` defaults to a local audit (re-map existing tags through
+    # the rules, no stash-box network calls) so the inner loop is seconds,
+    # not hours.  Pass ``args["enrich"]=true`` to opt into the slow live
+    # stash-box enrichment path (SCOPE_ALL).
+    if mode == "dry_rebuild" and not _as_bool(ctx.args.get("enrich"), False):
+        scope_name = SCOPE_LOCAL_AUDIT
 
     rules = ctx.load_rules()
     state = ctx.open_state()
@@ -1036,6 +1136,12 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
             )
         heartbeat = _HeartbeatThread(state, run_id)
         heartbeat.start()
+        # Record the run START up-front so a mid-run error or kill still
+        # leaves a visible ``runs`` row (previously the row was written only
+        # on success, leaving an empty table + null dashboard on every failure).
+        _record_run_start(state, run_id, mode, rules.rules_sha, scope=scope_name)
+        result: dict[str, Any] = {}
+        run_error: "str | None" = None
         try:
             # D6 tagCreate pre-pass (F3 R-1, F3 M-2): resolve every finite tag
             # the engine may emit (CURATOR markers, canonical tags, derived
@@ -1055,7 +1161,7 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
 
             scope = Scope(scope_name)
             dry_report = engine.run_dry(scope, run_id=run_id)
-            result: dict[str, Any] = {
+            result = {
                 "mode": mode,
                 "scope": scope_name,
                 "dry_run": dry_report.to_dict(),
@@ -1065,11 +1171,16 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
                     dry_report.proposed_run_id, run_id=run_id,
                 )
                 result["execute"] = exec_report.to_dict()
-            _record_run(
-                state, run_id, mode, rules.rules_sha,
-                totals=result, scope=scope_name,
-            )
+        except Exception as exc:
+            run_error = str(exc)
+            raise
         finally:
+            # Terminal status recorded for BOTH success and failure paths.
+            _record_run_end(
+                state, run_id,
+                status="failed" if run_error else "completed",
+                totals=result or None, error=run_error,
+            )
             heartbeat.stop()
             state.release_lock(run_id)
             _log(f"released lock run_id={run_id}")
@@ -1103,12 +1214,15 @@ def _run_cleanup(ctx: TaskContext, mode: str) -> dict[str, Any]:
             )
         heartbeat = _HeartbeatThread(state, run_id)
         heartbeat.start()
+        _record_run_start(state, run_id, mode, rules.rules_sha, scope=scope)
+        result: dict[str, Any] = {}
+        run_error: "str | None" = None
         try:
             engine = CleanupEngine(ctx.client, state, rules, run_id=run_id)
             token = ctx.args.get("proposal_token")
             if token:
                 report = engine.execute_cleanup(str(token))
-                result: dict[str, Any] = {
+                result = {
                     "mode": mode,
                     "scope": scope,
                     "execute": report.to_dict(),
@@ -1121,8 +1235,15 @@ def _run_cleanup(ctx: TaskContext, mode: str) -> dict[str, Any]:
                     "scope": scope,
                     "dry_run": proposal.to_dict(),
                 }
-            _record_run(state, run_id, mode, rules.rules_sha, totals=result)
+        except Exception as exc:
+            run_error = str(exc)
+            raise
         finally:
+            _record_run_end(
+                state, run_id,
+                status="failed" if run_error else "completed",
+                totals=result or None, error=run_error,
+            )
             heartbeat.stop()
             state.release_lock(run_id)
             _log(f"released lock run_id={run_id}")
@@ -1207,20 +1328,40 @@ def _reconcile_run(state: StateDB, run_id: str, ctx: TaskContext) -> dict[str, i
 def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
     """Resume an interrupted run (D5/D16/D17).
 
-    Requires ``run_id``.  Verifies the original run row exists and that its
-    ``rules_sha`` matches the current rules (aborts on a rules change so a
-    resume never silently mutates against a different rule set).  Reconciles
-    pending mutations (D16), force-releases the stale lock held by this
-    ``run_id`` (it owns the token), re-acquires a fresh lock, and re-runs the
-    rebuild family for the original scope.
+    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
+    run_id from the current lock row so the task works from Stash's Tasks
+    UI. Verifies the original run row exists and that its ``rules_sha``
+    matches the current rules (aborts on a rules change so a resume never
+    silently mutates against a different rule set). Reconciles pending
+    mutations (D16), force-releases the stale lock held by this ``run_id``
+    (it owns the token), re-acquires a fresh lock, and re-runs the rebuild
+    family for the original scope.
     """
     run_id = str(ctx.args.get("run_id") or "").strip()
-    if not run_id:
-        raise ValueError("resume_run requires a 'run_id' arg")
-
     rules = ctx.load_rules()
     state = ctx.open_state()
     try:
+        # Auto-detect run_id from the current lock when not provided.
+        # This makes the task usable from Stash's Tasks UI, which doesn't
+        # pass custom args. Mirror the _run_force_release pattern.
+        if not run_id:
+            lock = state.current_lock()
+            if lock is None:
+                return {
+                    "mode": "resume_run",
+                    "resumed_run_id": None,
+                    "status": "no-op",
+                    "message": "no lock held; nothing to resume",
+                }
+            run_id = str(lock["run_id"] or "").strip()
+            if not run_id:
+                return {
+                    "mode": "resume_run",
+                    "resumed_run_id": None,
+                    "status": "no-op",
+                    "message": "lock row has no run_id; nothing to resume",
+                }
+
         run_row = _verify_run_exists(state, run_id)
         if run_row is None:
             raise ValueError(
@@ -1261,6 +1402,11 @@ def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
             )
         heartbeat = _HeartbeatThread(state, resume_run_id)
         heartbeat.start()
+        _record_run_start(
+            state, resume_run_id, "resume_run", rules.rules_sha, scope=scope_name,
+        )
+        result: dict[str, Any] = {}
+        run_error: "str | None" = None
         try:
             strict = _as_bool(
                 ctx.args.get("strict"),
@@ -1291,7 +1437,7 @@ def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
             exec_report = engine.run_execute(
                 dry_report.proposed_run_id, run_id=resume_run_id,
             )
-            result: dict[str, Any] = {
+            result = {
                 "mode": "resume_run",
                 "resumed_run_id": run_id,
                 "resume_run_id": resume_run_id,
@@ -1300,11 +1446,15 @@ def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
                 "dry_run": dry_report.to_dict(),
                 "execute": exec_report.to_dict(),
             }
-            _record_run(
-                state, resume_run_id, "resume_run", rules.rules_sha,
-                totals=result, scope=scope_name,
-            )
+        except Exception as exc:
+            run_error = str(exc)
+            raise
         finally:
+            _record_run_end(
+                state, resume_run_id,
+                status="failed" if run_error else "completed",
+                totals=result or None, error=run_error,
+            )
             heartbeat.stop()
             state.release_lock(resume_run_id)
             _log(f"released lock run_id={resume_run_id}")
@@ -1318,31 +1468,64 @@ def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
 def _run_abandon_run(ctx: TaskContext) -> dict[str, Any]:
     """Abandon an interrupted run (D5/D16/D17).
 
-    Requires ``run_id``.  Verifies the run exists, reconciles pending
-    mutations (so the journal converges), marks the run ``abandoned``, and
-    force-releases the singleton lock ONLY if it is still held by this
-    ``run_id`` (the audited, token-gated release path -- D5).
+    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
+    run_id from the current lock row so the task works from Stash's Tasks
+    UI (which does not prompt for args). Reconciles pending mutations (so
+    the journal converges), marks the run ``abandoned`` if a ``runs`` row
+    exists (killed runs may have no row), and force-releases the singleton
+    lock ONLY if it is still held by this ``run_id`` (the audited,
+    token-gated release path -- D5).
     """
     run_id = str(ctx.args.get("run_id") or "").strip()
-    if not run_id:
-        raise ValueError("abandon_run requires a 'run_id' arg")
-
-    rules = ctx.load_rules()
     state = ctx.open_state()
     try:
-        run_row = _verify_run_exists(state, run_id)
-        if run_row is None:
-            raise ValueError(
-                f"no run row found for run_id={run_id!r}; nothing to abandon"
-            )
+        # Auto-detect run_id from the current lock when not provided.
+        # This makes the task usable from Stash's Tasks UI, which doesn't
+        # pass custom args. Mirror the _run_force_release pattern.
+        if not run_id:
+            lock = state.current_lock()
+            if lock is None:
+                return {
+                    "mode": "abandon_run",
+                    "run_id": None,
+                    "status": "no-op",
+                    "message": "no lock held; nothing to abandon",
+                    "reconciliation": {
+                        "inspected": 0, "reconciled_applied": 0,
+                        "applied": 0, "conflicted": 0, "skipped": 0,
+                    },
+                    "lock_released": False,
+                }
+            run_id = str(lock["run_id"] or "").strip()
+            if not run_id:
+                return {
+                    "mode": "abandon_run",
+                    "run_id": None,
+                    "status": "no-op",
+                    "message": "lock row has no run_id; nothing to abandon",
+                    "reconciliation": {
+                        "inspected": 0, "reconciled_applied": 0,
+                        "applied": 0, "conflicted": 0, "skipped": 0,
+                    },
+                    "lock_released": False,
+                }
+
+        rules = ctx.load_rules()
+        # Reconcile pending mutations even when no runs row exists.
+        # A killed DryRebuild/Rebuild never wrote a runs row (only successful
+        # completion does), but it may have left pending mutations and a
+        # stale lock -- both worth cleaning up.
         reconciliation = _reconcile_run(state, run_id, ctx)
 
-        with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
-            state.connection.execute(
-                "UPDATE runs SET status = 'abandoned', "
-                "ended_at = COALESCE(ended_at, ?) WHERE run_id = ?",
-                (_now_iso(), run_id),
-            )
+        run_row = _verify_run_exists(state, run_id)
+        run_row_existed = run_row is not None
+        if run_row_existed:
+            with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
+                state.connection.execute(
+                    "UPDATE runs SET status = 'abandoned', "
+                    "ended_at = COALESCE(ended_at, ?) WHERE run_id = ?",
+                    (_now_iso(), run_id),
+                )
 
         lock_released = False
         if state.is_locked():
@@ -1353,12 +1536,12 @@ def _run_abandon_run(ctx: TaskContext) -> dict[str, Any]:
             "mode": "abandon_run",
             "run_id": run_id,
             "status": "abandoned",
+            "run_row_existed": run_row_existed,
             "reconciliation": reconciliation,
             "lock_released": lock_released,
         }
     finally:
         state.close()
-
 
 def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
     """Force-release the singleton run lock (D5/D17 escape hatch).
@@ -1404,9 +1587,7 @@ def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
                 reporter = ReportEngine(
                     state2, rules, ctx.plugin_dir, ctx.data_dir
                 )
-                reporter.configured_providers = _as_list(
-                    ctx.settings.get("enabled_providers")
-                )
+                reporter.configured_providers = _resolve_configured_providers(ctx)
                 dashboard = reporter.generate_dashboard(client=ctx.client)
                 reporter.write_snapshot("dashboard", dashboard)
             finally:
@@ -1445,6 +1626,9 @@ def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:
                 "could not acquire run lock (held or stale; "
                 "force-release first)"
             )
+        _record_run_start(state, run_id, "undo_cleanup", rules.rules_sha)
+        result: dict[str, Any] = {}
+        run_error: "str | None" = None
         try:
             strict = _as_bool(
                 ctx.args.get("strict"),
@@ -1457,18 +1641,25 @@ def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:
             report = undo_cleanup(
                 ctx.client, state, cleanup_run_id, run_id=run_id,
             )
+            result = {
+                "mode": "undo_cleanup",
+                "cleanup_run_id": cleanup_run_id,
+                "restored": list(report.restored),
+                "failed": list(report.failed),
+                "restored_count": int(report.restored_count),
+                "failed_count": int(report.failed_count),
+            }
+        except Exception as exc:
+            run_error = str(exc)
+            raise
         finally:
+            _record_run_end(
+                state, run_id,
+                status="failed" if run_error else "completed",
+                totals=result or None, error=run_error,
+            )
             state.release_lock(run_id)
             _log(f"released lock run_id={run_id}")
-        result: dict[str, Any] = {
-            "mode": "undo_cleanup",
-            "cleanup_run_id": cleanup_run_id,
-            "restored": list(report.restored),
-            "failed": list(report.failed),
-            "restored_count": int(report.restored_count),
-            "failed_count": int(report.failed_count),
-        }
-        _record_run(state, run_id, "undo_cleanup", rules.rules_sha, totals=result)
         _regenerate_snapshots(ctx, rules, state)
         return result
     finally:
@@ -1487,9 +1678,7 @@ def _run_report(ctx: TaskContext, mode: str) -> dict[str, Any]:
     state = ctx.open_state()
     try:
         reporter = ReportEngine(state, rules, ctx.plugin_dir, ctx.data_dir)
-        reporter.configured_providers = _as_list(
-            ctx.settings.get("enabled_providers")
-        )
+        reporter.configured_providers = _resolve_configured_providers(ctx)
         if mode == "dashboard":
             payload = reporter.generate_dashboard(client=ctx.client)
         elif mode == "unmapped_tags":

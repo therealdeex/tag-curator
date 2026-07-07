@@ -358,6 +358,70 @@ class TestDashboard:
         result = engine.generate_dashboard(client=BrokenClient())
         assert result["totals"]["total_scenes"] == 1
 
+    def test_dashboard_falls_back_to_dry_run_proposals(
+        self, engine: ReportEngine, state: StateDB, rules: Rules
+    ) -> None:
+        """When scene_state is empty and no client, total_scenes falls back
+        to the dry-run-inspected count so a completed dry run surfaces real
+        numbers even before any full rebuild."""
+        conn = state.connection
+        # NOTE: no scene_state rows, no client -- the situation after a
+        # dry run that errored or completed without a full rebuild.
+        now = "2026-07-06T22:59:00+00:00"
+        for sid in (10, 11, 12):
+            conn.execute(
+                "INSERT OR REPLACE INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+                " scene_state_fp, proposed_tag_names_json, "
+                " proposed_marker_names_json, provider_match_status, "
+                " raw_tags_json, created_at, expires_at, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("prop-dry", sid, rules.rules_sha, "fp-v1", None, "[]", "[]",
+                 "UNIQUE_MATCH", "[]", now, None, "proposed"),
+            )
+        conn.commit()
+
+        result = engine.generate_dashboard()  # no client
+        totals = result["totals"]
+        # Fallback: total_scenes derived from dry-run proposals.
+        assert totals["total_scenes"] == 3
+        assert totals["dry_run_inspected"] == 3
+
+    def test_dashboard_dry_run_inspected_picks_latest_proposal_set(
+        self, engine: ReportEngine, state: StateDB, rules: Rules
+    ) -> None:
+        """dry_run_inspected counts only the latest proposal set."""
+        conn = state.connection
+        old, new = "2026-07-06T10:00:00+00:00", "2026-07-06T22:00:00+00:00"
+        # Older proposal set: 2 scenes.
+        for sid in (1, 2):
+            conn.execute(
+                "INSERT OR REPLACE INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+                " scene_state_fp, proposed_tag_names_json, "
+                " proposed_marker_names_json, provider_match_status, "
+                " raw_tags_json, created_at, expires_at, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("prop-old", sid, rules.rules_sha, "fp-v1", None, "[]", "[]",
+                 "UNIQUE_MATCH", "[]", old, None, "proposed"),
+            )
+        # Latest proposal set: 5 scenes.
+        for sid in (10, 11, 12, 13, 14):
+            conn.execute(
+                "INSERT OR REPLACE INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+                " scene_state_fp, proposed_tag_names_json, "
+                " proposed_marker_names_json, provider_match_status, "
+                " raw_tags_json, created_at, expires_at, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("prop-new", sid, rules.rules_sha, "fp-v1", None, "[]", "[]",
+                 "UNIQUE_MATCH", "[]", new, None, "proposed"),
+            )
+        conn.commit()
+
+        result = engine.generate_dashboard()
+        assert result["totals"]["dry_run_inspected"] == 5
+
     def test_dashboard_last_successful_run(
         self, engine: ReportEngine, state: StateDB
     ) -> None:
@@ -414,6 +478,48 @@ class TestDashboard:
         # Ordered by attempted_at DESC -- err2 is later.
         assert errors[0]["error"] == "err2"
         assert errors[1]["error"] == "err1"
+
+    def test_dashboard_recent_errors_scoped_to_latest_run(
+        self, engine: ReportEngine, state: StateDB
+    ) -> None:
+        """Recent errors panel only shows rows from the latest run_id.
+
+        Regression: stale errors from killed/historical runs used to
+        linger forever once they entered the top-10. Now any new run (even
+        a fresh proposal run) scopes the panel to its own rows only.
+        """
+        conn = state.connection
+        # Old killed run -- these used to dominate the panel.
+        _insert_processing_attempt(
+            conn, 100, "prop-killed-run",
+            error_message="transient provider failure; preserved for retry",
+            attempted_at="2026-07-06T10:00:00+00:00",
+        )
+        _insert_processing_attempt(
+            conn, 101, "prop-killed-run",
+            error_message="transient provider failure; preserved for retry",
+            attempted_at="2026-07-06T10:00:01+00:00",
+        )
+        # Newer successful run -- 1 error of its own.
+        _insert_processing_attempt(
+            conn, 200, "prop-new-run",
+            error_message="new run error",
+            attempted_at="2026-07-06T20:00:00+00:00",
+        )
+
+        result = engine.generate_dashboard()
+        errors = result["recent_errors"]
+        # Only the latest run's rows are returned.
+        assert len(errors) == 1
+        assert errors[0]["run_id"] == "prop-new-run"
+        assert errors[0]["error"] == "new run error"
+
+    def test_dashboard_recent_errors_empty_when_no_attempts(
+        self, engine: ReportEngine
+    ) -> None:
+        """Empty processing_attempts -> empty recent_errors (not an error)."""
+        result = engine.generate_dashboard()
+        assert result["recent_errors"] == []
 
     def test_dashboard_configured_providers(
         self, engine: ReportEngine

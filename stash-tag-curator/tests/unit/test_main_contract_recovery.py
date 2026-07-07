@@ -19,10 +19,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+
+
 from curator.main import (
     TaskContext,
+    _resolve_configured_providers,
     _run_abandon_run,
     _run_force_release,
+    _run_rebuild_family,
     _run_resume_run,
     _run_undo_cleanup,
 )
@@ -164,6 +168,52 @@ class TestAbandonRun:
         assert result["lock_released"] is False
         assert state.is_locked() is True
 
+    def test_abandon_run_auto_detects_run_id_from_lock(self, tmp_ctx) -> None:
+        """No run_id arg -> auto-detect from current_lock (Tasks UI compat)."""
+        ctx, state, _ = tmp_ctx
+        state.acquire_lock("stale-lock-run", "rebuild", "sha-abc")
+        # Deliberately NO runs row -- simulates a killed DryRebuild.
+        # The auto-detect path must still work and skip the UPDATE.
+        del ctx.args["run_id"]
+        result = _run_abandon_run(ctx)
+        assert result["run_id"] == "stale-lock-run"
+        assert result["status"] == "abandoned"
+        assert result["run_row_existed"] is False
+        assert result["lock_released"] is True
+        assert state.is_locked() is False
+
+    def test_abandon_run_auto_detect_no_lock_returns_noop(self, tmp_ctx) -> None:
+        """No run_id arg AND no lock -> clear no-op (not an exception)."""
+        ctx, state, _ = tmp_ctx
+        del ctx.args["run_id"]
+        result = _run_abandon_run(ctx)
+        assert result["status"] == "no-op"
+        assert result["run_id"] is None
+        assert "nothing to abandon" in result["message"]
+
+    def test_abandon_run_handles_killed_run_with_no_runs_row(self, tmp_ctx) -> None:
+        """Explicit run_id but no runs row (killed run) -> reconcile + release, no UPDATE."""
+        ctx, state, _ = tmp_ctx
+        state.acquire_lock("killed-run", "rebuild", "sha-abc")
+        ctx.args["run_id"] = "killed-run"
+        result = _run_abandon_run(ctx)
+        assert result["run_id"] == "killed-run"
+        assert result["status"] == "abandoned"
+        assert result["run_row_existed"] is False
+        assert result["lock_released"] is True
+        assert state.is_locked() is False
+        ctx, state, _ = tmp_ctx
+        state.acquire_lock("other-run", "rebuild", "sha-abc")
+        state.connection.execute(
+            "INSERT INTO runs (run_id, operation, status, rules_sha, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("abandon-me", "rebuild", "interrupted", "sha-abc", "2026-01-01T00:00:00"),
+        )
+        ctx.args["run_id"] = "abandon-me"
+        result = _run_abandon_run(ctx)
+        assert result["lock_released"] is False
+        assert state.is_locked() is True
+
 
 class TestUndoCleanup:
     """D20: undo_cleanup restores deleted tags from the journal."""
@@ -249,3 +299,93 @@ class TestResumeRun:
             (run_id, 1),
         ).fetchone()
         assert row["status"] == "reconciled_applied"
+
+    def test_resume_run_auto_detect_no_lock_returns_noop(self, tmp_ctx) -> None:
+        """No run_id arg AND no lock -> clear no-op (not an exception).
+
+        This is the Stash Tasks UI invocation path: the manifest's
+        defaultArgs only passes ``task: ResumeRun`` -- no run_id. When no
+        run is interrupted (no lock held), the task must return cleanly
+        rather than raising ``resume_run requires a 'run_id' arg``.
+        """
+        ctx, state, _ = tmp_ctx
+        del ctx.args["run_id"]
+        result = _run_resume_run(ctx)
+        assert result["status"] == "no-op"
+        assert result["resumed_run_id"] is None
+        assert "nothing to resume" in result["message"]
+
+
+class TestResolveConfiguredProviders:
+    """Item 2: dashboard's ``configured_providers`` must reflect reality.
+
+    When the ``enabled_providers`` setting is empty (the default), the helper
+    falls back to live Stash discovery so the dashboard shows what Stash
+    actually has configured. When the setting is set, it wins.
+    """
+
+    def test_explicit_setting_wins_over_discovery(self, tmp_ctx) -> None:
+        ctx, _, _ = tmp_ctx
+        ctx.settings["enabled_providers"] = "mybox,other"
+        result = _resolve_configured_providers(ctx)
+        assert result == ["mybox", "other"]
+
+    def test_empty_setting_falls_back_to_discovery(self, tmp_ctx) -> None:
+        """Stub client's GetConfigurationStashBoxes returns one endpoint named StashDB."""
+        ctx, _, _ = tmp_ctx
+        # No setting -> discovery path.
+        result = _resolve_configured_providers(ctx)
+        assert result == ["StashDB"]
+
+    def test_blank_setting_falls_back_to_discovery(self, tmp_ctx) -> None:
+        ctx, _, _ = tmp_ctx
+        ctx.settings["enabled_providers"] = "   "
+        result = _resolve_configured_providers(ctx)
+        assert result == ["StashDB"]
+
+    def test_discovery_failure_returns_empty_no_raise(self, tmp_ctx) -> None:
+        ctx, _, client = tmp_ctx
+        # Force discovery to raise.
+        client.responses["GetConfigurationStashBoxes"] = RuntimeError("boom")
+        result = _resolve_configured_providers(ctx)
+        assert result == []
+
+
+class TestRunLifecycleRecording:
+    """A failed rebuild-family run still writes a ``runs`` row (status=failed).
+
+    Previously ``_record_run`` sat inside the ``try`` block AFTER the
+    ``run_dry`` call that raises, so every failure left an empty ``runs``
+    table and a dashboard with ``last_successful_run: null``.  The run-lifecycle
+    start/end pattern now records up-front and updates the terminal status in
+    ``finally``.
+    """
+
+    def test_failed_dry_rebuild_records_failed_run_row(self, tmp_ctx) -> None:
+        ctx, state, client = tmp_ctx
+        # A failing find_scenes simulates an auth/network failure during
+        # run_dry's scene streaming.  This propagates out of the try block
+        # (unlike the swallowed findTags pre-pass).
+        from curator.graphql_client import GraphQLAuthError
+
+        auth_err = GraphQLAuthError(
+            "Stash rejected authentication (HTTP 401); api_key configured: False",
+            http_status=401,
+        )
+
+        def _failing_find_scenes(*a, **k):
+            raise auth_err
+
+        client.find_scenes = _failing_find_scenes  # type: ignore[assignment]
+        ctx.args["task"] = "DryRebuild"
+        with pytest.raises(GraphQLAuthError):
+            _run_rebuild_family(ctx, "dry_rebuild")
+        # The run row must exist with status='failed' (not missing).
+        row = state.connection.execute(
+            "SELECT status, error_message FROM runs "
+            "WHERE operation = 'dry_rebuild' ORDER BY started_at DESC LIMIT 1",
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "failed"
+        assert row["error_message"] is not None
+        assert "401" in row["error_message"]

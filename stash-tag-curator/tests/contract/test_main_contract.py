@@ -28,6 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
+from curator.graphql_client import GraphQLAuthError
 from curator.main import (
     Preflight,
     TaskContext,
@@ -491,6 +492,26 @@ class TestPreflightMode:
         dd_check = [c for c in result["checks"] if c["name"] == "data_dir_writable"][0]
         assert dd_check["status"] == "pass"
         assert (tmp_path / "curator-data").exists()
+
+    def test_preflight_auth_failure_surfaces_clear_message(
+        self, tmp_path: Path,
+    ) -> None:
+        """A 401 in preflight must produce an actionable auth failure, not
+        a buried 'version query failed' -- the operator should be told to set
+        the Stash API Key plugin setting."""
+        client = _StubClient(
+            responses={
+                "GetAppVersion": GraphQLAuthError(
+                    "Stash rejected authentication (HTTP 401)",
+                    http_status=401,
+                ),
+            }
+        )
+        preflight = Preflight(client, tmp_path, strict=False)
+        result = preflight.run()
+        auth_check = [c for c in result["checks"] if c["name"] == "stash_auth"][0]
+        assert auth_check["status"] == "fail"
+        assert "API Key" in auth_check["message"]
 
 
 class TestReportModes:

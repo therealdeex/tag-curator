@@ -58,6 +58,7 @@ from curator.processing import (
     SCOPE_ALL,
     SCOPE_ENRICH_ONLY,
     SCOPE_FAILED,
+    SCOPE_LOCAL_AUDIT,
     SCOPE_NEVER_PROCESSED,
     SCOPE_STALE_RULES,
     Scope,
@@ -491,6 +492,7 @@ class TestConstantsAndSmoke:
     def test_all_scopes_includes_every_selector(self) -> None:
         assert set(ALL_SCOPES) == {
             SCOPE_ALL, SCOPE_NEVER_PROCESSED, SCOPE_ENRICH_ONLY,
+            SCOPE_LOCAL_AUDIT,
             SCOPE_AFFECTED_BY_MAPPING, SCOPE_STALE_RULES, SCOPE_FAILED,
         }
 
@@ -894,6 +896,90 @@ class TestEnrichOnlyScope:
         # No GetConfigurationStashBoxes either (enrich_only short-circuit).
         config_calls = [c for c in client.calls if "GetConfigurationStashBoxes" in c["query"]]
         assert config_calls == []
+
+
+# ---------------------------------------------------------------------------
+# local_audit scope (no-network re-map of existing tags)
+# ---------------------------------------------------------------------------
+
+
+class TestLocalAuditScope:
+    """local_audit re-maps the scene's existing tags through the rules with
+    no network call.  Fast inner-loop dry run."""
+
+    def test_local_audit_does_not_call_scrape_or_config(
+        self, state: StateDB,
+    ) -> None:
+        scene = _minimal_scene(
+            1,
+            tags=[("1", "Big Tits")],
+            performers=[_performer("p001", height_cm=165, weight=55)],
+        )
+        client = StatefulScenesClient([scene])
+        rules = _build_rules(mappings={
+            "big tits": {"disposition": "map", "outputs": ["BODY: Big Tits"]},
+        })
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "tag_name_to_id": {**MARKER_IDS, "BODY: Big Tits": "500"},
+        })
+        dry = engine.run_dry(
+            SCOPE_LOCAL_AUDIT, proposed_run_id="prop-la", run_id="run-la",
+        )
+        assert dry.proposals_written == 1
+        scrape_calls = [c for c in client.calls if "ScrapeMultiScenes" in c["query"]]
+        assert scrape_calls == []
+        config_calls = [c for c in client.calls if "GetConfigurationStashBoxes" in c["query"]]
+        assert config_calls == []
+
+    def test_local_audit_remaps_existing_tags_through_rules(
+        self, state: StateDB,
+    ) -> None:
+        # Scene already carries a raw tag that the rules map to a canonical.
+        scene = _minimal_scene(
+            2,
+            tags=[("10", "Big Tits")],
+            performers=[],
+        )
+        client = StatefulScenesClient([scene])
+        rules = _build_rules(mappings={
+            "big tits": {"disposition": "map", "outputs": ["BODY: Big Tits"]},
+        })
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "tag_name_to_id": {**MARKER_IDS, "BODY: Big Tits": "500"},
+        })
+        engine.run_dry(
+            SCOPE_LOCAL_AUDIT, proposed_run_id="prop-la2", run_id="run-la2",
+        )
+        row = state.connection.execute(
+            "SELECT proposed_tag_names_json, raw_tags_json "
+            "FROM dry_run_proposals WHERE scene_id = 2",
+        ).fetchone()
+        import json as _json
+        proposed = _json.loads(row[0])
+        raw_tags = _json.loads(row[1])
+        # The existing raw tag was re-mapped to the canonical output.
+        assert "BODY: Big Tits" in proposed
+        assert any("Big Tits" in str(t) for t in raw_tags)
+
+    def test_local_audit_surfaced_unmapped_raw_tag(
+        self, state: StateDB,
+    ) -> None:
+        # Scene carries a raw tag the rules have no mapping for.
+        scene = _minimal_scene(
+            3,
+            tags=[("20", "Some Weird Studio Tag")],
+            performers=[],
+        )
+        client = StatefulScenesClient([scene])
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS},
+        })
+        dry = engine.run_dry(
+            SCOPE_LOCAL_AUDIT, proposed_run_id="prop-la3", run_id="run-la3",
+        )
+        assert dry.proposals_written == 1
+        assert "Some Weird Studio Tag" in dry.unmapped_tags
+
 
 
 # ---------------------------------------------------------------------------

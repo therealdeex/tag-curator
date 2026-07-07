@@ -74,6 +74,7 @@ from .providers import (
     UNIQUE_MATCH,
     ProviderLookup,
     ProviderResult,
+    RawTag,
 )
 from .rules import (
     DISPOSITION_DEFER,
@@ -136,16 +137,20 @@ CURATOR_MARKERS: tuple[str, ...] = (
 SCOPE_ALL = "all"
 SCOPE_NEVER_PROCESSED = "never_processed"
 SCOPE_ENRICH_ONLY = "enrich_only"
+SCOPE_LOCAL_AUDIT = "local_audit"
 SCOPE_AFFECTED_BY_MAPPING = "affected_by_mapping"
 SCOPE_STALE_RULES = "stale_rules"
 SCOPE_FAILED = "failed"
 
 #: Every recognised scope selector.  ``SCOPE_ENRICH_ONLY`` skips scrape and
 #: reads ``scene_raw_tags_current`` instead (FR3 standalone enrichment).
+#: ``SCOPE_LOCAL_AUDIT`` re-maps the scene's *existing* tags through the rules
+#: with no network call -- a fast inner-loop dry run.
 ALL_SCOPES: tuple[str, ...] = (
     SCOPE_ALL,
     SCOPE_NEVER_PROCESSED,
     SCOPE_ENRICH_ONLY,
+    SCOPE_LOCAL_AUDIT,
     SCOPE_AFFECTED_BY_MAPPING,
     SCOPE_STALE_RULES,
     SCOPE_FAILED,
@@ -275,6 +280,8 @@ class Scope:
     Fields:
         name: one of :data:`ALL_SCOPES`.
         enrich_only: True for ``enrich_only`` (skip scrape).
+        local_audit: True for ``local_audit`` (re-map the scene's existing
+            tags through the rules with no network call).
         target_scene_ids: optional explicit scene-id list (for state-driven
             scopes -- ``affected_by_mapping`` / ``stale_rules`` / ``failed``).
             When ``None`` the engine streams every scene from Stash.
@@ -285,6 +292,7 @@ class Scope:
         name: str,
         *,
         enrich_only: bool = False,
+        local_audit: bool = False,
         target_scene_ids: Sequence[int | str] | None = None,
     ) -> None:
         if name not in ALL_SCOPES:
@@ -296,6 +304,9 @@ class Scope:
         # Callers may also explicitly pass enrich_only=True with any other
         # scope name.
         self.enrich_only = enrich_only or (name == SCOPE_ENRICH_ONLY)
+        # SCOPE_LOCAL_AUDIT implies local_audit=True (no network: re-map the
+        # scene's existing tags through the rules).
+        self.local_audit = local_audit or (name == SCOPE_LOCAL_AUDIT)
         self.target_scene_ids: list[str] | None = (
             [str(sid) for sid in target_scene_ids] if target_scene_ids else None
         )
@@ -612,6 +623,34 @@ class RebuildEngine:
         self, batch: Sequence[Mapping[str, Any]], scope: Scope
     ) -> dict[str, ProviderResult]:
         """Run provider lookup for a batch (or fabricate from current tags)."""
+        if scope.local_audit:
+            # Local-audit dry run (no network): treat the scene's EXISTING
+            # tag names as the provider result's ``raw_tags``.  This routes
+            # the scene's current tags back through the mapping pipeline
+            # (_map_raw_tags) so the proposal reflects "what would change if
+            # I re-applied my rules to my existing tags?" -- with zero
+            # ``scrapeMultiScenes`` calls.  Fast inner-loop dry run.
+            out: dict[str, ProviderResult] = {}
+            for s in batch:
+                if not isinstance(s, Mapping) or s.get("id") is None:
+                    continue
+                tags = s.get("tags") or []
+                if not isinstance(tags, list):
+                    tags = []
+                raw_tags = tuple(
+                    RawTag(
+                        value=str(t.get("name") or "").strip(),
+                        provider="local",
+                        provider_scene_id=str(s.get("id")),
+                    )
+                    for t in tags
+                    if isinstance(t, Mapping)
+                    and str(t.get("name") or "").strip()
+                )
+                out[str(s.get("id"))] = ProviderResult(
+                    status=UNIQUE_MATCH, raw_tags=raw_tags, per_provider={}
+                )
+            return out
         if scope.enrich_only:
             # FR3 standalone enrichment: no scrape.  We synthesise a
             # ``UNIQUE_MATCH``-shaped result whose raw_tags are empty -- the
