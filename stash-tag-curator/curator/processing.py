@@ -989,6 +989,24 @@ class RebuildEngine:
             return
         self._progress_fn(done / total)
 
+    def _emit_progress_scaled(
+        self, done: int, total: int, *, floor: float, cap: float
+    ) -> None:
+        """Emit progress scaled into the ``[floor, cap]`` sub-range.
+
+        Used when a run spans multiple phases (dry + execute): each phase
+        owns a sub-range of the 0.0–1.0 bar so Stash's UI shows continuous
+        progress instead of hitting 100% at the phase boundary and then
+        sitting there while the next phase grinds.  ``floor`` is the
+        fraction to emit at 0% of this phase; ``cap`` is the fraction at
+        100% of this phase.
+        """
+        if total <= 0:
+            self._progress_fn(floor)
+            return
+        frac = max(0.0, min(1.0, done / total))
+        self._progress_fn(floor + frac * (cap - floor))
+
     def _heartbeat(self, run_id: str) -> None:
         try:
             self._state.heartbeat(run_id)
@@ -1190,6 +1208,7 @@ class RebuildEngine:
         *,
         proposed_run_id: str | None = None,
         run_id: str | None = None,
+        progress_cap: float = 1.0,
     ) -> DryRunReport:
         """Write ``dry_run_proposals`` rows for every scene in scope.
 
@@ -1228,30 +1247,32 @@ class RebuildEngine:
         # up-front target list, so the denominator grows as we stream).
         seen_count = 0
         total_hint = self._estimate_scene_count(scope_obj)
-        self._emit_progress(0, max(1, total_hint))
+        denom = max(seen_count, total_hint, 1)
+        self._emit_progress_scaled(0, denom, floor=0.0, cap=progress_cap)
 
         batch: list[dict[str, Any]] = []
         for scene in self._iter_scenes(scope_obj):
             if not isinstance(scene, Mapping):
                 continue
             seen_count += 1
+            denom = max(seen_count, total_hint, 1)
             if not self._should_process_scene(scene, scope_obj):
-                self._emit_progress(seen_count, max(seen_count, total_hint, 1))
+                self._emit_progress_scaled(seen_count, denom, floor=0.0, cap=progress_cap)
                 continue
             batch.append(dict(scene))
             if len(batch) >= self._batch_size:
                 self._dry_run_batch(batch, scope_obj, proposed_id, report)
                 self._heartbeat(tracking_run_id)
-                self._emit_progress(seen_count, max(seen_count, total_hint, 1))
+                self._emit_progress_scaled(seen_count, denom, floor=0.0, cap=progress_cap)
                 batch = []
         if batch:
             self._dry_run_batch(batch, scope_obj, proposed_id, report)
-            self._emit_progress(seen_count, max(seen_count, total_hint, 1))
+            self._emit_progress_scaled(seen_count, max(seen_count, total_hint, 1), floor=0.0, cap=progress_cap)
 
-        # ``total`` may be 0 when the scope streams nothing (e.g. an empty
-        # state-driven scope); emit 1.0 unconditionally so consumers see a
-        # completed run.
-        self._emit_progress(1, 1)
+        # Emit the phase's cap so consumers see the dry phase as complete.
+        # When this is part of a dry+execute run, cap < 1.0 leaves room for
+        # the execute phase so the bar doesn't sit at 100% during execution.
+        self._progress_fn(progress_cap)
         return report
 
     def _dry_run_batch(
@@ -1329,9 +1350,32 @@ class RebuildEngine:
                     report.unmapped_tags.append(tag)
 
     def _estimate_scene_count(self, scope: Scope) -> int:
-        """Best-effort total count for progress (0 when unknown)."""
+        """Best-effort total count for progress (0 when unknown).
+
+        For state-driven scopes the target-scene-id list is known exactly.
+        For whole-library scopes (``all`` / ``never_processed`` /
+        ``enrich_only``) there is no up-front id list, so we issue a
+        single ``findScenes(per_page=1)`` call to read Stash's reported
+        ``count`` -- this is one cheap HTTP round-trip that keeps the
+        progress bar accurate instead of jumping to 100% on scene #1.
+        Returns ``0`` on any failure (the caller's ``max(..., 1)`` guard
+        keeps progress math safe).
+        """
         if scope.target_scene_ids:
             return len(scope.target_scene_ids)
+        # Whole-library stream: ask Stash for the total count once.
+        try:
+            from .graphql_queries import FIND_SCENES_PAGE
+
+            data = self._client.submit(
+                FIND_SCENES_PAGE,
+                {"filter": {"page": 1, "per_page": 1}},
+            )
+            count = (data or {}).get("findScenes", {}).get("count")
+            if isinstance(count, (int, float)) and not isinstance(count, bool):
+                return int(count)
+        except Exception:
+            pass  # best-effort; progress falls back to seen_count growth
         return 0
 
     def _resolve_state_driven_scope(self, scope: Scope) -> Scope:
@@ -1367,6 +1411,8 @@ class RebuildEngine:
         proposed_run_id: str,
         *,
         run_id: str | None = None,
+        progress_floor: float = 0.0,
+        progress_cap: float = 1.0,
     ) -> ExecuteReport:
         """Revalidate a dry-run proposal set and apply it (D10/D16).
 
@@ -1421,7 +1467,7 @@ class RebuildEngine:
 
         total = len(proposals)
         done = 0
-        self._emit_progress(0, total)
+        self._emit_progress_scaled(0, max(total, 1), floor=progress_floor, cap=progress_cap)
         self._heartbeat(actual_run_id)
 
         # Batch the findScenes lookups so we honour the per-scene fresh-fetch
@@ -1441,7 +1487,7 @@ class RebuildEngine:
         now_dt = datetime.now(timezone.utc)
         for proposal in proposals:
             done += 1
-            self._emit_progress(done, total)
+            self._emit_progress_scaled(done, total, floor=progress_floor, cap=progress_cap)
             sid_str = str(proposal["scene_id"])
             sid = int(proposal["scene_id"])
             scene = scene_index.get(sid_str)
@@ -1586,7 +1632,7 @@ class RebuildEngine:
                 applied_by_run_id=actual_run_id,
             )
 
-        self._emit_progress(1, 1)
+        self._progress_fn(progress_cap)
         return report
 
     def _load_proposals(self, proposed_run_id: str) -> list[dict[str, Any]]:

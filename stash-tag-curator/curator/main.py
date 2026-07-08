@@ -1204,7 +1204,12 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
             )
 
             scope = Scope(scope_name)
-            dry_report = engine.run_dry(scope, run_id=run_id)
+            # When a full dry+execute run follows, split the progress bar:
+            # dry phase spans 0.0–0.5, execute phase spans 0.5–1.0.  This
+            # prevents the bar from sitting at 100% during the (slow) execute
+            # phase after the dry phase completes.
+            dry_cap = 0.5 if not dry_run else 1.0
+            dry_report = engine.run_dry(scope, run_id=run_id, progress_cap=dry_cap)
             result = {
                 "mode": mode,
                 "scope": scope_name,
@@ -1213,6 +1218,7 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
             if not dry_run:
                 exec_report = engine.run_execute(
                     dry_report.proposed_run_id, run_id=run_id,
+                    progress_floor=0.5, progress_cap=1.0,
                 )
                 result["execute"] = exec_report.to_dict()
         except Exception as exc:

@@ -1350,6 +1350,59 @@ class TestProgressProtocol:
         # Every value is in the unit range.
         assert all(0.0 <= p <= 1.0 for p in progress)
 
+    def test_dry_run_progress_never_jumps_to_100_early(self, state: StateDB) -> None:
+        """With an accurate scene count, the bar must not hit 1.0 until the
+        dry phase is actually done.  Before the fix, SCOPE_ALL returned a
+        total_hint of 0, so seen_count/seen_count = 1.0 on scene #1."""
+        scenes = [
+            _minimal_scene(i, performers=[_performer(f"p{i:03d}")])
+            for i in range(1, 11)
+        ]
+        client = StatefulScenesClient(scenes)
+        engine, progress = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS},
+            "batch_size": 3,
+        })
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        # The first non-zero progress must be well below 1.0 (10 scenes,
+        # batch of 3 -> first batch emits ~3/10 = 0.3).
+        non_zero = [p for p in progress if p > 0.0]
+        assert non_zero, "expected some progress > 0"
+        assert non_zero[0] < 0.99, (
+            f"progress jumped to {non_zero[0]} too early (100%-stuck bug); "
+            f"full log: {progress}"
+        )
+
+    def test_dry_plus_execute_splits_progress_across_phases(self, state: StateDB) -> None:
+        """A full rebuild (dry + execute) must reserve the 0.5–1.0 range for
+        the execute phase so the bar doesn't sit at 100% during execution."""
+        scene = _minimal_scene(
+            1, performers=[_performer("p001")], tags=[("100", "Blowjob")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob"], remote_site_id="x")]],
+            },
+        )
+        engine, progress = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS, "ACT: Blowjob": "200"},
+        })
+        # Dry phase capped at 0.5; execute phase spans 0.5->1.0.
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1",
+                       progress_cap=0.5)
+        dry_max = max(progress)
+        assert dry_max <= 0.5 + 1e-9, (
+            f"dry phase exceeded its 0.5 cap: max={dry_max}, log={progress}"
+        )
+        progress.clear()
+        engine.run_execute("prop-1", run_id="run-1",
+                           progress_floor=0.5, progress_cap=1.0)
+        # Execute phase starts at 0.5 and reaches 1.0.
+        assert progress[0] >= 0.5 - 1e-9
+        assert progress[-1] == 1.0
+        assert all(0.5 - 1e-9 <= p <= 1.0 + 1e-9 for p in progress)
+
 
 # ---------------------------------------------------------------------------
 # Optimistic-safety journal writes (D10)
