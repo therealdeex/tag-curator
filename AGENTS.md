@@ -169,11 +169,15 @@ Replace `"Preflight"` with: `DryRebuild`, `RulesAudit`, `Dashboard`, `UnmappedTa
 ### Known issues
 - Every .yml in the plugin tree gets parsed by Stash as a plugin manifest — keep rules/config files as .yaml
 - The manifest must NOT contain an `id:` field (Stash rejects it)
-- Force Release task needs a run_id arg that the manifest doesn't pass — bug to fix
+- Force Release auto-detects `run_id` from the held lock when not passed (works from Stash Tasks UI, which sends no args); the UI's active-job banner and run-history recovery action both pass `run_id` explicitly. No bug here — fixed in commit `91775d9`.
 - Stash logs plugin stderr as "error" level regardless of content — check actual output before assuming failure
 
 ### Lock recovery
-If a run was killed and left a stale lock:
+Mutation tasks (DryRebuild, Rebuild, ResumeRun, UndoCleanup, cleanup) auto-reclaim a stale lock: if the held lock's heartbeat is older than 90s (`STALE_LOCK_THRESHOLD_SECONDS` in `state.py`), the next mutation run force-releases it (audited) and reconciles the orphaned `runs` row to `status='interrupted'`, then proceeds. A *live* lock (fresh heartbeat) is never touched. This recovers from Stash's Stop Job (SIGKILL), which bypasses the `finally` that normally releases the lock.
+
+The `ForceRelease` task remains available as a manual override (e.g. to release a live-but-wedged lock). It auto-detects `run_id` from the held lock when no arg is passed.
+
+Manual last-resort (bypasses auditing — prefer ForceRelease):
 
 ```bash
 sqlite3 /home/shahram/dev/tag-ops/stash-tag-curator/stash-tag-curator-data/state/curator.db \

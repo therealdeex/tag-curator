@@ -28,10 +28,15 @@ can run without importing production code):
 * ``tag_deletions``           -- tag-deletion journal for orphan cleanup (D20)
 
 Concurrency model (D5): the lock is a single SQLite row guarded by
-``BEGIN IMMEDIATE`` + primary-key conflict.  Acquisition succeeds ONLY when no
-row exists; stale rows are detected by a separate read query and are NEVER
-auto-cleared -- the only deletion path is :meth:`StateDB.force_release` (audited)
-or :meth:`StateDB.release_lock` (clean exit ``finally``).
+``BEGIN IMMEDIATE`` + primary-key conflict.  Strict acquisition
+(:meth:`StateDB.acquire_lock`) succeeds ONLY when no row exists and never
+auto-clears -- the only deletion paths it recognizes are :meth:`force_release`
+(audited) and :meth:`release_lock` (clean-exit ``finally``).  Mutation handlers
+use :meth:`acquire_lock_or_reclaim` instead, which additionally auto-reclaims a
+lock whose heartbeat exceeds :data:`STALE_LOCK_THRESHOLD_SECONDS` (a SIGKILL'd
+process can't run its ``finally``); the reclaim reuses the audited
+``force_release`` path and reconciles the orphaned ``runs`` row to
+``status='interrupted'``.  A live (fresh-heartbeat) lock is never touched.
 """
 
 from __future__ import annotations
@@ -41,9 +46,10 @@ import os
 import socket
 import sqlite3
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-__all__ = ["StateDB", "SCHEMA_VERSION"]
+__all__ = ["StateDB", "SCHEMA_VERSION", "AcquireResult"]
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +59,14 @@ __all__ = ["StateDB", "SCHEMA_VERSION"]
 #: Bumped on every schema change.  Migrations chain from ``PRAGMA user_version``
 #: up to this value (see :meth:`StateDB._migrate`).
 SCHEMA_VERSION = 1
+
+#: Heartbeat staleness threshold (seconds) beyond which a held run lock is
+#: considered reclaimable.  The heartbeat thread refreshes every 15s
+#: (``_HEARTBEAT_INTERVAL`` in main.py), so a live run's heartbeat is at most
+#: ~15s old; 90s gives 6x headroom.  Used by :meth:`StateDB.acquire_lock_or_reclaim`
+#: to auto-clear locks left behind by a SIGKILL'd process (Stash Stop Job),
+#: which bypasses the ``finally`` that normally calls ``release_lock``.
+STALE_LOCK_THRESHOLD_SECONDS: float = 90.0
 
 #: Full schema DDL.  Every statement is ``CREATE ... IF NOT EXISTS`` so the
 #: migration is idempotent.  This block is the authoritative definition; the
@@ -305,6 +319,21 @@ def _to_timedelta(threshold: "timedelta | int | float") -> timedelta:
     )
 
 
+@dataclass(frozen=True)
+class AcquireResult:
+    """Outcome of :meth:`StateDB.acquire_lock_or_reclaim`.
+
+    ``acquired`` is ``True`` when the caller now holds the singleton lock --
+    either via a clean acquire (``reclaimed_run_id is None``) or by reclaiming
+    a stale lock left behind by a killed process (``reclaimed_run_id`` is the
+    prior holder's run_id, for operator logging).  ``acquired`` is ``False``
+    when a genuinely live (non-stale) lock is held by another run.
+    """
+
+    acquired: bool
+    reclaimed_run_id: "str | None" = None
+
+
 # ---------------------------------------------------------------------------
 # StateDB
 # ---------------------------------------------------------------------------
@@ -509,6 +538,174 @@ class StateDB:
             # (another writer is mid-transaction).
             return False
         return True
+
+    # ------------------------------------------------------------------ #
+    # Auto-reclaim path (SIGKILL recovery)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _pid_is_dead(pid: "int | None", host: "str | None") -> bool:
+        """Best-effort check that ``pid`` is no longer running on ``host``.
+
+        Returns ``True`` only when both hold: ``host`` matches the current host
+        AND ``pid`` is non-positive or not alive (``os.kill(pid, 0)`` raises).
+        Returns ``False`` (inconclusive) on any mismatch or error -- a
+        cross-host lock can't be probed, and we never raise from here.
+        """
+        if not pid:
+            return False
+        if host and host != _hostname():
+            return False
+        try:
+            os.kill(int(pid), 0)  # signal 0 = liveness check, no signal sent
+            return False  # process is alive
+        except ProcessLookupError:
+            return True  # no such pid -> definitely stale
+        except (OSError, ValueError, TypeError):
+            return False  # permission error / bad pid -> inconclusive
+
+    def _lock_is_stale(
+        self, row: "sqlite3.Row | None",
+        threshold: "timedelta | int | float" = STALE_LOCK_THRESHOLD_SECONDS,
+    ) -> bool:
+        """Return ``True`` if a held ``run_lock`` row is reclaimable.
+
+        A lock is stale when its ``heartbeat_ts`` exceeds ``threshold`` (the
+        authoritative signal: the heartbeat thread refreshes every 15s, so a
+        live run can never trip a 90s threshold).  A corroborating PID-dead
+        check (:meth:`_pid_is_dead`) is consulted but is NOT required -- it
+        can't run across hosts.  Never raises; an unparseable or missing
+        heartbeat is treated as stale (matching :meth:`detect_stale_lock`).
+        """
+        if row is None:
+            return False
+        hb = row["heartbeat_ts"] if "heartbeat_ts" in row.keys() else None
+        if not hb:
+            # No heartbeat ever recorded -> definitionally stale (the process
+            # never got far enough to start the heartbeat thread).
+            return True
+        try:
+            hb_dt = datetime.fromisoformat(hb)
+        except ValueError:
+            # Unparseable heartbeat -- treat as stale so the operator can
+            # intervene rather than silently trusting corrupt data.
+            return True
+        if hb_dt.tzinfo is None:
+            hb_dt = hb_dt.replace(tzinfo=timezone.utc)
+        delta = _to_timedelta(threshold)
+        if datetime.now(timezone.utc) - hb_dt <= delta:
+            return False  # heartbeat is fresh -> a live run holds it
+        # Heartbeat is stale.  PID liveness is corroborating only: a confirmed
+        # dead PID obviously reclaims; an inconclusive PID check still reclaims
+        # because the heartbeat (the authoritative signal) already tripped.
+        return True
+
+    def acquire_lock_or_reclaim(
+        self,
+        run_id: str,
+        operation: str,
+        rules_sha: str,
+        *,
+        rules_version: "str | None" = None,
+        threshold: "timedelta | int | float" = STALE_LOCK_THRESHOLD_SECONDS,
+    ) -> AcquireResult:
+        """Acquire the singleton lock, auto-reclaiming a stale one if held.
+
+        Like :meth:`acquire_lock` (same race-free ``BEGIN IMMEDIATE`` + PK
+        insert) but, on encountering an existing lock row, checks staleness:
+        a stale lock (heartbeat beyond ``threshold``) is force-released
+        (audited, same path as :meth:`force_release`) and its orphaned
+        ``runs`` row reconciled to ``status='interrupted'``, then the new
+        lock is acquired.  A fresh (live) lock is left untouched and
+        ``AcquireResult(acquired=False)`` is returned.
+
+        This is the recovery path for runs killed by Stash's Stop Job
+        (SIGKILL), which bypasses the ``finally`` that calls
+        :meth:`release_lock`.  Without it, every subsequent run fails
+        instantly with "could not acquire run lock" until an operator
+        manually runs ForceRelease.
+
+        Returns ``AcquireResult(acquired=True, reclaimed_run_id=<old>)``
+        on reclaim, ``AcquireResult(acquired=True)`` on clean acquire, or
+        ``AcquireResult(acquired=False)`` if a live lock is held.
+        """
+        # Fast path: clean acquire (the common case).
+        try:
+            with self._txn(immediate=True):
+                self._conn.execute(
+                    "INSERT INTO run_lock "
+                    "(lock_id, run_id, operation, pid, host, started_at, "
+                    " heartbeat_ts, rules_sha, rules_version, acquired_at) "
+                    "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, operation, os.getpid(), _hostname(),
+                     _now_iso(), _now_iso(), rules_sha, rules_version, _now_iso()),
+                )
+        except sqlite3.IntegrityError:
+            pass  # a row exists -> fall through to stale-check below
+        except sqlite3.OperationalError:
+            return AcquireResult(acquired=False)
+        else:
+            return AcquireResult(acquired=True)
+
+        # Slow path: a lock row exists.  Decide stale vs. live.
+        held = self.current_lock()
+        if held is None:
+            # Race: the holder released between our failed INSERT and this
+            # read.  Retry the acquire once.
+            try:
+                with self._txn(immediate=True):
+                    self._conn.execute(
+                        "INSERT INTO run_lock "
+                        "(lock_id, run_id, operation, pid, host, started_at, "
+                        " heartbeat_ts, rules_sha, rules_version, acquired_at) "
+                        "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (run_id, operation, os.getpid(), _hostname(),
+                         _now_iso(), _now_iso(), rules_sha, rules_version, _now_iso()),
+                    )
+            except (sqlite3.IntegrityError, sqlite3.OperationalError):
+                return AcquireResult(acquired=False)
+            return AcquireResult(acquired=True)
+
+        if not self._lock_is_stale(held, threshold):
+            # A live run holds the lock -- do not touch it.
+            return AcquireResult(acquired=False)
+
+        old_run_id = str(held["run_id"]) if held["run_id"] is not None else None
+        # Audited release (writes forced_release_audit + DELETE in one txn).
+        if old_run_id and not self.force_release(old_run_id):
+            # Token mismatch / concurrent release -- bail safely.
+            return AcquireResult(acquired=False)
+        # Reconcile the orphaned `runs` row (mirrors _run_force_release in
+        # main.py): only non-terminal rows are touched, so an already-ended
+        # run isn't clobbered.  A killed pre-`_record_run_start` run may have
+        # no runs row at all -- the UPDATE then affects 0 rows, which is fine.
+        if old_run_id:
+            with self._txn():
+                self._conn.execute(
+                    "UPDATE runs "
+                    "SET status = 'interrupted', "
+                    "    ended_at = COALESCE(ended_at, ?), "
+                    "    error_message = COALESCE(error_message, ?) "
+                    "WHERE run_id = ? AND status NOT IN "
+                    "    ('completed', 'failed', 'abandoned', 'interrupted')",
+                    (_now_iso(),
+                     "auto-reclaimed (run was killed / stale)", old_run_id),
+                )
+        # Acquire the lock for the new run.
+        try:
+            with self._txn(immediate=True):
+                self._conn.execute(
+                    "INSERT INTO run_lock "
+                    "(lock_id, run_id, operation, pid, host, started_at, "
+                    " heartbeat_ts, rules_sha, rules_version, acquired_at) "
+                    "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, operation, os.getpid(), _hostname(),
+                     _now_iso(), _now_iso(), rules_sha, rules_version, _now_iso()),
+                )
+        except (sqlite3.IntegrityError, sqlite3.OperationalError):
+            # Lost a race with a concurrent acquirer; let the caller retry.
+            return AcquireResult(acquired=False, reclaimed_run_id=old_run_id)
+        return AcquireResult(acquired=True, reclaimed_run_id=old_run_id)
 
     def heartbeat(self, run_id: str) -> bool:
         """Refresh ``heartbeat_ts`` for the lock held by ``run_id``.

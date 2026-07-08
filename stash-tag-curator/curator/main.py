@@ -79,7 +79,7 @@ from curator.rollback import (  # noqa: E402
     RollbackEngine,
 )
 from curator.rules import Rules, RulesValidationError  # noqa: E402
-from curator.state import StateDB  # noqa: E402
+from curator.state import AcquireResult, StateDB  # noqa: E402
 from curator.enrichment import CAST_EMIT_ORDER  # noqa: E402
 from curator.enrichment import _GENDER_DISPLAY_WORDS  # noqa: E402, SLF001
 
@@ -978,20 +978,69 @@ def _record_run_end(
         )
 
 
+def _acquire_run_lock(
+    state: StateDB,
+    run_id: str,
+    operation: str,
+    rules_sha: str,
+) -> None:
+    """Acquire the singleton run lock, auto-reclaiming a stale one if held.
+
+    Thin wrapper around :meth:`StateDB.acquire_lock_or_reclaim` that logs a
+    reclaim (so the operator can see a killed prior run was recovered) and
+    raises the familiar ``RuntimeError`` when a genuinely *live* lock is
+    held by another run.  Mutation handlers call this instead of the strict
+    ``acquire_lock`` so a Stash Stop-Job (SIGKILL) doesn't strand the lock
+    and block every subsequent run until a manual ForceRelease.
+    """
+    result = state.acquire_lock_or_reclaim(run_id, operation, rules_sha)
+    if result.reclaimed_run_id:
+        _log(
+            f"reclaimed stale lock from prior run_id="
+            f"{result.reclaimed_run_id} (new run_id={run_id})"
+        )
+    if not result.acquired:
+        raise RuntimeError(
+            "could not acquire run lock (held by a live run; "
+            "force-release first)"
+        )
+
+
 def _regenerate_snapshots(ctx: TaskContext, rules: Rules, state: StateDB) -> None:
     """Write the dashboard snapshot after a mutation task (D14 dual-write).
 
-    Best-effort: a failure here is logged to stderr and never propagates -- the
-    mutation already succeeded and the operator can refresh snapshots from the
-    UI Dashboard task.
+    Also refreshes ``run_history`` and ``unmapped_tags`` so the Operations and
+    Unmapped panels reflect the just-completed run immediately -- without this,
+    a dry run leaves those panels stale (the dashboard's ``dry_run_inspected``
+    counter updates, but the Operations list stays empty until someone manually
+    runs the Run History task).  Mirrors the all-snapshot refresh in
+    ``rules_editor.py`` (post rules-edit).  Each snapshot is written in its own
+    try/except so a failure in one does not block the others; the whole step is
+    best-effort and never propagates -- the mutation already succeeded and the
+    operator can refresh snapshots from the UI Dashboard task.
     """
     try:
         reporter = ReportEngine(state, rules, ctx.plugin_dir, ctx.data_dir)
         reporter.configured_providers = _resolve_configured_providers(ctx)
+    except Exception as exc:  # pragma: no cover -- best-effort
+        _log(f"snapshot regeneration skipped: {exc}")
+        return
+    try:
         dashboard = reporter.generate_dashboard(client=ctx.client)
         reporter.write_snapshot("dashboard", dashboard)
     except Exception as exc:  # pragma: no cover -- best-effort
-        _log(f"snapshot regeneration skipped: {exc}")
+        _log(f"dashboard snapshot regeneration skipped: {exc}")
+        return
+    for name in ("run_history", "unmapped_tags"):
+        try:
+            payload = (
+                reporter.generate_run_history()
+                if name == "run_history"
+                else reporter.generate_unmapped_tags()
+            )
+            reporter.write_snapshot(name, payload)
+        except Exception as exc:  # pragma: no cover -- best-effort
+            _log(f"{name} snapshot regeneration skipped: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1128,12 +1177,7 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
         # injection above are read-only / argument setup and stay here.
         run_id = f"{mode}-{secrets.token_hex(8)}"
         _log(f"acquiring lock run_id={run_id}")
-        acquired = state.acquire_lock(run_id, mode, rules.rules_sha)
-        if not acquired:
-            raise RuntimeError(
-                "could not acquire run lock (held or stale; "
-                "force-release first)"
-            )
+        _acquire_run_lock(state, run_id, mode, rules.rules_sha)
         heartbeat = _HeartbeatThread(state, run_id)
         heartbeat.start()
         # Record the run START up-front so a mid-run error or kill still
@@ -1206,12 +1250,7 @@ def _run_cleanup(ctx: TaskContext, mode: str) -> dict[str, Any]:
     try:
         run_id = f"{mode}-{secrets.token_hex(8)}"
         _log(f"acquiring lock run_id={run_id}")
-        acquired = state.acquire_lock(run_id, mode, rules.rules_sha)
-        if not acquired:
-            raise RuntimeError(
-                "could not acquire run lock (held or stale; "
-                "force-release first)"
-            )
+        _acquire_run_lock(state, run_id, mode, rules.rules_sha)
         heartbeat = _HeartbeatThread(state, run_id)
         heartbeat.start()
         _record_run_start(state, run_id, mode, rules.rules_sha, scope=scope)
@@ -1394,12 +1433,7 @@ def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
 
         resume_run_id = f"resume-{secrets.token_hex(8)}"
         _log(f"acquiring lock run_id={resume_run_id} (resume of {run_id})")
-        acquired = state.acquire_lock(resume_run_id, "resume_run", rules.rules_sha)
-        if not acquired:
-            raise RuntimeError(
-                "could not acquire run lock (held or stale; "
-                "force-release first)"
-            )
+        _acquire_run_lock(state, resume_run_id, "resume_run", rules.rules_sha)
         heartbeat = _HeartbeatThread(state, resume_run_id)
         heartbeat.start()
         _record_run_start(
@@ -1652,12 +1686,7 @@ def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:
     try:
         run_id = f"undo-cleanup-{secrets.token_hex(8)}"
         _log(f"acquiring lock run_id={run_id}")
-        acquired = state.acquire_lock(run_id, "undo_cleanup", rules.rules_sha)
-        if not acquired:
-            raise RuntimeError(
-                "could not acquire run lock (held or stale; "
-                "force-release first)"
-            )
+        _acquire_run_lock(state, run_id, "undo_cleanup", rules.rules_sha)
         _record_run_start(state, run_id, "undo_cleanup", rules.rules_sha)
         result: dict[str, Any] = {}
         run_error: "str | None" = None

@@ -1079,3 +1079,124 @@ class TestSnapshotWorkflow:
             data = json.loads(path.read_text(encoding="utf-8"))
             assert isinstance(data, dict)
             assert "generated_at" in data
+
+
+# ---------------------------------------------------------------------------
+# _regenerate_snapshots -- run_history + unmapped_tags refresh after a run
+# ---------------------------------------------------------------------------
+
+
+class _StubClient:
+    """Minimal client for the dashboard's live-scene-count query."""
+
+    def __init__(self, total_scenes: int = 0) -> None:
+        self._total = total_scenes
+
+    def find_scenes(self, **_kwargs: Any) -> Any:
+        return iter([])
+
+    def submit(self, query: str, variables: "dict[str, Any] | None" = None) -> dict:
+        if "findScenes" in query:
+            return {"findScenes": {"count": self._total, "scenes": []}}
+        if "GetAppVersion" in query:
+            return {"version": {"version": "0.31.1"}}
+        return {}
+
+
+@pytest.fixture
+def tmp_ctx(
+    tmp_path: Path, rules: Rules
+) -> "tuple[Any, StateDB, Path, Path]":
+    """A TaskContext + open StateDB pointing at temp plugin/data dirs."""
+    from curator.main import TaskContext
+
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = tmp_path / "data" / "stash-tag-curator-data"
+    # TaskContext derives data_dir from server_connection["Dir"]; point Dir at
+    # a parent whose <Dir>/stash-tag-curator-data is our data_dir.
+    ctx = TaskContext(
+        {"Dir": str(tmp_path / "data"), "PluginDir": str(plugin_dir)},
+        {},
+        {},
+        client=_StubClient(total_scenes=12),
+    )
+    # The plugin_dir inside ctx falls back to _PLUGIN_ROOT when PluginDir is
+    # set but empty; here PluginDir is set so ctx.plugin_dir is our temp dir.
+    state = ctx.open_state()
+    return ctx, state, ctx.data_dir, ctx.plugin_dir
+
+
+class TestRegenerateSnapshots:
+    """_regenerate_snapshots must refresh dashboard + run_history + unmapped."""
+
+    def test_writes_dashboard_run_history_and_unmapped(
+        self, tmp_ctx, rules: Rules
+    ) -> None:
+        from curator.main import _regenerate_snapshots
+
+        ctx, state, data_dir, plugin_dir = tmp_ctx
+        # Seed a run row so run_history has content.
+        _insert_run(state.connection, "run-1")
+        _regenerate_snapshots(ctx, rules, state)
+
+        # All three snapshots exist in BOTH the authoritative and mirror dirs.
+        for name in ("dashboard", "run_history", "unmapped_tags"):
+            auth = data_dir / "snapshots" / f"{name}.json"
+            mirror = plugin_dir / "assets" / f"{name}.json"
+            assert auth.exists(), f"{name} missing from snapshots/"
+            assert mirror.exists(), f"{name} missing from assets/"
+            data = json.loads(auth.read_text(encoding="utf-8"))
+            assert isinstance(data, dict)
+            assert "generated_at" in data
+
+        # run_history actually contains the seeded run.
+        rh = json.loads(
+            (data_dir / "snapshots" / "run_history.json").read_text("utf-8")
+        )
+        assert any(r["run_id"] == "run-1" for r in rh["runs"])
+
+    def test_run_history_failure_does_not_block_dashboard(
+        self, tmp_ctx, rules: Rules, monkeypatch
+    ) -> None:
+        """A failure in generate_run_history must not prevent dashboard write."""
+        from curator.main import _regenerate_snapshots
+        from curator.reporting import ReportEngine
+
+        ctx, state, data_dir, plugin_dir = tmp_ctx
+        _insert_run(state.connection, "run-1")
+
+        # Sabotage generate_run_history to raise.
+        original = ReportEngine.generate_run_history
+
+        def _boom(self, limit: int = 50) -> dict:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(ReportEngine, "generate_run_history", _boom)
+        try:
+            _regenerate_snapshots(ctx, rules, state)
+        finally:
+            monkeypatch.setattr(ReportEngine, "generate_run_history", original)
+
+        # Dashboard still written; run_history is not (it raised).
+        assert (data_dir / "snapshots" / "dashboard.json").exists()
+        assert not (data_dir / "snapshots" / "run_history.json").exists()
+
+    def test_dashboard_failure_skips_rest(
+        self, tmp_ctx, rules: Rules, monkeypatch
+    ) -> None:
+        """If dashboard generation fails, run_history/unmapped are skipped."""
+        from curator.main import _regenerate_snapshots
+        from curator.reporting import ReportEngine
+
+        ctx, state, data_dir, plugin_dir = tmp_ctx
+
+        def _boom(self, client: Any = None) -> dict:
+            raise RuntimeError("dashboard boom")
+
+        monkeypatch.setattr(ReportEngine, "generate_dashboard", _boom)
+        _regenerate_snapshots(ctx, rules, state)
+
+        # Nothing written because dashboard is the gate.
+        assert not (data_dir / "snapshots" / "dashboard.json").exists()
+        assert not (data_dir / "snapshots" / "run_history.json").exists()

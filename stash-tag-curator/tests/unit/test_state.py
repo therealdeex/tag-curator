@@ -26,12 +26,12 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from curator.state import SCHEMA_VERSION, StateDB
+from curator.state import SCHEMA_VERSION, StateDB, STALE_LOCK_THRESHOLD_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -571,3 +571,132 @@ class TestSqlInjectionSafety:
             db.table_columns("123abc")
         with pytest.raises(ValueError):
             db.table_columns("has space")
+
+
+# ---------------------------------------------------------------------------
+# acquire_lock_or_reclaim -- SIGKILL auto-recovery (D5)
+# ---------------------------------------------------------------------------
+
+
+def _backdate_heartbeat(db: StateDB, seconds: float) -> None:
+    """Simulate a SIGKILL by back-dating the held lock's heartbeat."""
+    stale_ts = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    with db._txn():  # noqa: SLF001 -- test-only same-package access
+        db.connection.execute(
+            "UPDATE run_lock SET heartbeat_ts = ? WHERE lock_id = 1", (stale_ts,)
+        )
+
+
+def _insert_run_row(
+    db: StateDB, run_id: str, status: str = "running", operation: str = "rebuild",
+) -> None:
+    """Insert a minimal ``runs`` row (for orphan-reconciliation tests)."""
+    with db._txn():  # noqa: SLF001 -- test-only same-package access
+        db.connection.execute(
+            "INSERT INTO runs "
+            "(run_id, operation, status, rules_sha, started_at, ended_at, "
+            " scope_json, totals_json, error_message) "
+            "VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)",
+            (run_id, operation, status, "sha", datetime.now(timezone.utc).isoformat()),
+        )
+
+
+class TestAcquireOrReclaim:
+    """acquire_lock_or_reclaim auto-clears stale locks but never live ones."""
+
+    def test_clean_acquire_when_unlocked(self, db: StateDB) -> None:
+        result = db.acquire_lock_or_reclaim("r1", "rebuild", "sha")
+        assert result.acquired is True
+        assert result.reclaimed_run_id is None
+        assert db.is_locked()
+
+    def test_reclaims_stale_lock(self, db: StateDB) -> None:
+        assert db.acquire_lock("r-killed", "rebuild", "sha-1")
+        _backdate_heartbeat(db, 600)
+        result = db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha-2")
+        assert result.acquired is True
+        assert result.reclaimed_run_id == "r-killed"
+        # The new holder is r-fresh.
+        assert db.current_lock()["run_id"] == "r-fresh"
+        # The reclaim was audited.
+        audit = db.connection.execute(
+            "SELECT released_run_id FROM forced_release_audit"
+        ).fetchone()
+        assert audit["released_run_id"] == "r-killed"
+
+    def test_does_not_reclaim_fresh_lock(self, db: StateDB) -> None:
+        assert db.acquire_lock("r-live", "rebuild", "sha")
+        # Do NOT back-date: heartbeat is fresh -> a live run holds it.
+        result = db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        assert result.acquired is False
+        assert result.reclaimed_run_id is None
+        # Original lock untouched.
+        assert db.current_lock()["run_id"] == "r-live"
+
+    def test_reclaim_reconciles_orphaned_running_row(self, db: StateDB) -> None:
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        _insert_run_row(db, "r-killed", status="running")
+        _backdate_heartbeat(db, 600)
+        db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        row = db.connection.execute(
+            "SELECT status, error_message FROM runs WHERE run_id = ?", ("r-killed",)
+        ).fetchone()
+        assert row["status"] == "interrupted"
+        assert "auto-reclaimed" in (row["error_message"] or "")
+
+    def test_reclaim_does_not_touch_terminal_run_row(self, db: StateDB) -> None:
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        _insert_run_row(db, "r-killed", status="completed")
+        _backdate_heartbeat(db, 600)
+        db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        row = db.connection.execute(
+            "SELECT status FROM runs WHERE run_id = ?", ("r-killed",)
+        ).fetchone()
+        # A terminal row must not be clobbered.
+        assert row["status"] == "completed"
+
+    def test_reclaim_when_no_runs_row(self, db: StateDB) -> None:
+        # A run killed before _record_run_start has a lock but no runs row.
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        _backdate_heartbeat(db, 600)
+        result = db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        assert result.acquired is True
+        assert result.reclaimed_run_id == "r-killed"
+
+    def test_reclaim_with_no_heartbeat_is_stale(self, db: StateDB) -> None:
+        # A lock whose heartbeat was never set (process died before the first
+        # heartbeat tick) is definitionally stale.
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        with db._txn():  # noqa: SLF001
+            db.connection.execute(
+                "UPDATE run_lock SET heartbeat_ts = NULL WHERE lock_id = 1"
+            )
+        result = db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        assert result.acquired is True
+        assert result.reclaimed_run_id == "r-killed"
+
+    def test_threshold_boundary_not_stale(self, db: StateDB) -> None:
+        # A heartbeat just under the threshold is NOT stale.
+        assert db.acquire_lock("r-live", "rebuild", "sha")
+        _backdate_heartbeat(db, STALE_LOCK_THRESHOLD_SECONDS / 2)
+        result = db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        assert result.acquired is False
+        assert db.current_lock()["run_id"] == "r-live"
+
+    def test_custom_threshold_can_reclaim_fresh_heartbeat(self, db: StateDB) -> None:
+        # With a 0s threshold, even a brand-new heartbeat is stale.
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        time.sleep(0.01)
+        result = db.acquire_lock_or_reclaim(
+            "r-fresh", "rebuild", "sha", threshold=0
+        )
+        assert result.acquired is True
+        assert result.reclaimed_run_id == "r-killed"
+
+    def test_reclaim_then_release_allows_clean_reacquire(self, db: StateDB) -> None:
+        assert db.acquire_lock("r-killed", "rebuild", "sha")
+        _backdate_heartbeat(db, 600)
+        db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        # Clean release of the reclaimed lock, then a normal acquire.
+        assert db.release_lock("r-fresh")
+        assert db.acquire_lock("r-final", "rebuild", "sha") is True

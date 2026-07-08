@@ -452,7 +452,12 @@ class RollbackEngine:
             recreate_missing=recreate_missing,
         )
 
-        # Step 1: acquire the singleton lock (D5).
+        # Step 1: acquire the singleton lock (D5).  Rollback is a deliberate
+        # recovery op invoked after the operator has already decided to
+        # intervene, so it uses the strict acquire_lock (never auto-reclaims)
+        # rather than acquire_lock_or_reclaim -- an operator running rollback
+        # while another run is genuinely live should be stopped, not silently
+        # override it.
         acquired = self._state.acquire_lock(
             actual_run_id, "rollback", self._rules_sha(),
         )
