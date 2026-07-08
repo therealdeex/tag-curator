@@ -258,12 +258,16 @@ class ReportEngine:
         # Distinct scenes seen in the latest dry-run proposal set.  Dry runs
         # never write ``scene_state`` (D10: no mutations), so before the first
         # full rebuild this is the only signal that scenes were inspected.
-        # The latest proposal set is identified by the max ``created_at``.
+        # The latest proposal set is identified by max(created_at) with a
+        # proposed_run_id tie-break (rows in a batch share a sub-second
+        # timestamp, so created_at alone is ambiguous).
+        latest_proposed_run_id = self._latest_proposed_run_id(conn)
         dry_run_inspected = self._count(
             conn,
             "SELECT COUNT(DISTINCT scene_id) FROM dry_run_proposals "
-            "WHERE created_at = (SELECT MAX(created_at) FROM dry_run_proposals)",
-        )
+            "WHERE proposed_run_id = ?",
+            (latest_proposed_run_id,),
+        ) if latest_proposed_run_id else 0
 
         # Total scene count: prefer Stash when available.
         total_scenes = state_total
@@ -278,13 +282,20 @@ class ReportEngine:
             total_scenes = dry_run_inspected
         never_processed = max(0, total_scenes - processed)
 
-        # Unmapped raw tags: tags observed in scene_raw_tags_current that do
-        # not resolve through the rules forward index.
-        unmapped_set = self._compute_unmapped_raw_tags(conn)
-        unmapped_count = len(unmapped_set)
-        scenes_with_unmapped = self._count_scenes_with_unmapped(
-            conn, unmapped_set
-        )
+        # Unmapped raw tags.  After a full rebuild these come from
+        # ``scene_raw_tags_current``; before any rebuild (when scene_state is
+        # empty) we derive them from the latest dry-run proposal set so the
+        # dashboard surfaces actionable data immediately.
+        if state_total == 0 and latest_proposed_run_id:
+            unmapped_count, scenes_with_unmapped = (
+                self._dry_run_unmapped(conn, latest_proposed_run_id)
+            )
+        else:
+            unmapped_set = self._compute_unmapped_raw_tags(conn)
+            unmapped_count = len(unmapped_set)
+            scenes_with_unmapped = self._count_scenes_with_unmapped(
+                conn, unmapped_set
+            )
 
         return {
             "generated_at": _now_iso(),
@@ -669,6 +680,72 @@ class ReportEngine:
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return int(value)
         return 0
+
+    @staticmethod
+    def _latest_proposed_run_id(conn: Any) -> "str | None":
+        """Return the ``proposed_run_id`` of the newest dry-run proposal set.
+
+        Tie-breaks ``created_at`` by ``proposed_run_id`` DESC so a batch of
+        rows sharing a sub-second timestamp resolves to a single set rather
+        than an ambiguous subset.
+        """
+        row = conn.execute(
+            "SELECT proposed_run_id FROM dry_run_proposals "
+            "ORDER BY created_at DESC, proposed_run_id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            value = row["proposed_run_id"]
+        except (KeyError, TypeError, IndexError):
+            value = row[0] if row else None
+        return str(value) if value else None
+
+    def _dry_run_unmapped(
+        self, conn: Any, proposed_run_id: str
+    ) -> "tuple[int, int]":
+        """Derive (unmapped_tag_count, scenes_with_unmapped) from a dry run.
+
+        Reads ``raw_tags_json`` from the given proposal set and classifies each
+        distinct raw tag value through the rules forward index.  Used before
+        any full rebuild has populated ``scene_raw_tags_current``.
+        """
+        rows = conn.execute(
+            "SELECT DISTINCT scene_id, raw_tags_json FROM dry_run_proposals "
+            "WHERE proposed_run_id = ?",
+            (proposed_run_id,),
+        ).fetchall()
+        unmapped_tags: set[str] = set()
+        scenes_with_unmapped = 0
+        for row in rows:
+            try:
+                raw_json = row["raw_tags_json"]
+            except (KeyError, TypeError, IndexError):
+                raw_json = row[1] if row else None
+            if not raw_json:
+                continue
+            try:
+                raw_list = json.loads(raw_json)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(raw_list, list):
+                continue
+            scene_has_unmapped = False
+            for entry in raw_list:
+                value = (
+                    entry.get("value")
+                    if isinstance(entry, dict)
+                    else entry
+                )
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                result = self._rules.map_raw(value)
+                if result.disposition == DISPOSITION_UNMAPPED:
+                    unmapped_tags.add(value)
+                    scene_has_unmapped = True
+            if scene_has_unmapped:
+                scenes_with_unmapped += 1
+        return len(unmapped_tags), scenes_with_unmapped
 
     @staticmethod
     def _last_successful_run(conn: Any) -> dict[str, Any] | None:

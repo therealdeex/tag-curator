@@ -422,6 +422,41 @@ class TestDashboard:
         result = engine.generate_dashboard()
         assert result["totals"]["dry_run_inspected"] == 5
 
+    def test_dashboard_unmapped_derived_from_dry_run_when_no_scene_state(
+        self, engine: ReportEngine, state: StateDB, rules: Rules
+    ) -> None:
+        """Before any full rebuild, unmapped metrics come from the latest dry
+        run so the dashboard surfaces actionable data immediately (not zeros)."""
+        conn = state.connection
+        # scene_state is empty (no full rebuild yet). Seed a dry-run proposal
+        # set whose raw_tags include one mapped + one unmapped tag per scene.
+        now = "2026-07-07T12:00:00+00:00"
+        import json as _json
+        raw_with_unmapped = _json.dumps([
+            {"value": "Blowjob", "provider": "local"},        # mapped -> ACT
+            {"value": "Some Weird Tag", "provider": "local"}, # unmapped
+        ])
+        raw_all_mapped = _json.dumps([
+            {"value": "Blowjob", "provider": "local"},        # mapped
+        ])
+        for sid, raw in [(1, raw_with_unmapped), (2, raw_all_mapped), (3, raw_with_unmapped)]:
+            conn.execute(
+                "INSERT OR REPLACE INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+                " scene_state_fp, proposed_tag_names_json, "
+                " proposed_marker_names_json, provider_match_status, "
+                " raw_tags_json, created_at, expires_at, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("prop-unmap", sid, rules.rules_sha, "fp-v1", None, "[]", "[]",
+                 "UNIQUE_MATCH", raw, now, None, "proposed"),
+            )
+        conn.commit()
+
+        result = engine.generate_dashboard()
+        # The unmapped tag "Some Weird Tag" appears in 2 scenes.
+        assert result["unmapped_raw_tag_count"] == 1
+        assert result["totals"]["scenes_with_unmapped_tags"] == 2
+
     def test_dashboard_last_successful_run(
         self, engine: ReportEngine, state: StateDB
     ) -> None:
@@ -758,15 +793,16 @@ class TestRulesAudit:
     ) -> None:
         result = engine.generate_rules_audit()
         counts = result["mapping_disposition_counts"]
-        # The bundled default has: map=662, ignore=310, detail=32, defer=30.
-        assert counts[DISPOSITION_MAP] == 662
-        assert counts[DISPOSITION_IGNORE] == 310
+        # The bundled default has: map=770, ignore=343, detail=32, defer=30
+        # (includes 141 reconciliation/identity mappings for existing tags).
+        assert counts[DISPOSITION_MAP] == 770
+        assert counts[DISPOSITION_IGNORE] == 343
         assert counts[DISPOSITION_DETAIL] == 32
         assert counts[DISPOSITION_DEFER] == 30
 
     def test_total_mappings(self, engine: ReportEngine) -> None:
         result = engine.generate_rules_audit()
-        assert result["total_mappings"] == 1034
+        assert result["total_mappings"] == 1175
 
     def test_canonical_tag_counts_all_axes(
         self, engine: ReportEngine

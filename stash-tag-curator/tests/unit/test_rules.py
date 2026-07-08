@@ -66,7 +66,7 @@ class TestLoadDefault:
     def test_loads_default_file(self) -> None:
         rules = Rules.load()
         assert rules.source_path == DEFAULT_RULES_PATH
-        assert rules.num_mappings == 1034
+        assert rules.num_mappings == 1175
         assert len(rules.canonical_tag_names()) == 117
 
     def test_rules_sha_matches_t7_fingerprint(self) -> None:
@@ -80,7 +80,7 @@ class TestLoadDefault:
         counts = {}
         for rule in raw["mappings"].values():
             counts[rule["disposition"]] = counts.get(rule["disposition"], 0) + 1
-        assert counts == {"map": 662, "ignore": 310, "detail": 32, "defer": 30}
+        assert counts == {"map": 770, "ignore": 343, "detail": 32, "defer": 30}
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestPathPolicy:
         missing = tmp_path / "tag-rules.yml"
         rules = Rules.load(missing)
         assert rules.source_path == DEFAULT_RULES_PATH
-        assert rules.num_mappings == 1034
+        assert rules.num_mappings == 1175
 
     def test_load_with_explicit_schema(self, tmp_path: Path) -> None:
         rules = Rules.load(DEFAULT_RULES_PATH, schema_path=DEFAULT_SCHEMA_PATH)

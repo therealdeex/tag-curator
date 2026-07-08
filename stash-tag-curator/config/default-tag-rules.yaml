@@ -4740,6 +4740,660 @@ mappings:
   no condom:
     disposition: ignore
     notes: 'v2 blacklist noise: high-count remaining noise; no filtering value.'
+  # ---------------------------------------------------------------------
+  # Reconciliation mappings for existing curated tags (adjective-noun
+  # convention -> canonical noun-gendered form). These let the engine
+  # re-map a library that was already curated by a different system
+  # rather than treating those tags as unmapped noise.
+  # ---------------------------------------------------------------------
+  'demo: female caucasian':
+    outputs:
+    - 'DEMO: Caucasian Female'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: male caucasian':
+    outputs:
+    - 'DEMO: Caucasian Male'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: female latin':
+    outputs:
+    - 'DEMO: Latin Female'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: male latin':
+    outputs:
+    - 'DEMO: Latin Male'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: female asian':
+    outputs:
+    - 'DEMO: Asian Female'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: female black':
+    outputs:
+    - 'DEMO: Black Female'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: male black':
+    outputs:
+    - 'DEMO: Black Male'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: female mixed':
+    outputs:
+    - 'DEMO: Mixed Female'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: male mixed':
+    outputs:
+    - 'DEMO: Mixed Male'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical noun-gendered form.'
+  'demo: interracial':
+    outputs:
+    - 'DEMO: Interracial'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'demo: bbc':
+    outputs:
+    - 'DEMO: Interracial'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: natural breasts':
+    outputs:
+    - 'BODY: Natural breasts'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: augmented breasts':
+    outputs:
+    - 'BODY: Augmented breasts'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: big breasts':
+    outputs:
+    - 'BODY: Big breasts'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: small breasts':
+    outputs:
+    - 'BODY: Small breasts'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: tattooed':
+    outputs:
+    - 'BODY: Tattooed'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: pierced':
+    outputs:
+    - 'BODY: Pierced'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: petite':
+    outputs:
+    - 'BODY: Petite'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: tall':
+    outputs:
+    - 'BODY: Tall'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'body: curvy':
+    outputs:
+    - 'BODY: Curvy'
+    disposition: map
+    notes: 'Reconciliation: existing curated tag -> canonical form.'
+  'cast: m-f':
+    outputs:
+    - 'CAST: 1M1F'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: mff':
+    outputs:
+    - 'CAST: 1M2F'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: mmf':
+    outputs:
+    - 'CAST: 2M1F'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: solo f':
+    outputs:
+    - 'CAST: 1F'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: f-f':
+    outputs:
+    - 'CAST: 2F'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: group':
+    outputs:
+    - 'CAST: Group'
+    disposition: map
+    notes: 'Reconciliation: existing cast notation -> canonical form.'
+  'cast: unknown':
+    disposition: ignore
+    notes: 'Reconciliation: existing curated tag with no canonical equivalent.'
+  'age: 18-22':
+    outputs:
+    - 'AGE: 18-22 (F)'
+    disposition: map
+    notes: 'Reconciliation: existing age range -> canonical F-qualified bucket (enrichment refines via performer metadata).'
+  'age: 22-30':
+    outputs:
+    - 'AGE: 23-29 (F)'
+    disposition: map
+    notes: 'Reconciliation: existing age range -> canonical F-qualified bucket (enrichment refines via performer metadata).'
+  'age: 30-40':
+    outputs:
+    - 'AGE: 30-39 (F)'
+    disposition: map
+    notes: 'Reconciliation: existing age range -> canonical F-qualified bucket (enrichment refines via performer metadata).'
+  'age: 40-60':
+    outputs:
+    - 'AGE: 40-49 (F)'
+    disposition: map
+    notes: 'Reconciliation: existing age range -> canonical F-qualified bucket (enrichment refines via performer metadata).'
+  'era: 2000s':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical ERA axis enumerated; ignored to avoid unmapped noise.'
+  'era: 2010s':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical ERA axis enumerated; ignored to avoid unmapped noise.'
+  'era: 2020s':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical ERA axis enumerated; ignored to avoid unmapped noise.'
+  # ---------------------------------------------------------------------
+  # Identity mappings: tags already in canonical form (self-map).
+  # ---------------------------------------------------------------------
+  'act: anal sex':
+    outputs:
+    - 'ACT: Anal sex'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: blowjob':
+    outputs:
+    - 'ACT: Blowjob'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: cumshot - body':
+    outputs:
+    - 'ACT: Cumshot - body'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: cumshot - face':
+    outputs:
+    - 'ACT: Cumshot - face'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: cumshot - internal':
+    outputs:
+    - 'ACT: Cumshot - internal'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: cumshot - mouth':
+    outputs:
+    - 'ACT: Cumshot - mouth'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: cunnilingus':
+    outputs:
+    - 'ACT: Cunnilingus'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: fingering':
+    outputs:
+    - 'ACT: Fingering'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: handjob':
+    outputs:
+    - 'ACT: Handjob'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: kissing':
+    outputs:
+    - 'ACT: Kissing'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: masturbation':
+    outputs:
+    - 'ACT: Masturbation'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: rimming':
+    outputs:
+    - 'ACT: Rimming'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: squirting':
+    outputs:
+    - 'ACT: Squirting'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: titjob':
+    outputs:
+    - 'ACT: Titjob'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'act: vaginal sex':
+    outputs:
+    - 'ACT: Vaginal sex'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: average body':
+    outputs:
+    - 'BODY: Average body'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: big ass':
+    outputs:
+    - 'BODY: Big ass'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: big dick':
+    outputs:
+    - 'BODY: Big dick'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: hairy':
+    outputs:
+    - 'BODY: Hairy'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: shaved':
+    outputs:
+    - 'BODY: Shaved'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'body: uncircumcised':
+    outputs:
+    - 'BODY: Uncircumcised'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: bondage':
+    outputs:
+    - 'KINK: Bondage'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: chastity/orgasm control':
+    outputs:
+    - 'KINK: Chastity/orgasm control'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: choking/breath':
+    outputs:
+    - 'KINK: Choking/breath'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: dom/sub':
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: foot fetish':
+    outputs:
+    - 'KINK: Foot fetish'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: gags/restraints':
+    outputs:
+    - 'KINK: Gags/restraints'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: humiliation':
+    outputs:
+    - 'KINK: Humiliation'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: nipple torment':
+    outputs:
+    - 'KINK: Nipple torment'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'kink: spanking/impact':
+    outputs:
+    - 'KINK: Spanking/impact'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'prod: gonzo':
+    outputs:
+    - 'PROD: Gonzo'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'prod: narrative':
+    outputs:
+    - 'PROD: Narrative'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'prod: pov':
+    outputs:
+    - 'PROD: POV'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'set: bathroom':
+    outputs:
+    - 'SET: Bathroom'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'set: bedroom':
+    outputs:
+    - 'SET: Bedroom'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'set: living room':
+    outputs:
+    - 'SET: Living room'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'set: outdoor':
+    outputs:
+    - 'SET: Outdoor'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'set: school':
+    outputs:
+    - 'SET: School'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: cheating':
+    outputs:
+    - 'THEME: Cheating'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: cuckolding':
+    outputs:
+    - 'THEME: Cuckolding'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: gangbang':
+    outputs:
+    - 'THEME: Gangbang'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: massage':
+    outputs:
+    - 'THEME: Massage'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: roleplay':
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: romance':
+    outputs:
+    - 'THEME: Romance'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: step-family':
+    outputs:
+    - 'THEME: Step-family'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: taboo':
+    outputs:
+    - 'THEME: Taboo'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'theme: wife sharing':
+    outputs:
+    - 'THEME: Wife sharing'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: bikini':
+    outputs:
+    - 'WARD: Bikini'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: casual':
+    outputs:
+    - 'WARD: Casual'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: dress':
+    outputs:
+    - 'WARD: Dress'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: lingerie':
+    outputs:
+    - 'WARD: Lingerie'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: pantyhose':
+    outputs:
+    - 'WARD: Pantyhose'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: stockings':
+    outputs:
+    - 'WARD: Stockings'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  'ward: uniform':
+    outputs:
+    - 'WARD: Uniform'
+    disposition: map
+    notes: 'Identity map: tag is already in canonical form.'
+  # ---------------------------------------------------------------------
+  # Foreign-tag mappings: non-canonical tags with a clear target.
+  # ---------------------------------------------------------------------
+  'age: 60+':
+    outputs:
+    - 'AGE: 60+ (F)'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'beard':
+    outputs:
+    - 'BODY: Hairy'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'boots':
+    outputs:
+    - 'WARD: Latex/leather'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'cast: m-m':
+    outputs:
+    - 'CAST: 2M'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'cast: solo m':
+    outputs:
+    - 'CAST: 1M'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'cast: trans':
+    outputs:
+    - 'CAST: 1TF'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'demo: female indian':
+    outputs:
+    - 'DEMO: Indian Female'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'demo: female middle eastern':
+    outputs:
+    - 'DEMO: Middle Eastern Female'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'demo: female other':
+    outputs:
+    - 'DEMO: Other Female'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'demo: male asian':
+    outputs:
+    - 'DEMO: Asian Male'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'demo: male middle eastern':
+    outputs:
+    - 'DEMO: Middle Eastern Male'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'female teacher':
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'gangbang - m on f':
+    outputs:
+    - 'THEME: Gangbang'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'harem':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical THEME:Harem exists; enrichment derives related tags from metadata. Ignored to avoid unmapped noise.'
+  'interracial - black men':
+    outputs:
+    - 'DEMO: Interracial'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'interracial - latin girls':
+    outputs:
+    - 'DEMO: Interracial'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'leg fetish':
+    outputs:
+    - 'KINK: Foot fetish'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'married':
+    disposition: ignore
+    notes: 'Reconciliation: THEME:Married IRL is a derived tag (generated by enrichment from performer metadata), not a map target. Ignored to avoid unmapped noise.'
+  'massage parlor':
+    outputs:
+    - 'THEME: Massage'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'prod: pov camera':
+    outputs:
+    - 'PROD: POV'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'piledriver':
+    outputs:
+    - 'ACT: Vaginal sex'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'secretary':
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'sister':
+    outputs:
+    - 'THEME: Step-family'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'tattooed man':
+    outputs:
+    - 'BODY: Tattooed'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'tattooed woman':
+    outputs:
+    - 'BODY: Tattooed'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  'trimmed pussy':
+    outputs:
+    - 'BODY: Shaved'
+    disposition: map
+    notes: 'Reconciliation: existing tag -> canonical form.'
+  # ---------------------------------------------------------------------
+  # Foreign-tag ignores: no canonical equivalent; ignored to avoid noise.
+  # ---------------------------------------------------------------------
+  '180°':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'demo: female mixed-race (primarily middle eastern)':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'era: pre-2000':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'egg vibrator':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'escort':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'exclusive distribution':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'eyes rolling':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'housewife':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'innie pussy':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'lotion':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'molester':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'multiple cumshots':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'neighbors':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'original collaboration':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'other fetish':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'outie pussy':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'planning':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'prebooks':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'prostitutes':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'pussy gape':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'race queen':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'sex game':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'shoes':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'stewardess':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'sunglasses':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'sweaty':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
+  'training':
+    disposition: ignore
+    notes: 'Reconciliation: no canonical equivalent; ignored.'
 derived:
   age_buckets:
   - min: 18
