@@ -532,6 +532,7 @@ class TaskContext:
         api_key = (
             self.settings.get("stash_api_key")
             or self.args.get("stash_api_key")
+            or self._read_api_key_from_stash_config()
             or None
         )
         if not isinstance(api_key, str):
@@ -540,6 +541,44 @@ class TaskContext:
             server_connection=self.server_connection,
             api_key=api_key or None,
         )
+
+    def _read_api_key_from_stash_config(self) -> "str | None":
+        """Read the ``api_key`` from Stash's ``config.yml``.
+
+        Stash v0.31.1 does NOT inject saved plugin settings into the raw
+        plugin envelope -- the ``settings`` field is always ``{}`` when
+        launched from the Tasks UI.  A plugin that needs an API key for
+        long-running authenticated GraphQL calls (where the session cookie
+        Stash passes expires after ~1h) must read the key itself.
+
+        This mirrors the proven pattern from the legacy TagEngine plugin
+        (``on_scan.py:get_api_key``): look for ``config.yml`` in the Stash
+        ``Dir`` (passed via ``server_connection``), then fall back to the
+        plugin's grandparent directory.  Returns ``None`` on any failure
+        (missing file, parse error, no key) so the caller falls back to
+        session-cookie auth.
+        """
+        import yaml  # local import; PyYAML is the sole runtime dep
+
+        stash_dir = str(self.server_connection.get("Dir") or "").strip()
+        candidates = [
+            os.path.join(stash_dir, "config.yml") if stash_dir else None,
+            # Plugin dir's grandparent (Stash installs plugins under <stash>/plugins/<name>/)
+            str(self.plugin_dir.parent.parent / "config.yml"),
+        ]
+        for path in candidates:
+            if not path:
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                if isinstance(cfg, dict):
+                    key = cfg.get("api_key")
+                    if isinstance(key, str) and key.strip():
+                        return key.strip()
+            except (OSError, ValueError, yaml.YAMLError):
+                continue  # try the next candidate
+        return None
 
     def open_state(self) -> StateDB:
         """Open the authoritative state DB (creating parent directories)."""

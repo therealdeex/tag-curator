@@ -459,3 +459,92 @@ class TestRunLifecycleRecording:
         assert row["status"] == "failed"
         assert row["error_message"] is not None
         assert "401" in row["error_message"]
+
+
+class TestApiKeyFromStashConfig:
+    """Stash v0.31.1 does not inject plugin settings into the raw envelope
+    (``settings`` is always ``{}``).  The plugin must read the API key from
+    Stash's ``config.yml`` itself so long-running tasks survive session-cookie
+    expiry (~1h)."""
+
+    def test_reads_api_key_from_stash_config_yml(self, tmp_path: Path) -> None:
+        import yaml
+
+        stash_dir = tmp_path / "stash"
+        stash_dir.mkdir()
+        (stash_dir / "config.yml").write_text(
+            yaml.dump({"api_key": "test-key-from-config", "port": 9999}),
+            encoding="utf-8",
+        )
+        ctx = TaskContext(
+            {"Dir": str(stash_dir), "PluginDir": str(tmp_path / "plugin")},
+            {},
+            {},
+            client=_StubClient(),
+        )
+        assert ctx._read_api_key_from_stash_config() == "test-key-from-config"
+
+    def test_returns_none_when_no_config_yml(self, tmp_path: Path) -> None:
+        ctx = TaskContext(
+            {"Dir": str(tmp_path / "nonexistent")},
+            {},
+            {},
+            client=_StubClient(),
+        )
+        assert ctx._read_api_key_from_stash_config() is None
+
+    def test_returns_none_when_no_api_key_in_config(self, tmp_path: Path) -> None:
+        import yaml
+
+        stash_dir = tmp_path / "stash"
+        stash_dir.mkdir()
+        (stash_dir / "config.yml").write_text(
+            yaml.dump({"port": 9999, "host": "0.0.0.0"}),
+            encoding="utf-8",
+        )
+        ctx = TaskContext(
+            {"Dir": str(stash_dir)},
+            {},
+            {},
+            client=_StubClient(),
+        )
+        assert ctx._read_api_key_from_stash_config() is None
+
+    def test_explicit_setting_overrides_config_yml(self, tmp_path: Path) -> None:
+        """A key passed in settings/args takes precedence over config.yml."""
+        import yaml
+
+        stash_dir = tmp_path / "stash"
+        stash_dir.mkdir()
+        (stash_dir / "config.yml").write_text(
+            yaml.dump({"api_key": "from-config-file"}),
+            encoding="utf-8",
+        )
+        ctx = TaskContext(
+            {"Dir": str(stash_dir)},
+            {"stash_api_key": "from-settings"},
+            {},
+            client=_StubClient(),
+        )
+        client = ctx._build_client()
+        assert client.api_key == "from-settings"
+
+    def test_client_gets_key_from_config_yml_when_settings_empty(
+        self, tmp_path: Path
+    ) -> None:
+        import yaml
+
+        stash_dir = tmp_path / "stash"
+        stash_dir.mkdir()
+        (stash_dir / "config.yml").write_text(
+            yaml.dump({"api_key": "auto-discovered-key"}),
+            encoding="utf-8",
+        )
+        ctx = TaskContext(
+            {"Dir": str(stash_dir), "PluginDir": str(tmp_path / "plugin")},
+            {},  # no stash_api_key in settings
+            {},
+            client=_StubClient(),
+        )
+        client = ctx._build_client()
+        assert client.api_key == "auto-discovered-key"
