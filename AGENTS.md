@@ -117,29 +117,52 @@ Produces a flat `dist/stash-tag-curator.zip` (manifest at archive root, no paren
 - Password: 2896770
 
 ### Plugin location
-- Plugin dir: `/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/`
+- Plugin dir (symlink): `/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/` → `/home/shahram/dev/tag-ops/stash-tag-curator/`
 - Plugin manifest: `stash-tag-curator.yml`
 - Entry point: `curator/main.py` (raw plugin, reads JSON envelope on stdin)
-- Data dir: `/mnt/stash-virtiofs/stashapp/stash-tag-curator-data/`
+- Data dir: `/home/shahram/dev/tag-ops/stash-tag-curator/stash-tag-curator-data/` (inside the repo, gitignored)
 - Active rules: `<data-dir>/tag-rules.yml`
 - Bundled defaults: `config/default-tag-rules.yaml`
 - State DB: `<data-dir>/state/curator.db` (SQLite)
+- Old backup: `/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator.bak`
 
-### Source code
-- Dev copy: `~/dev/stash-plugins/tag-ops/stash-tag-curator/` on dev-lab (192.168.8.72)
-- Deploy to docker-personal by rsync/scp to `/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/`
-- After deploying changes: reload plugins in Stash UI or via GraphQL:
-  `curl -s -X POST http://localhost:9999/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { reloadPlugins }"}'`
+### Source code and deployment
 
-### Testing the plugin manually (on docker-personal)
-bash
-Run a task from CLI (simulates Stash's raw plugin envelope)
+- **Source of truth:** dev-lab (192.168.8.72) at `~/dev/stash-plugins/tag-ops/`, pushed to Gitea repo `deex/stash-tag-curator`
+- **Stash host (.40) clone:** `~/dev/tag-ops/` — cloned from Gitea, on `main` branch
+- **Deploy path:** the Stash plugins dir symlinks to the clone, so `git pull` is the deploy mechanism
+
+#### Deploy / update the plugin on the stash host
+
+```bash
+ssh shahram@192.168.8.40
+cd ~/dev/tag-ops
+git pull
+```
+
+Stash reads through the symlink, so files are live immediately. Optionally reload plugins in Stash UI or via GraphQL:
+
+```bash
+curl -s -X POST http://localhost:9999/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { reloadPlugins }"}'
+```
+
+### Testing the plugin manually (on stash host .40)
+
+Run a task from CLI (simulates Stash's raw plugin envelope):
+
+```bash
 echo '{"args":{"task":"Preflight"},"server_connection":{"Scheme":"http","Host":"localhost:9999","Dir":"/mnt/stash-virtiofs/stashapp"},"settings":{}}' | \
-  python3
-/mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/curator/main.py
+  python3 /mnt/stash-virtiofs/stashapp/plugins/stash-tag-curator/curator/main.py
+```
 
-Replace "Preflight" with: DryRebuild, RulesAudit, Dashboard, UnmappedTags, etc.
-DryRebuild is read-only (writes proposals to SQLite, no tag mutations).
+Replace `"Preflight"` with: `DryRebuild`, `RulesAudit`, `Dashboard`, `UnmappedTags`, etc.
+`DryRebuild` is read-only (writes proposals to SQLite, no tag mutations).
+
+### Stash GraphQL API
+- Endpoint: `http://localhost:9999/graphql` (on .40)
+- Auth: session cookie via web login, or API key in `ApiKey` header
+- Login via web UI at `http://192.168.8.40:9999` with username `deex` / password `2896770`
+
 ### Stash-box endpoints configured
 - stashdb.org, theporndb.net, fansdb.cc (3 endpoints)
 
@@ -151,7 +174,9 @@ DryRebuild is read-only (writes proposals to SQLite, no tag mutations).
 
 ### Lock recovery
 If a run was killed and left a stale lock:
-bash
-sqlite3 /mnt/stash-virtiofs/stashapp/stash-tag-curator-data/state/curator.db \
+
+```bash
+sqlite3 /home/shahram/dev/tag-ops/stash-tag-curator/stash-tag-curator-data/state/curator.db \
   "DELETE FROM run_lock WHERE lock_id=1;"
+```
 
