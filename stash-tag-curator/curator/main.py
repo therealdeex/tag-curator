@@ -1553,6 +1553,18 @@ def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
     DELETE in the same ``BEGIN IMMEDIATE`` transaction.  This handler does
     NOT acquire the lock -- it is the audited override for stale locks and
     acquiring would deadlock against the very row it must clear.
+
+    D5 reconciliation: a SIGKILL'd run bypasses the ``finally`` block that
+    would normally call :meth:`StateDB.release_lock` *and*
+    :func:`_record_run_end`, so its ``runs`` row is stranded in
+    ``status='running'`` forever (the orphaned-row bug).  When
+    force-release clears such a lock, the held ``run_id`` is known, so we
+    also reconcile that orphaned row to ``status='interrupted'`` here --
+    mirroring :func:`_run_abandon_run` (which marks ``abandoned``) but
+    using the weaker ``interrupted`` status since force-release is the
+    operator escape hatch, not a deliberate abandon.  This keeps run
+    history / dashboard totals truthful instead of showing a phantom
+    in-flight run.
     """
     run_id = str(ctx.args.get("run_id") or "").strip()
     token = str(ctx.args.get("confirmation_token") or run_id).strip()
@@ -1574,6 +1586,25 @@ def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
             token = str(lock["run_id"])
             run_id = token
         released = state.force_release(token)
+
+        # D5: reconcile the orphaned `runs` row left by a SIGKILL'd run.
+        # The killed process never reached its `finally` -> _record_run_end,
+        # so the row is stranded in status='running'.  Only non-terminal rows
+        # are touched (COALESCE guards an already-ended row) and only when a
+        # row exists at all (a killed pre-lock run may have none).
+        run_row_reconciled = False
+        if released and run_id:
+            cur = state.connection.execute(
+                "UPDATE runs "
+                "SET status = 'interrupted', "
+                "    ended_at = COALESCE(ended_at, ?), "
+                "    error_message = COALESCE(error_message, ?) "
+                "WHERE run_id = ? AND status NOT IN "
+                "    ('completed', 'failed', 'abandoned', 'interrupted')",
+                (_now_iso(),
+                 "force-released (run was killed / stale)", run_id),
+            )
+            run_row_reconciled = cur.rowcount > 0
     finally:
         state.close()
 
@@ -1600,6 +1631,7 @@ def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
         "run_id": run_id,
         "confirmation_token": token,
         "released": released,
+        "run_row_reconciled": run_row_reconciled if released else False,
     }
 
 def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:

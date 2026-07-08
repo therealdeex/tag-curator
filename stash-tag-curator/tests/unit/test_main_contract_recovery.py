@@ -131,6 +131,76 @@ class TestForceRelease:
         result = _run_force_release(ctx)
         assert result["released"] is False
 
+    def test_force_release_reconciles_orphaned_running_row(self, tmp_ctx) -> None:
+        """D5: a SIGKILL'd run strands its `runs` row in status='running'
+        (the `finally` -> _record_run_end never ran).  force_release clears
+        the lock AND must reconcile that orphaned row to 'interrupted' so run
+        history / dashboard totals stay truthful instead of showing a phantom
+        in-flight run."""
+        ctx, state, _ = tmp_ctx
+        run_id = "killed-mid-run"
+        # Simulate the killed run: lock held + runs row stranded 'running'.
+        state.acquire_lock(run_id, "dry_rebuild", "sha-abc")
+        state.connection.execute(
+            "INSERT INTO runs (run_id, operation, status, rules_sha, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (run_id, "dry_rebuild", "running", "sha-abc", "2026-07-08T08:00:00"),
+        )
+        ctx.args["run_id"] = run_id
+
+        result = _run_force_release(ctx)
+
+        assert result["released"] is True
+        assert result["run_row_reconciled"] is True
+        assert state.is_locked() is False
+        row = state.connection.execute(
+            "SELECT status, ended_at, error_message FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        assert row["status"] == "interrupted"
+        assert row["ended_at"] is not None
+        assert row["error_message"] is not None
+
+    def test_force_release_does_not_touch_already_terminal_row(self, tmp_ctx) -> None:
+        """A run row that already reached a terminal status (e.g. the process
+        caught its exception and wrote 'failed' before dying) must NOT be
+        overwritten by force_release -- only stranded 'running' rows are
+        reconciled."""
+        ctx, state, _ = tmp_ctx
+        run_id = "already-failed"
+        state.acquire_lock(run_id, "rebuild", "sha-abc")
+        state.connection.execute(
+            "INSERT INTO runs (run_id, operation, status, rules_sha, started_at, "
+            "ended_at, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, "rebuild", "failed", "sha-abc", "2026-07-08T08:00:00",
+             "2026-07-08T08:01:00", "boom"),
+        )
+        ctx.args["run_id"] = run_id
+
+        result = _run_force_release(ctx)
+
+        assert result["released"] is True
+        assert result["run_row_reconciled"] is False
+        row = state.connection.execute(
+            "SELECT status, error_message FROM runs WHERE run_id = ?", (run_id,),
+        ).fetchone()
+        assert row["status"] == "failed"
+        assert row["error_message"] == "boom"
+
+    def test_force_release_when_no_runs_row(self, tmp_ctx) -> None:
+        """A killed pre-lock run may have a lock but no runs row yet --
+        force_release must still succeed and report reconciled=False."""
+        ctx, state, _ = tmp_ctx
+        run_id = "killed-before-runs-row"
+        state.acquire_lock(run_id, "rebuild", "sha-abc")
+        ctx.args["run_id"] = run_id
+
+        result = _run_force_release(ctx)
+
+        assert result["released"] is True
+        assert result["run_row_reconciled"] is False
+        assert state.is_locked() is False
+
 
 class TestAbandonRun:
     """D5/D16/D17: abandon reconciles, marks abandoned, and releases own lock."""
