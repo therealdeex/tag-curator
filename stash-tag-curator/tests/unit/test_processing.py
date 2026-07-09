@@ -1506,3 +1506,70 @@ class TestMissingTagReResolution:
         report = engine2.run_execute("prop-1", run_id="run-2")
         assert report.mutations_applied == 0
         assert report.scenes_skipped.get("missing_tags") == 1
+
+
+class TestDetailTagPassThrough:
+    """detail-disposition pass-through tags (lotus, dirty talk, etc.) must be
+    created by the D6 pre-pass and NOT cause a missing_tags skip at execute."""
+
+    def test_detail_tag_in_tag_map_is_not_skipped(self, state: StateDB) -> None:
+        """When the detail tag is in tag_name_to_id (pre-pass created it),
+        the scene processes successfully instead of being skipped."""
+        rules = _build_rules(mappings={
+            "blowjob": {"disposition": "map", "outputs": ["ACT: Blowjob"]},
+            "lotus": {"disposition": "detail", "outputs": ["lotus"]},
+        })
+        scene = _minimal_scene(
+            1, performers=[_performer("p001")], tags=[("100", "Blowjob")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob", "lotus"], remote_site_id="x")]],
+            },
+        )
+        # Simulate the pre-pass having created the canonical, enrichment, AND
+        # the detail pass-through tag.
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "tag_name_to_id": {
+                **MARKER_IDS, **ENRICHMENT_TAG_IDS,
+                "ACT: Blowjob": "200", "lotus": "800",
+            },
+        })
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        # The scene must NOT be skipped -- the detail tag resolved.
+        assert report.scenes_skipped.get("missing_tags", 0) == 0
+        assert report.scenes_processed == 1
+        # The mutation includes both the canonical and the detail tag.
+        assert len(client.scene_update_calls) == 1
+        applied = client.scene_update_calls[0]["tag_ids"]
+        assert "200" in applied  # ACT: Blowjob
+        assert "800" in applied  # lotus (detail pass-through)
+
+    def test_detail_tag_missing_from_map_skips_scene(self, state: StateDB) -> None:
+        """When the detail tag is NOT in tag_name_to_id (pre-pass didn't create
+        it — the bug), the scene IS skipped as missing_tags. This test documents
+        the pre-fix behavior so the fix can be verified against it."""
+        rules = _build_rules(mappings={
+            "blowjob": {"disposition": "map", "outputs": ["ACT: Blowjob"]},
+            "lotus": {"disposition": "detail", "outputs": ["lotus"]},
+        })
+        scene = _minimal_scene(
+            1, performers=[_performer("p001")], tags=[("100", "Blowjob")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob", "lotus"], remote_site_id="x")]],
+            },
+        )
+        # "lotus" is NOT in tag_name_to_id — simulating the pre-fix bug where
+        # detail tags were never enumerated by _finite_tag_candidates.
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS, "ACT: Blowjob": "200"},
+        })
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        assert report.scenes_skipped.get("missing_tags") == 1
+        assert report.scenes_processed == 0

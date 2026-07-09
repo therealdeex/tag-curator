@@ -438,6 +438,28 @@ class Rules:
 
         return list(self._canonical_names)
 
+    def detail_output_tags(self) -> list[str]:
+        """Flat list of every ``detail``-disposition output tag name.
+
+        ``detail`` mappings are unprefixed pass-through tags (e.g. ``"lotus"``,
+        ``"dirty talk"``) that are intentionally excluded from the
+        ``canonical_tags`` registry (they have no axis prefix and are not
+        subject to canonical-reference validation).  However, the engine DOES
+        emit them as proposed tag names, so the D6 tagCreate pre-pass must
+        know about them to create the tags in Stash — otherwise scenes
+        carrying these tags are skipped as ``missing_tags`` at execute time.
+
+        Returns a deduplicated, sorted list of output names from every
+        mapping whose ``disposition`` is :data:`DISPOSITION_DETAIL`.
+        """
+        seen: dict[str, None] = {}
+        for rule in self._forward.values():
+            if rule.disposition == DISPOSITION_DETAIL:
+                for name in rule.outputs:
+                    if name and name.strip():
+                        seen.setdefault(name.strip(), None)
+        return sorted(seen.keys())
+
     def map_raw(self, raw: str) -> MappingResult:
         """Resolve a raw source tag through the forward index.
 

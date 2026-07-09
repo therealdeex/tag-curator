@@ -616,6 +616,17 @@
   min-width: 0;
 }
 
+.stash-tag-curator-select-canonical {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stash-tag-curator-custom-cancel {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  margin-left: 0.25rem;
+}
+
 .stash-tag-curator-add-output {
   flex: 0 0 auto;
 }

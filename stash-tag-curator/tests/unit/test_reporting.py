@@ -762,6 +762,72 @@ class TestRunHistory:
         result = engine.generate_run_history()
         assert result["runs"] == []
 
+    def test_totals_parsed_from_nested_execute(
+        self, engine: ReportEngine, state: StateDB
+    ) -> None:
+        """The real totals_json shape (from _record_run_end) is nested:
+        {"dry_run":{...}, "execute":{...}}.  The parser must descend into
+        the nested blocks instead of only checking the top level."""
+        conn = state.connection
+        _insert_run(
+            conn, "run-1",
+            totals_json=json.dumps({
+                "mode": "rebuild",
+                "scope": "all",
+                "dry_run": {
+                    "scenes_inspected": 18797,
+                    "proposals_written": 18797,
+                    "unmapped_tags": ["Orgy", "Wife", "Surprise"],  # list, not int
+                },
+                "execute": {
+                    "scenes_processed": 20595,
+                    "mutations_applied": 20595,
+                    "scenes_skipped": {"missing_tags": 2, "conflict": 1},  # dict
+                },
+            }),
+        )
+        result = engine.generate_run_history()
+        run = result["runs"][0]
+        assert run["scenes_changed"] == 20595
+        assert run["scenes_skipped"] == 3  # 2 + 1 (sum of dict values)
+        assert run["unmapped_count"] == 3  # len(["Orgy", "Wife", "Surprise"])
+
+    def test_totals_zero_for_dry_only_run(
+        self, engine: ReportEngine, state: StateDB
+    ) -> None:
+        """A dry-only run (no execute phase) shows scenes_changed=0 but
+        unmapped_count from the dry_run block."""
+        conn = state.connection
+        _insert_run(
+            conn, "run-dry",
+            totals_json=json.dumps({
+                "mode": "dry_rebuild",
+                "dry_run": {
+                    "scenes_inspected": 500,
+                    "unmapped_tags": ["tag1", "tag2"],
+                },
+            }),
+        )
+        result = engine.generate_run_history()
+        run = result["runs"][0]
+        assert run["scenes_changed"] == 0
+        assert run["scenes_skipped"] == 0
+        assert run["unmapped_count"] == 2
+
+    def test_totals_zero_when_null(
+        self, engine: ReportEngine, state: StateDB
+    ) -> None:
+        """A run with NULL totals_json (e.g. interrupted before any result)
+        shows all zeros."""
+        conn = state.connection
+        _insert_run(conn, "run-null", totals_json=None)
+        result = engine.generate_run_history()
+        run = result["runs"][0]
+        assert run["scenes_changed"] == 0
+        assert run["scenes_skipped"] == 0
+        assert run["failures"] == 0
+        assert run["unmapped_count"] == 0
+
 
 # ---------------------------------------------------------------------------
 # Rules audit
@@ -820,6 +886,19 @@ class TestRulesAudit:
         assert counts["DEMO"] == 0
         # Rule-mapped axes have canonical tags.
         assert counts["ACT"] > 0
+
+    def test_canonical_tag_names_exported(self, engine: ReportEngine) -> None:
+        """The rules_audit snapshot must include the full canonical tag name
+        list so the UI's Outputs dropdown can be populated from it."""
+        result = engine.generate_rules_audit()
+        names = result.get("canonical_tag_names")
+        assert isinstance(names, list)
+        assert len(names) == result["total_canonical_tags"]
+        # Every name has an axis prefix.
+        assert all(":" in n for n in names)
+        # Known canonical tags from the default rules are present.
+        assert "ACT: Vaginal sex" in names
+        assert "KINK: Bondage" in names
 
     def test_protected_prefixes(self, engine: ReportEngine) -> None:
         result = engine.generate_rules_audit()

@@ -811,6 +811,9 @@ def _finite_tag_candidates(rules: Rules) -> list[str]:
 
     * Fixed CURATOR markers.
     * Rules' enumerated canonical tags (``rules.canonical_tag_names()``).
+    * Rules' ``detail``-disposition pass-through tags (``rules.detail_output_tags()``)
+      — unprefixed tags like ``"lotus"`` / ``"dirty talk"`` that the engine emits
+      as proposed tag names but which live in ``mappings:`` (not ``canonical_tags:``).
     * Bare derived bucket labels (age / height / weight / era).
     * Gender-qualified metric variants for age/height/weight buckets
       (``<label> (<G>)`` for every code in :data:`CAST_EMIT_ORDER`).
@@ -837,6 +840,8 @@ def _finite_tag_candidates(rules: Rules) -> list[str]:
     for name in CURATOR_MARKERS:
         add(name)
     for name in rules.canonical_tag_names():
+        add(name)
+    for name in rules.detail_output_tags():
         add(name)
     for name in _derived_bucket_labels(rules):
         add(name)

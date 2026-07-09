@@ -412,3 +412,34 @@ class TestImmutability:
         names = rules.canonical_tag_names()
         names.append("mutated")
         assert "mutated" not in rules.canonical_tag_names()
+
+    def test_detail_output_tags_returns_pass_through_tags(self) -> None:
+        """detail-disposition pass-through tags (lotus, dirty talk, etc.) must
+        be enumerable so the D6 tagCreate pre-pass can create them."""
+        rules = Rules.load()
+        detail = rules.detail_output_tags()
+        # The default rules have 32 detail mappings.
+        assert len(detail) == 32
+        # Known pass-through tags from the default rules.
+        for expected in ("lotus", "dirty talk", "eye contact", "prone bone", "split"):
+            assert expected in detail, f"{expected!r} missing from detail_output_tags()"
+        # All must be unprefixed (no axis prefix like ACT: / BODY:).
+        assert all(":" not in t for t in detail)
+        # Sorted + deduplicated.
+        assert detail == sorted(set(detail))
+
+    def test_detail_output_tags_excludes_other_dispositions(self) -> None:
+        """Only detail-disposition outputs are returned, not map/ignore/defer."""
+        raw = {
+            "version": 3,
+            "prefixes": {"ACT": "ACT:"},
+            "canonical_tags": {"ACT": ["ACT: Vaginal sex"]},
+            "mappings": {
+                "vaginal": {"outputs": ["ACT: Vaginal sex"], "disposition": "map"},
+                "lotus": {"outputs": ["lotus"], "disposition": "detail"},
+                "later": {"outputs": ["ACT: Future"], "disposition": "defer"},
+            },
+        }
+        rules = Rules._build(raw, Path("<test>"))
+        detail = rules.detail_output_tags()
+        assert detail == ["lotus"]

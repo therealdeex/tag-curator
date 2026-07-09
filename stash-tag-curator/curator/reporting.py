@@ -413,21 +413,18 @@ class ReportEngine:
                     "error": row["error_message"],
                     "scope": self._extract_scope_name(row["scope_json"]),
                 }
-                # Parse totals_json for count fields.
+                # Parse totals_json for count fields.  The totals_json is the
+                # nested result dict written by _record_run_end: for a full
+                # rebuild it's {"dry_run":{...}, "execute":{...}}; for a dry-only
+                # run it's {"dry_run":{...}}; for cleanup it's {"cleanup":{...}}.
+                # The flat _int_from helper only checks the top level, so we use
+                # _extract_run_totals which descends into the nested structure.
                 totals = self._parse_json(row["totals_json"])
-                entry["scenes_changed"] = self._int_from(
-                    totals,
-                    ("mutations_applied", "scenes_processed", "processed"),
-                )
-                entry["scenes_skipped"] = self._int_from(
-                    totals, ("scenes_skipped", "skipped")
-                )
-                entry["failures"] = self._int_from(
-                    totals, ("failures", "failed", "failure_count")
-                )
-                entry["unmapped_count"] = self._int_from(
-                    totals, ("unmapped_count", "unmapped")
-                )
+                extracted = self._extract_run_totals(totals)
+                entry["scenes_changed"] = extracted["scenes_changed"]
+                entry["scenes_skipped"] = extracted["scenes_skipped"]
+                entry["failures"] = extracted["failures"]
+                entry["unmapped_count"] = extracted["unmapped_count"]
                 # Rollback availability: at least one applied mutation.
                 rollback_count = self._count(
                     conn,
@@ -504,6 +501,7 @@ class ReportEngine:
             "protected_prefixes": protected_prefixes,
             "protected_tag_names_count": len(protected_tag_names),
             "canonical_tag_counts": canonical_counts,
+            "canonical_tag_names": self._rules.canonical_tag_names(),
             "mapping_disposition_counts": disposition_counts,
         }
 
@@ -600,6 +598,97 @@ class ReportEngine:
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return int(value)
         return 0
+
+    @staticmethod
+    def _extract_run_totals(totals: dict[str, Any]) -> dict[str, int]:
+        """Extract run-history count fields from a nested ``totals_json``.
+
+        The ``totals_json`` written by ``_record_run_end`` is the full result
+        dict, which has a nested shape::
+
+            {"mode":"rebuild", "dry_run":{...}, "execute":{...}}
+
+        For dry-only runs there is no ``execute`` key.  For cleanup runs the
+        counts live under a ``cleanup`` key.  This method navigates the
+        nesting and handles shape mismatches (``scenes_skipped`` is a dict of
+        per-reason counts, ``unmapped_tags`` is a list) that the flat
+        :meth:`_int_from` cannot reach.
+
+        Returns a dict with ``scenes_changed``, ``scenes_skipped``,
+        ``failures``, ``unmapped_count`` — all ints, defaulting to 0.
+        """
+        if not isinstance(totals, dict):
+            return {"scenes_changed": 0, "scenes_skipped": 0,
+                    "failures": 0, "unmapped_count": 0}
+
+        # The execute-phase counts live under "execute" (rebuild/resume) or
+        # "cleanup" (cleanup tasks).  Dry-only runs have neither.
+        exec_block = totals.get("execute") or totals.get("cleanup") or {}
+        if not isinstance(exec_block, dict):
+            exec_block = {}
+        dry_block = totals.get("dry_run") or {}
+        if not isinstance(dry_block, dict):
+            dry_block = {}
+
+        # scenes_changed: mutations_applied > scenes_processed > top-level.
+        changed = ReportEngine._int_from(
+            exec_block, ("mutations_applied", "scenes_processed", "processed"),
+        )
+        if changed == 0:
+            changed = ReportEngine._int_from(
+                totals, ("mutations_applied", "scenes_processed", "processed"),
+            )
+
+        # scenes_skipped: stored as a dict of per-reason counts (e.g.
+        # {"missing_tags": 2, "conflict": 1}); sum the values.  Fall back to
+        # top-level for legacy flat shapes.
+        skipped_raw = exec_block.get("scenes_skipped")
+        if skipped_raw is None:
+            skipped_raw = totals.get("scenes_skipped")
+        if isinstance(skipped_raw, dict):
+            scenes_skipped = sum(
+                v for v in skipped_raw.values()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            )
+        elif isinstance(skipped_raw, (int, float)) and not isinstance(skipped_raw, bool):
+            scenes_skipped = int(skipped_raw)
+        else:
+            scenes_skipped = 0
+
+        # failures: the execute report has no explicit "failures" field; the
+        # closest is scenes_skipped["mutation_failure"].  Also check top-level
+        # for legacy shapes.
+        failures = 0
+        if isinstance(skipped_raw, dict):
+            mf = skipped_raw.get("mutation_failure", 0)
+            if isinstance(mf, (int, float)) and not isinstance(mf, bool):
+                failures = int(mf)
+        if failures == 0:
+            failures = ReportEngine._int_from(
+                totals, ("failures", "failed", "failure_count"),
+            )
+
+        # unmapped_count: stored as a LIST of tag names under
+        # dry_run.unmapped_tags; take its length.  Also check top-level for
+        # legacy shapes.
+        unmapped_raw = dry_block.get("unmapped_tags")
+        if unmapped_raw is None:
+            unmapped_raw = totals.get("unmapped_tags")
+        if isinstance(unmapped_raw, list):
+            unmapped_count = len(unmapped_raw)
+        elif isinstance(unmapped_raw, (int, float)) and not isinstance(unmapped_raw, bool):
+            unmapped_count = int(unmapped_raw)
+        else:
+            unmapped_count = ReportEngine._int_from(
+                totals, ("unmapped_count", "unmapped"),
+            )
+
+        return {
+            "scenes_changed": changed,
+            "scenes_skipped": scenes_skipped,
+            "failures": failures,
+            "unmapped_count": unmapped_count,
+        }
 
     @staticmethod
     def _extract_scope_name(scope_json: Any) -> str | None:

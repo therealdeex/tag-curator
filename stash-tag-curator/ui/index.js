@@ -1614,8 +1614,20 @@
     return { disposition: null, outputs: [], notes: "" };
   }
 
+  // Guess the rules-axis for a new canonical tag from its prefix (e.g.
+  // "KINK: Foo" -> "KINK").  Used by buildSavePayload when the user types a
+  // brand-new tag in the "Add new..." fallback — the backend requires an
+  // axis for canonical_additions.  Falls back to "ACT" (a safe default that
+  // the backend will accept; the user can edit the rules file later).
+  function _guessAxisFromTag(tag) {
+    var m = /^([A-Z]+):/.exec(String(tag || ""));
+    if (m && m[1]) return m[1];
+    return "ACT";
+  }
+
   function UnmappedTagsPanel(props) {
     const snapshot = useAssetSnapshot("unmapped_tags", !!props.autoRefresh);
+    const rulesAudit = useAssetSnapshot("rules_audit", false);
     const jobState = props.jobState;
     const [query, setQuery] = useState("");
     const [sortKey, setSortKey] = useState("occurrence_count");
@@ -1631,6 +1643,10 @@
       (snapshot.data && snapshot.data.rules_checksum) || null;
     const tags = (snapshot.data && snapshot.data.tags) || [];
     const totalUnmapped = (snapshot.data && snapshot.data.total_unmapped) || 0;
+    const canonicalTagNames = (
+      rulesAudit.data && rulesAudit.data.canonical_tag_names
+    ) || [];
+    const canonicalTagSet = new Set(canonicalTagNames);
     const jobInProgress = !!(jobState.job && !isTerminalStatus(jobState.job.status));
     const pendingCount = Object.keys(pending).length;
 
@@ -1739,17 +1755,28 @@
     }
 
     function buildSavePayload() {
-      const changes = Object.keys(pending).map((rawTag) => {
-        const edit = pending[rawTag];
-        const disposition = edit.disposition || "defer";
-        const item = {
+      var canonicalAdditions = [];
+      var changes = Object.keys(pending).map((rawTag) => {
+        var edit = pending[rawTag];
+        var disposition = edit.disposition || "defer";
+        var item = {
           normalized_key: rawTag,
           disposition: disposition,
         };
         if (disposition === "detail") {
           item.outputs = [rawTag];
         } else if (disposition === "map") {
-          item.outputs = (edit.outputs || []).slice();
+          var outputs = (edit.outputs || []).slice();
+          item.outputs = outputs;
+          // Any output that isn't an existing canonical tag is a new tag
+          // the user typed in the "Add new..." fallback.  Collect these as
+          // canonical_additions so the backend adds them to the rules.
+          outputs.forEach(function (out) {
+            if (!canonicalTagSet.has(out)) {
+              var axis = _guessAxisFromTag(out);
+              canonicalAdditions.push({ axis: axis, name: out });
+            }
+          });
         }
         // ignore omits outputs; defer may omit outputs or carry existing ones.
         if (edit.notes) {
@@ -1760,7 +1787,7 @@
       return {
         expected_rules_sha: rulesChecksum,
         changes: changes,
-        canonical_additions: [],
+        canonical_additions: canonicalAdditions,
       };
     }
 
@@ -2011,6 +2038,7 @@
                     key: row.raw_tag,
                     row: row,
                     edit: pending[row.raw_tag] || null,
+                    canonicalTagNames: canonicalTagNames,
                     onSetDisposition: setDisposition,
                     onAddOutput: addOutput,
                     onRemoveOutput: removeOutput,
@@ -2095,6 +2123,7 @@
               outputs: edit.outputs || [],
               draft: outputDraft,
               setDraft: setOutputDraft,
+              canonicalTagNames: props.canonicalTagNames || [],
               onAdd: () => {
                 props.onAddOutput(rawTag, outputDraft);
                 setOutputDraft("");
@@ -2154,45 +2183,99 @@
     );
   }
 
-  // MapOutputsCell: a multi-select control built from a text input + Add
-  // button + chip list. The user can attach multiple canonical tag names to
-  // a single raw tag. T32 may swap this for a ReactSelect multi-dropdown
-  // populated from the canonical set; this minimal control satisfies the
-  // "multi-select (not single dropdown)" QA requirement.
+  // MapOutputsCell: a multi-select control with a dropdown of canonical tags
+  // + an "Add new..." fallback for rare custom tags. The user can attach
+  // multiple canonical tag names to a single raw tag. Selected tags appear as
+  // removable chips below the input.
   function MapOutputsCell(props) {
     const outputs = props.outputs || [];
+    const canonicalNames = props.canonicalTagNames || [];
+    const [customMode, setCustomMode] = useState(false);
+
+    function handleSelect(ev) {
+      var val = (ev && ev.target && ev.target.value) || "";
+      if (val === "__custom__") {
+        setCustomMode(true);
+        ev.target.value = "";
+        return;
+      }
+      if (val) {
+        props.setDraft(val);
+        // Auto-add on select for the dropdown path.
+        props.onAdd();
+        props.setDraft("");
+      }
+      ev.target.value = "";
+    }
+
     return h(
       "div",
       { className: "stash-tag-curator-map-outputs" },
       h(
         "div",
         { className: "stash-tag-curator-map-input-row" },
-        h(BSFormControl, {
-          type: "text",
-          value: props.draft,
-          onChange: (ev) => props.setDraft((ev && ev.target && ev.target.value) || ""),
-          placeholder: "canonical tag (e.g. KINK: Roleplay)",
-          className: "stash-tag-curator-input-canonical",
-          "aria-label": "Add canonical output for " + props.rawTag,
-          onKeyDown: (ev) => {
-            if (ev && ev.key === "Enter") {
-              ev.preventDefault();
-              props.onAdd();
-            }
-          },
-        }),
-        h(
-          BSButton,
-          {
-            type: "button",
-            size: "sm",
-            variant: "secondary",
-            onClick: props.onAdd,
-            disabled: !String(props.draft || "").trim(),
-            className: "stash-tag-curator-add-output",
-          },
-          "Add"
-        )
+        customMode
+          ? h(BSFormControl, {
+              type: "text",
+              value: props.draft,
+              onChange: (ev) => props.setDraft((ev && ev.target && ev.target.value) || ""),
+              placeholder: "type new canonical tag name...",
+              className: "stash-tag-curator-input-canonical",
+              "aria-label": "Add canonical output for " + props.rawTag,
+              onKeyDown: (ev) => {
+                if (ev && ev.key === "Enter") {
+                  ev.preventDefault();
+                  props.onAdd();
+                  setCustomMode(false);
+                }
+              },
+            })
+          : h(
+              "select",
+              {
+                className: "stash-tag-curator-select-canonical form-control form-control-sm",
+                onChange: handleSelect,
+                "aria-label": "Select canonical output for " + props.rawTag,
+                value: "",
+              },
+              h("option", { value: "" }, "\u2014 select a canonical tag \u2014"),
+              canonicalNames.map(function (name) {
+                return h("option", { key: name, value: name }, name);
+              }),
+              h("option", { value: "__custom__" }, "+ Add new tag...")
+            ),
+        customMode
+          ? h(
+              BSButton,
+              {
+                type: "button",
+                size: "sm",
+                variant: "secondary",
+                onClick: function () {
+                  props.onAdd();
+                  setCustomMode(false);
+                },
+                disabled: !String(props.draft || "").trim(),
+                className: "stash-tag-curator-add-output",
+              },
+              "Add"
+            )
+          : null,
+        customMode
+          ? h(
+              "a",
+              {
+                href: "#",
+                onClick: function (ev) {
+                  ev.preventDefault();
+                  setCustomMode(false);
+                  props.setDraft("");
+                },
+                className: "stash-tag-curator-muted stash-tag-curator-custom-cancel",
+              },
+              "cancel"
+            )
+          : null
       ),
       outputs.length > 0
         ? h(
