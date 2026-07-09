@@ -2128,6 +2128,13 @@
                 props.onAddOutput(rawTag, outputDraft);
                 setOutputDraft("");
               },
+              onToggle: (val) => {
+                if ((edit.outputs || []).indexOf(val) === -1) {
+                  props.onAddOutput(rawTag, val);
+                } else {
+                  props.onRemoveOutput(rawTag, val);
+                }
+              },
               onRemove: (val) => props.onRemoveOutput(rawTag, val),
             })
           : disposition === "detail"
@@ -2183,30 +2190,47 @@
     );
   }
 
-  // MapOutputsCell: a multi-select control with a dropdown of canonical tags
+  // MapOutputsCell: a multi-select control with a popover of canonical tags
   // + an "Add new..." fallback for rare custom tags. The user can attach
   // multiple canonical tag names to a single raw tag. Selected tags appear as
-  // removable chips below the input.
+  // removable chips below the control. Selection toggles a tag by value
+  // (props.onToggle), bypassing the draft state entirely — this avoids the
+  // stale-closure bug where setDraft() + onAdd() read an empty draft.
   function MapOutputsCell(props) {
     const outputs = props.outputs || [];
+    const outputsSet = useMemo(() => new Set(outputs), [outputs]);
     const canonicalNames = props.canonicalTagNames || [];
     const [customMode, setCustomMode] = useState(false);
+    const [open, setOpen] = useState(false);
+    const [filter, setFilter] = useState("");
+    const rootRef = useRef(null);
 
-    function handleSelect(ev) {
-      var val = (ev && ev.target && ev.target.value) || "";
-      if (val === "__custom__") {
-        setCustomMode(true);
-        ev.target.value = "";
-        return;
-      }
-      if (val) {
-        props.setDraft(val);
-        // Auto-add on select for the dropdown path.
-        props.onAdd();
-        props.setDraft("");
-      }
-      ev.target.value = "";
-    }
+    // Close the popover on any click outside its container.
+    useEffect(() => {
+      if (!open) return;
+      const onDocMouseDown = function (ev) {
+        const node = rootRef.current;
+        if (node && ev.target && node.contains(ev.target)) return;
+        setOpen(false);
+      };
+      document.addEventListener("mousedown", onDocMouseDown);
+      return () => {
+        document.removeEventListener("mousedown", onDocMouseDown);
+      };
+    }, [open]);
+
+    const visibleNames = useMemo(() => {
+      const q = filter.trim().toLowerCase();
+      if (!q) return canonicalNames;
+      return canonicalNames.filter(function (name) {
+        return name.toLowerCase().indexOf(q) !== -1;
+      });
+    }, [canonicalNames, filter]);
+
+    const triggerLabel =
+      outputs.length > 0
+        ? "Select tags (" + outputs.length + ") \u25be"
+        : "\u2014 select canonical tags \u2014 \u25be";
 
     return h(
       "div",
@@ -2231,18 +2255,79 @@
               },
             })
           : h(
-              "select",
-              {
-                className: "stash-tag-curator-select-canonical form-control form-control-sm",
-                onChange: handleSelect,
-                "aria-label": "Select canonical output for " + props.rawTag,
-                value: "",
-              },
-              h("option", { value: "" }, "\u2014 select a canonical tag \u2014"),
-              canonicalNames.map(function (name) {
-                return h("option", { key: name, value: name }, name);
-              }),
-              h("option", { value: "__custom__" }, "+ Add new tag...")
+              "div",
+              { className: "stash-tag-curator-ms", ref: rootRef },
+              h(
+                "button",
+                {
+                  type: "button",
+                  className:
+                    "stash-tag-curator-ms-trigger form-control form-control-sm",
+                  onClick: function () {
+                    setOpen((prev) => !prev);
+                  },
+                  "aria-haspopup": "true",
+                  "aria-expanded": open ? "true" : "false",
+                  "aria-label": "Select canonical outputs for " + props.rawTag,
+                },
+                triggerLabel
+              ),
+              open
+                ? h(
+                    "div",
+                    { className: "stash-tag-curator-ms-popover" },
+                    h(BSFormControl, {
+                      type: "text",
+                      value: filter,
+                      onChange: (ev) =>
+                        setFilter((ev && ev.target && ev.target.value) || ""),
+                      placeholder: "filter tags...",
+                      className: "stash-tag-curator-ms-filter form-control form-control-sm",
+                      "aria-label": "Filter canonical tags for " + props.rawTag,
+                    }),
+                    visibleNames.length > 0
+                      ? h(
+                          "ul",
+                          { className: "stash-tag-curator-ms-list" },
+                          visibleNames.map(function (name) {
+                            const checked = outputsSet.has(name);
+                            return h(
+                              "li",
+                              { key: name, className: "stash-tag-curator-ms-item" },
+                              h(
+                                "label",
+                                { className: "stash-tag-curator-ms-label" },
+                                h("input", {
+                                  type: "checkbox",
+                                  checked: checked,
+                                  onChange: () => props.onToggle(name),
+                                }),
+                                " ",
+                                h("code", null, name)
+                              )
+                            );
+                          })
+                        )
+                      : h(
+                          "div",
+                          { className: "stash-tag-curator-muted stash-tag-curator-ms-empty" },
+                          "(no tags match)"
+                        ),
+                    h(
+                      "button",
+                      {
+                        type: "button",
+                        className: "stash-tag-curator-ms-custom",
+                        onClick: function () {
+                          setFilter("");
+                          setOpen(false);
+                          setCustomMode(true);
+                        },
+                      },
+                      "+ Add new tag..."
+                    )
+                  )
+                : null
             ),
         customMode
           ? h(

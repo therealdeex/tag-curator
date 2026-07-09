@@ -683,6 +683,96 @@
   min-width: 10rem;
 }
 
+/* Multi-select popover for canonical outputs (Unmapped > Map). */
+.stash-tag-curator-ms {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stash-tag-curator-ms-trigger {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stash-tag-curator-ms-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50; /* clears sticky table header (z-index 1); below modal fallback (1080) */
+  min-width: 100%;
+  width: max-content;
+  max-width: 24rem;
+  margin-top: var(--curator-space-1);
+  padding: var(--curator-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--curator-space-1);
+  background: var(--bs-body-bg, #ffffff);
+  color: var(--bs-body-color, inherit);
+  border: 1px solid var(--curator-border);
+  border-radius: var(--curator-radius);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.3);
+}
+
+.stash-tag-curator-ms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 16rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.stash-tag-curator-ms-item {
+  margin: 0;
+  padding: 0;
+}
+
+.stash-tag-curator-ms-label {
+  display: flex;
+  align-items: center;
+  gap: var(--curator-space-1);
+  padding: var(--curator-space-1) var(--curator-space-2);
+  border-radius: var(--curator-radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.stash-tag-curator-ms-label:hover {
+  background: var(--curator-hover-bg);
+}
+
+.stash-tag-curator-ms-label code {
+  font-family: var(--curator-font-mono);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-tag-curator-ms-empty {
+  font-size: 0.8rem;
+  padding: var(--curator-space-1) var(--curator-space-2);
+}
+
+.stash-tag-curator-ms-custom {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--curator-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: var(--curator-space-1) var(--curator-space-2);
+  border-top: 1px solid var(--curator-border);
+  margin-top: var(--curator-space-1);
+}
+
 /* ------------------------------------------------------------------ */
 /* Run history panel                                                   */
 /* ------------------------------------------------------------------ */
