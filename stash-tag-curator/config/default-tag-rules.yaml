@@ -1,37 +1,3 @@
-# stash-tag-curator/config/default-tag-rules.yaml
-# Canonical source of truth for the Tag Engine v3 tag taxonomy.
-#
-# Bundled immutable default. On first run the engine copies this file to
-# <data-dir>/tag-rules.yml; the active copy is the source of truth thereafter.
-#
-# Schema (v3):
-#   version        - schema version (3)
-#   prefixes       - 12 axis -> prefix strings (CAST/DEMO/AGE/ERA/STUDIO are
-#                    computed; ACT/BODY/THEME/SET/WARD/KINK/PROD are mapped)
-#   canonical_tags - axis -> list of canonical tag names (computed axes are
-#                    empty: their labels are generated from the finite
-#                    `derived` bucket sets, never enumerated here)
-#   mappings       - normalized source key -> {outputs, disposition, notes}
-#                    disposition is one of: map | detail | ignore | defer
-#                    * map    -> outputs REQUIRED (>=1 canonical tag)
-#                    * detail -> outputs REQUIRED (>=1 unprefixed pass-through)
-#                    * ignore -> outputs FORBIDDEN (noise; dropped)
-#                    * defer  -> outputs carry the v2 destination for audit;
-#                                the mapping is NOT active until a human review
-#                    map and ignore are mutually exclusive. No silently
-#                    unreachable rules (v2 blacklist-wins collisions resolved).
-#   derived        - finite, bounded bucket sets + alias tables for computed
-#                    axes (age/height/weight/ethnicity/country/cast/era)
-#   protected      - prefixes/tag_names always preserved on a scene
-#   legacy         - v1 prefixes/checkpoint/suffix markers for cleanup
-#
-# Normalization (applied to source keys): strip().lower().rstrip(',').
-# Internal whitespace is NOT collapsed. No substring fuzzy matching.
-#
-# Migrated from the root-level v2 tag-rules.yml with zero data loss: every
-# v2-mapped destination, every detail tag, and every blacklist entry is
-# represented below. The 7 mapped/blacklist collisions and the ~30 flagged
-# mis-mappings are resolved explicitly (see their notes).
 version: 3
 prefixes:
   CAST: 'CAST:'
@@ -70,6 +36,7 @@ canonical_tags:
   - 'ACT: Grinding'
   - 'ACT: Ass-to-mouth'
   - 'ACT: Fisting'
+  - 'ACT: Bukkake'
   BODY:
   - 'BODY: Big ass'
   - 'BODY: Small ass'
@@ -98,6 +65,7 @@ canonical_tags:
   - 'BODY: Uncircumcised'
   - 'BODY: Circumcised'
   - 'BODY: Average body'
+  - 'BODY: Oiled'
   AGE: []
   THEME:
   - 'THEME: Cheating'
@@ -245,261 +213,192 @@ mappings:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   double blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   blowjob - pov:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   blowjob nose pinch:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   hands-free blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   sloppy blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   throat fucking:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   face fuck:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   cock worship:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   dick licking:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   ball licking:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   ball sucking:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   ball sucking during blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   blowjob sandwich:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   booth blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   cowgirl blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   deepthroat:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   deep throat:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   head pushing blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   inverted blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   missionary blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   side fuck blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   standing blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   triple blowjob:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   blowjob only:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   double blowjob (2 mouths):
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   double blowjob (2 penises):
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   multiple blowjobs (2+ mouths):
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   multiple blowjobs (2+ penises):
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   train (oral sex):
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   blowbang:
     outputs:
     - 'ACT: Blowjob'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging)
-      and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on
-      a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
   pussy licking:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   cunnilingus:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   pussy licking doggy style:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   pussy worship:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   pussy teasing:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   facesitting:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   facesitting on her:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: map
-    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent
-      acts.'
+    notes: 'v2 grouping: facesitting + breast licking grouped here: mouth-on-recipient oral-adjacent acts.'
   handjob:
     outputs:
     - 'ACT: Handjob'
@@ -540,86 +439,72 @@ mappings:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   titjob - pov:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   tit worship:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast play:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   titty fuck:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   tit smacking:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast holding:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast squeezing:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast squeezing from behind:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast touching:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   breast shaking:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   bouncing tits:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   tit fucking:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   cum between tits:
     outputs:
     - 'ACT: Titjob'
     disposition: map
-    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped
-      under the tit act bucket since they describe breast-centric action.'
+    notes: 'v2 grouping: Breast-play tags (breast squeezing/shaking, tit smacking) grouped under the tit act bucket since they describe breast-centric action.'
   pussy fingering:
     outputs:
     - 'ACT: Fingering'
@@ -696,26 +581,22 @@ mappings:
     outputs:
     - 'ACT: Kissing'
     disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping,
-      drool) grouped here as the canonical mouth-centric bucket.'
+    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
   cum kissing:
     outputs:
     - 'ACT: Kissing'
     disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping,
-      drool) grouped here as the canonical mouth-centric bucket.'
+    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
   cum swapping:
     outputs:
     - 'ACT: Kissing'
     disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping,
-      drool) grouped here as the canonical mouth-centric bucket.'
+    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
   drool:
     outputs:
     - 'ACT: Kissing'
     disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping,
-      drool) grouped here as the canonical mouth-centric bucket.'
+    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
   rimming:
     outputs:
     - 'ACT: Rimming'
@@ -860,68 +741,57 @@ mappings:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on body:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on ass:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on stomach:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on pussy:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on hands:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on asshole:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum on back:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum covered fucking:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   pearl necklace:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   cum shot:
     outputs:
     - 'ACT: Cumshot - body'
     disposition: map
-    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped
-      under body cumshot.'
+    notes: 'v2 grouping: ''pearl necklace'' (neck-target) and generic ''cum shot'' grouped under body cumshot.'
   creampie:
     outputs:
     - 'ACT: Cumshot - internal'
@@ -958,230 +828,192 @@ mappings:
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   airtight:
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   double vaginal penetration (dvp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   double anal penetration (dap):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   triple anal penetration (tap):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   spit roast:
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   cowgirl (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   reverse cowgirl (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   doggy style (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   standing sex (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   double penetration (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   stand and carry (dp):
     outputs:
     - 'ACT: DP'
     disposition: map
-    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...)
-      belong to the DP act, not to the removed positions axis.'
+    notes: 'v2 grouping: Position-suffixed DP variants (cowgirl (dp), doggy style (dp), ...) belong to the DP act, not to the removed positions axis.'
   toys:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   dildo:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   vibrator:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   strap-on:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   strap on:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   hitachi:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   fucking machines:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   sybian:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   electric dildo:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   glass dildo:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   double dildo:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   butt plug:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   anal beads:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   anal toys:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   nipple toys:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   wands:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   vaginal dildo:
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   sex toys (dildo / vibrator):
     outputs:
     - 'ACT: Sex toys'
     disposition: map
-    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking
-      machines) collapse to this single act bucket.'
+    notes: 'v2 grouping: All implement/toy tags (dildo, vibrator, strap-on, butt plug, fucking machines) collapse to this single act bucket.'
   grinding:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   grinding / rubbing:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   rubbing:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   tribbing:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   scissoring:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   pussy stacking:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   pussy slide:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   pussy to other's pussy:
     outputs:
     - 'ACT: Grinding'
     disposition: map
-    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative
-      genital-contact act.'
+    notes: 'v2 grouping: tribbing/scissoring/pussy-slide grouped here as the non-penetrative genital-contact act.'
   ass to mouth:
     outputs:
     - 'ACT: Ass-to-mouth'
@@ -1398,44 +1230,37 @@ mappings:
     outputs:
     - 'BODY: Augmented breasts'
     disposition: map
-    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags
-      as the augmented-body bucket.'
+    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags as the augmented-body bucket.'
   fake boobs:
     outputs:
     - 'BODY: Augmented breasts'
     disposition: map
-    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags
-      as the augmented-body bucket.'
+    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags as the augmented-body bucket.'
   fake breasts:
     outputs:
     - 'BODY: Augmented breasts'
     disposition: map
-    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags
-      as the augmented-body bucket.'
+    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags as the augmented-body bucket.'
   enhanced breasts:
     outputs:
     - 'BODY: Augmented breasts'
     disposition: map
-    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags
-      as the augmented-body bucket.'
+    notes: 'v2 grouping: ''enhanced ass'' grouped here alongside enhanced/fake breast tags as the augmented-body bucket.'
   all natural:
     outputs:
     - 'BODY: Natural breasts'
     disposition: map
-    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body''
-      descriptor maps to the natural-breasts bucket as its primary home.'
+    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body'' descriptor maps to the natural-breasts bucket as its primary home.'
   natural tits:
     outputs:
     - 'BODY: Natural breasts'
     disposition: map
-    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body''
-      descriptor maps to the natural-breasts bucket as its primary home.'
+    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body'' descriptor maps to the natural-breasts bucket as its primary home.'
   natural breasts:
     outputs:
     - 'BODY: Natural breasts'
     disposition: map
-    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body''
-      descriptor maps to the natural-breasts bucket as its primary home.'
+    notes: 'v2 grouping: ''all natural'' and ''natural ass'' land here: the ''natural body'' descriptor maps to the natural-breasts bucket as its primary home.'
   big nipples:
     outputs:
     - 'BODY: Big nipples'
@@ -1696,56 +1521,47 @@ mappings:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   cosplay:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   fantasy:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   parody:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   sci-fi:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   horror:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   genre fiction:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   rule 34:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   character:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped
-      here as fictional/narrative roleplay.'
+    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   romance:
     outputs:
     - 'THEME: Romance'
@@ -1826,20 +1642,17 @@ mappings:
     outputs:
     - 'THEME: Wife sharing'
     disposition: map
-    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme
-      bucket.'
+    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme bucket.'
   hot wife xxx:
     outputs:
     - 'THEME: Wife sharing'
     disposition: map
-    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme
-      bucket.'
+    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme bucket.'
   other person's wife:
     outputs:
     - 'THEME: Wife sharing'
     disposition: map
-    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme
-      bucket.'
+    notes: 'v2 grouping: ''wife'' / ''husband'' raw tags grouped under the wife-sharing theme bucket.'
   older / younger:
     outputs:
     - 'THEME: Older/younger'
@@ -1924,37 +1737,27 @@ mappings:
     outputs:
     - 'THEME: Gangbang'
     disposition: map
-    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant
-      theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed
-      by the CAST axis instead).'
+    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed by the CAST axis instead).'
   reverse gangbang:
     outputs:
     - 'THEME: Gangbang'
     disposition: map
-    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant
-      theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed
-      by the CAST axis instead).'
+    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed by the CAST axis instead).'
   orgy (mixed):
     outputs:
     - 'THEME: Gangbang'
     disposition: map
-    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant
-      theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed
-      by the CAST axis instead).'
+    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed by the CAST axis instead).'
   group sex:
     outputs:
     - 'THEME: Gangbang'
     disposition: map
-    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant
-      theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed
-      by the CAST axis instead).'
+    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed by the CAST axis instead).'
   foursome:
     outputs:
     - 'THEME: Gangbang'
     disposition: map
-    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant
-      theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed
-      by the CAST axis instead).'
+    notes: 'v2 grouping: orgy / group sex / foursome grouped here as the multi-participant theme. NOTE: foursome (bbg/bbgg/...) cast-spelling variants are in blacklist (computed by the CAST axis instead).'
   bedroom:
     outputs:
     - 'SET: Bedroom'
@@ -2319,26 +2122,22 @@ mappings:
     outputs:
     - 'WARD: Latex/leather'
     disposition: map
-    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than
-      under KINK Bondage (which covers restraint-mechanism tags).'
+    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than under KINK Bondage (which covers restraint-mechanism tags).'
   leather:
     outputs:
     - 'WARD: Latex/leather'
     disposition: map
-    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than
-      under KINK Bondage (which covers restraint-mechanism tags).'
+    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than under KINK Bondage (which covers restraint-mechanism tags).'
   fetishwear:
     outputs:
     - 'WARD: Latex/leather'
     disposition: map
-    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than
-      under KINK Bondage (which covers restraint-mechanism tags).'
+    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than under KINK Bondage (which covers restraint-mechanism tags).'
   leather belt bondage:
     outputs:
     - 'WARD: Latex/leather'
     disposition: map
-    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than
-      under KINK Bondage (which covers restraint-mechanism tags).'
+    notes: 'v2 grouping: ''leather belt bondage'' grouped here (material-driven) rather than under KINK Bondage (which covers restraint-mechanism tags).'
   glasses:
     outputs:
     - 'WARD: Glasses'
@@ -2539,236 +2338,182 @@ mappings:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   shibari:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   suspension:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   restraints:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   leather cuffs:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   handcuffs:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   chains:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   straitjacket:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   predicament bondage:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   breast bondage:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   bondage furniture:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   bondage collar:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   shackle:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   crotch rope:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   harness:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   arm pulling:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   arms restrained behind back:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   bound:
     outputs:
     - 'KINK: Bondage'
     disposition: map
-    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints,
-      cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage''
-      lives under WARD: Latex/leather instead.'
+    notes: 'v2 grouping: Restraint-mechanism tags (handcuffs, shibari, suspension, restraints, cuffs, straitjacket, harness, crotch rope). Material-driven ''leather belt bondage'' lives under WARD: Latex/leather instead.'
   spanking:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   corporal punishment:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   canes:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   crops:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   flogger:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   whip:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   paddle:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   slapping:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   hair pulling:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   single-tailed whip:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   impact toys:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   clothespins:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   clover clamps:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   clamps:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   zipper:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   weights:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   flogging:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   pain:
     outputs:
     - 'KINK: Spanking/impact'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent
-      toys.'
+    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   femdom:
     outputs:
     - 'KINK: Dom/Sub'
@@ -2853,20 +2598,17 @@ mappings:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language.
-      NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
+    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language. NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
   degradation:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language.
-      NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
+    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language. NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
   spitting:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language.
-      NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
+    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language. NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
   choking:
     outputs:
     - 'KINK: Choking/breath'
@@ -2999,38 +2741,32 @@ mappings:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   orgasm denial:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   edging:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   tease and denial:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   orgasm control:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   multiple orgasms:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: map
-    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm''
-      grouped here under the orgasm-control kink axis rather than as standalone acts.'
+    notes: 'v2 grouping: ''orgasm'', ''multiple orgasms'', ''shaking/intense/bound orgasm'' grouped here under the orgasm-control kink axis rather than as standalone acts.'
   pegging:
     outputs:
     - 'KINK: Pegging'
@@ -3131,68 +2867,52 @@ mappings:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   all sex:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   hard fuck:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   aggressive:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   brutal:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   destruction:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist
-      takes precedence in map_tag (checked first -> returns None), so their presence here
-      is preserved for documentation of intent but never reached at runtime.'
+    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   pov:
     outputs:
     - 'PROD: POV'
     disposition: map
-    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent
-      camera styles.'
+    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent camera styles.'
   male - pov:
     outputs:
     - 'PROD: POV'
     disposition: map
-    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent
-      camera styles.'
+    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent camera styles.'
   mixed - pov:
     outputs:
     - 'PROD: POV'
     disposition: map
-    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent
-      camera styles.'
+    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent camera styles.'
   female - pov:
     outputs:
     - 'PROD: POV'
     disposition: map
-    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent
-      camera styles.'
+    notes: 'v2 grouping: ''interactive'' and ''virtual reality'' grouped here as POV-adjacent camera styles.'
   narrative:
     outputs:
     - 'PROD: Narrative'
@@ -3233,20 +2953,17 @@ mappings:
     outputs:
     - 'PROD: Compilation'
     disposition: map
-    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation
-      formats.'
+    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation formats.'
   the best of:
     outputs:
     - 'PROD: Compilation'
     disposition: map
-    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation
-      formats.'
+    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation formats.'
   vignettes:
     outputs:
     - 'PROD: Compilation'
     disposition: map
-    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation
-      formats.'
+    notes: 'v2 grouping: ''full movie'' and ''vignettes'' grouped here as multi-scene compilation formats.'
   glamour:
     outputs:
     - 'PROD: Glamour'
@@ -3274,82 +2991,67 @@ mappings:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent).
-      v2 also blacklisted it; collision resolved by mapping and removing from the ignore set
-      so the rule is reachable.'
+    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent). v2 also blacklisted it; collision resolved by mapping and removing from the ignore set so the rule is reachable.'
   bitch:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent).
-      v2 also blacklisted it; collision resolved by mapping.'
+    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent). v2 also blacklisted it; collision resolved by mapping.'
   slutty:
     outputs:
     - 'KINK: Humiliation'
     disposition: map
-    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent).
-      v2 also blacklisted it; collision resolved by mapping.'
+    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent). v2 also blacklisted it; collision resolved by mapping.'
   rough:
     outputs:
     - 'PROD: Gonzo'
     disposition: map
-    notes: 'Collision-resolution: genuine intensity/production-style signal, more specific
-      than ''hardcore'' (per v2 PROD: Gonzo intent). v2 also blacklisted it; collision resolved
-      by mapping.'
+    notes: 'Collision-resolution: genuine intensity/production-style signal, more specific than ''hardcore'' (per v2 PROD: Gonzo intent). v2 also blacklisted it; collision resolved by mapping.'
   enhanced ass:
     outputs:
     - 'BODY: Augmented breasts'
     disposition: defer
-    notes: 'Suspect v2 mapping: body-part mismatch (''ass'' mapped to a breasts bucket). Flagged
-      for human review before activation.'
+    notes: 'Suspect v2 mapping: body-part mismatch (''ass'' mapped to a breasts bucket). Flagged for human review before activation.'
   natural ass:
     outputs:
     - 'BODY: Natural breasts'
     disposition: defer
-    notes: 'Suspect v2 mapping: body-part mismatch (''ass'' mapped to a breasts bucket). Flagged
-      for human review.'
+    notes: 'Suspect v2 mapping: body-part mismatch (''ass'' mapped to a breasts bucket). Flagged for human review.'
   breast licking:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: defer
-    notes: 'Suspect v2 mapping: breast play miscategorized as cunnilingus; likely belongs
-      under a breast-act bucket. Flagged for review.'
+    notes: 'Suspect v2 mapping: breast play miscategorized as cunnilingus; likely belongs under a breast-act bucket. Flagged for review.'
   facesitting on him:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: defer
-    notes: 'Suspect v2 mapping: facesitting-on-male is femdom/rimming-adjacent, not cunnilingus.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: facesitting-on-male is femdom/rimming-adjacent, not cunnilingus. Flagged for review.'
   pussy rubbing:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: defer
-    notes: 'Suspect v2 mapping: manual genital contact miscategorized as oral; candidate for
-      grinding/fingering. Flagged for review.'
+    notes: 'Suspect v2 mapping: manual genital contact miscategorized as oral; candidate for grinding/fingering. Flagged for review.'
   clit play:
     outputs:
     - 'ACT: Cunnilingus'
     disposition: defer
-    notes: 'Suspect v2 mapping: manual/toy clit stimulation miscategorized as oral. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: manual/toy clit stimulation miscategorized as oral. Flagged for review.'
   ball play:
     outputs:
     - 'ACT: Blowjob'
     disposition: defer
-    notes: 'Suspect v2 mapping: not inherently oral; overlaps handjob/foreplay. Flagged for
-      review.'
+    notes: 'Suspect v2 mapping: not inherently oral; overlaps handjob/foreplay. Flagged for review.'
   gagging:
     outputs:
     - 'ACT: Blowjob'
     disposition: defer
-    notes: 'Suspect v2 mapping: ambiguous between deepthroat and bondage gag. Flagged for
-      review.'
+    notes: 'Suspect v2 mapping: ambiguous between deepthroat and bondage gag. Flagged for review.'
   fish-hooking:
     outputs:
     - 'ACT: Kissing'
     disposition: defer
-    notes: 'Suspect v2 mapping: degradation/humiliation mouth play, not kissing. Flagged for
-      review.'
+    notes: 'Suspect v2 mapping: degradation/humiliation mouth play, not kissing. Flagged for review.'
   spit in mouth:
     outputs:
     - 'ACT: Kissing'
@@ -3359,8 +3061,7 @@ mappings:
     outputs:
     - 'ACT: Rimming'
     disposition: defer
-    notes: 'Suspect v2 mapping: impact play miscategorized as rimming; belongs under spanking/impact.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: impact play miscategorized as rimming; belongs under spanking/impact. Flagged for review.'
   ass grabbing:
     outputs:
     - 'ACT: Rimming'
@@ -3370,20 +3071,17 @@ mappings:
     outputs:
     - 'ACT: Cumshot - internal'
     disposition: defer
-    notes: 'Suspect v2 mapping: impregnation is a fantasy/theme, not purely a cumshot type.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: impregnation is a fantasy/theme, not purely a cumshot type. Flagged for review.'
   camel toe:
     outputs:
     - 'BODY: Large labia'
     disposition: defer
-    notes: 'Suspect v2 mapping: camel toe is a clothing/wardrobe effect, not labia anatomy.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: camel toe is a clothing/wardrobe effect, not labia anatomy. Flagged for review.'
   fat pussy:
     outputs:
     - 'BODY: Large labia'
     disposition: defer
-    notes: 'Suspect v2 mapping: vague body descriptor; anatomy mapping questionable. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: vague body descriptor; anatomy mapping questionable. Flagged for review.'
   tanned skin:
     outputs:
     - 'BODY: Tan lines'
@@ -3393,26 +3091,22 @@ mappings:
     outputs:
     - 'THEME: Wife sharing'
     disposition: defer
-    notes: 'Suspect v2 mapping: the presence of ''wife'' does not imply a sharing theme. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: the presence of ''wife'' does not imply a sharing theme. Flagged for review.'
   husband:
     outputs:
     - 'THEME: Wife sharing'
     disposition: defer
-    notes: 'Suspect v2 mapping: the presence of ''husband'' does not imply a sharing theme.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: the presence of ''husband'' does not imply a sharing theme. Flagged for review.'
   other person's mom:
     outputs:
     - 'THEME: Wife sharing'
     disposition: defer
-    notes: 'Suspect v2 mapping: not a wife-sharing signal; likely an age/role theme. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: not a wife-sharing signal; likely an age/role theme. Flagged for review.'
   orgy:
     outputs:
     - 'THEME: Gangbang'
     disposition: defer
-    notes: 'Suspect v2 mapping: orgy (multi-participant) is not gangbang (many-on-one). Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: orgy (multi-participant) is not gangbang (many-on-one). Flagged for review.'
   washing:
     outputs:
     - 'SET: Bathroom'
@@ -3432,8 +3126,7 @@ mappings:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: defer
-    notes: 'Suspect v2 mapping: an orgasm event miscategorized as orgasm control. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: an orgasm event miscategorized as orgasm control. Flagged for review.'
   shaking orgasm:
     outputs:
     - 'KINK: Chastity/orgasm control'
@@ -3448,20 +3141,17 @@ mappings:
     outputs:
     - 'KINK: Chastity/orgasm control'
     disposition: defer
-    notes: 'Suspect v2 mapping: an orgasm event (bondage context) miscategorized as control.
-      Flagged for review.'
+    notes: 'Suspect v2 mapping: an orgasm event (bondage context) miscategorized as control. Flagged for review.'
   full movie:
     outputs:
     - 'PROD: Compilation'
     disposition: defer
-    notes: 'Suspect v2 mapping: could be a feature film rather than a compilation. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: could be a feature film rather than a compilation. Flagged for review.'
   interactive:
     outputs:
     - 'PROD: POV'
     disposition: defer
-    notes: 'Suspect v2 mapping: interactive porn is a format, not a POV camera style. Flagged
-      for review.'
+    notes: 'Suspect v2 mapping: interactive porn is a format, not a POV camera style. Flagged for review.'
   virtual reality:
     outputs:
     - 'PROD: POV'
@@ -3629,19 +3319,13 @@ mappings:
     notes: v2 detail tag (niche, high filtering value; unprefixed pass-through).
   babes:
     disposition: ignore
-    notes: 'Collision-resolution: ''babes'' is both a brand/property name (Babes.com) and
-      a generic descriptor; unreliable as a raw signal. v2 blacklisted it (blacklist won over
-      the PROD: Glamour axis entry). Resolved to ignore.'
+    notes: 'Collision-resolution: ''babes'' is both a brand/property name (Babes.com) and a generic descriptor; unreliable as a raw signal. v2 blacklisted it (blacklist won over the PROD: Glamour axis entry). Resolved to ignore.'
   hardcore:
     disposition: ignore
-    notes: 'Collision-resolution: ''hardcore'' is near-universal for hardcore porn and too
-      generic to drive a PROD: Gonzo tag; v2 blacklisted it (blacklist won over the axis entry).
-      Resolved to ignore as a noise descriptor.'
+    notes: 'Collision-resolution: ''hardcore'' is near-universal for hardcore porn and too generic to drive a PROD: Gonzo tag; v2 blacklisted it (blacklist won over the axis entry). Resolved to ignore as a noise descriptor.'
   sultry:
     disposition: ignore
-    notes: 'Collision-resolution: ''sultry'' is a vague, subjective mood word; the THEME:
-      Romance mapping is unreliable. v2 blacklisted it (blacklist won over the axis entry).
-      Resolved to ignore.'
+    notes: 'Collision-resolution: ''sultry'' is a vague, subjective mood word; the THEME: Romance mapping is unreliable. v2 blacklisted it (blacklist won over the axis entry). Resolved to ignore.'
   '!generic tags':
     disposition: ignore
     notes: v2 blacklist noise (generic/meta descriptor with no filtering value).
@@ -3809,612 +3493,460 @@ mappings:
     notes: v2 blacklist noise (generic/meta descriptor with no filtering value).
   '69':
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   against wall:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   amazon position:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal cowgirl:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal doggy style:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal doggy style - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal missionary:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal missionary - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal piledriver:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal prone bone:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal reverse cowgirl:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal side fuck:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   anal spooning:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   back shot:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   backbend:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   ballerina:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   ballerina position:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   closed missionary:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   cowgirl:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   cowgirl - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   doggy style:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   doggy style - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   doggystyle:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   front shot:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   high angle:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   jockey position:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   legs up missionary:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   lift and carry:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   low angle:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   missionary:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   missionary - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   reverse cowgirl:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   reverse cowgirl - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   reverse riding:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   riding:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   side fuck:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   side fuck - pov:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   side shot:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   side-by-side:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   split leaning forward:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   spooning:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   spooning blowjob:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   squatting:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   stand and carry:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   standing cradle:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   standing doggy style:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   standing sex:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   wrapped missionary:
     disposition: ignore
-    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in
-      v2/v3 (schema-removed); ignored as raw noise.'
+    notes: 'v2 blacklist noise: sex-position label. Positions are not a structured axis in v2/v3 (schema-removed); ignored as raw noise.'
   auburn hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   bangs:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   black hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   black hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   black hair (male):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   blond hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   blond hair (male):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   blonde hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   blue eyes:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   braids:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   brown eyes:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   brown hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   brown hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   brown hair (male):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   colored hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   colored hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   curly hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   dark skin:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   dreadlocks:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   extra long hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   eyes - blue:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   eyes - hazel:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   fair skin:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   gray hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   gray hair (male):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   green eyes:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   grey eyes:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   hair accessories:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   hair bun:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   hazel eyes:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   light brown skin:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   long hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   long hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   medium hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   medium hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   medium skin:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   multicolored hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   pale skin:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   platinum blond hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   platinum blond hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   ponytail:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   red hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   red hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   short hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   short hair (female):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   short hair (male):
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   straight hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   strawberry blond hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   tan girl:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   wavy hair:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   wig:
     disposition: ignore
-    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives
-      on the performer, not as a scene tag.'
+    notes: 'v2 blacklist noise: performer-record appearance attribute (hair/eye/skin); lives on the performer, not as a scene tag.'
   bisexual:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   couple:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   foursome (bbbg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   foursome (bbg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   foursome (bbgg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   foursome (bggg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   foursome (lesbian):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   gay:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   group sex (lesbian):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   lesbian:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   lesbian action:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   sex train:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   sixsome:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   solo:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   solo female:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   solo male:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   straight:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   tag team:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   threesome:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   threesome (bbg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   threesome (bgg):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   threesome (lesbian):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   twosome:
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   twosome (lesbian):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   twosome (straight):
     disposition: ignore
-    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis;
-      raw form ignored.'
+    notes: 'v2 blacklist noise: cast-composition label redundant with the computed CAST axis; raw form ignored.'
   asian:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   asian on white:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   asian woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   bbc:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   big black cock (bbc):
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   big white cock (bwc):
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   black:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   black man:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   black on white:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   black woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   caucasian:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   exotic:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   interracial:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   latin:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   latin woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   latina woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   latino man:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   middle eastern woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   mixed ethnicity:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   mixed race:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   mixed race man:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   mixed race woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   native woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   white:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   white man:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   white on asian:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   white on black:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   white woman:
     disposition: ignore
-    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO
-      axis; raw form ignored.'
+    notes: 'v2 blacklist noise: demographic/ethnicity label redundant with the computed DEMO axis; raw form ignored.'
   18+:
     disposition: ignore
     notes: 'v2 blacklist noise: age label redundant with the computed AGE axis; raw form ignored.'
@@ -4498,104 +4030,79 @@ mappings:
     notes: 'v2 blacklist noise: age label redundant with the computed AGE axis; raw form ignored.'
   2d available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   4k available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   5k available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   60 fps:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   6k available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   7k available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   8k available:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   av1:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   award winner (avn award *):
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   award winning:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   censored:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   english language:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   feature:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   features:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   jav:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   official website:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   partial paywall:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   professional production:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   re-release:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   reducing mosaic:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   remaster:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   sample video:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   subtitles:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   uncensored:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   western production:
     disposition: ignore
-    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards,
-      language); not a content tag.'
+    notes: 'v2 blacklist noise: technical/production metadata (resolution, codec, awards, language); not a content tag.'
   cgi:
     disposition: ignore
     notes: 'v2 blacklist noise: camera/composition descriptor; too granular / not axis-aligned.'
@@ -4740,12 +4247,6 @@ mappings:
   no condom:
     disposition: ignore
     notes: 'v2 blacklist noise: high-count remaining noise; no filtering value.'
-  # ---------------------------------------------------------------------
-  # Reconciliation mappings for existing curated tags (adjective-noun
-  # convention -> canonical noun-gendered form). These let the engine
-  # re-map a library that was already curated by a different system
-  # rather than treating those tags as unmapped noise.
-  # ---------------------------------------------------------------------
   'demo: female caucasian':
     outputs:
     - 'DEMO: Caucasian Female'
@@ -4908,9 +4409,6 @@ mappings:
   'era: 2020s':
     disposition: ignore
     notes: 'Reconciliation: no canonical ERA axis enumerated; ignored to avoid unmapped noise.'
-  # ---------------------------------------------------------------------
-  # Identity mappings: tags already in canonical form (self-map).
-  # ---------------------------------------------------------------------
   'act: anal sex':
     outputs:
     - 'ACT: Anal sex'
@@ -5181,20 +4679,17 @@ mappings:
     - 'WARD: Uniform'
     disposition: map
     notes: 'Identity map: tag is already in canonical form.'
-  # ---------------------------------------------------------------------
-  # Foreign-tag mappings: non-canonical tags with a clear target.
-  # ---------------------------------------------------------------------
   'age: 60+':
     outputs:
     - 'AGE: 60+ (F)'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'beard':
+  beard:
     outputs:
     - 'BODY: Hairy'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'boots':
+  boots:
     outputs:
     - 'WARD: Latex/leather'
     disposition: map
@@ -5239,38 +4734,38 @@ mappings:
     - 'DEMO: Middle Eastern Male'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'female teacher':
+  female teacher:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'gangbang - m on f':
+  gangbang - m on f:
     outputs:
     - 'THEME: Gangbang'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'harem':
+  harem:
     disposition: ignore
     notes: 'Reconciliation: no canonical THEME:Harem exists; enrichment derives related tags from metadata. Ignored to avoid unmapped noise.'
-  'interracial - black men':
+  interracial - black men:
     outputs:
     - 'DEMO: Interracial'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'interracial - latin girls':
+  interracial - latin girls:
     outputs:
     - 'DEMO: Interracial'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'leg fetish':
+  leg fetish:
     outputs:
     - 'KINK: Foot fetish'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'married':
+  married:
     disposition: ignore
     notes: 'Reconciliation: THEME:Married IRL is a derived tag (generated by enrichment from performer metadata), not a map target. Ignored to avoid unmapped noise.'
-  'massage parlor':
+  massage parlor:
     outputs:
     - 'THEME: Massage'
     disposition: map
@@ -5280,40 +4775,37 @@ mappings:
     - 'PROD: POV'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'piledriver':
+  piledriver:
     outputs:
     - 'ACT: Vaginal sex'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'secretary':
+  secretary:
     outputs:
     - 'THEME: Roleplay'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'sister':
+  sister:
     outputs:
     - 'THEME: Step-family'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'tattooed man':
+  tattooed man:
     outputs:
     - 'BODY: Tattooed'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'tattooed woman':
+  tattooed woman:
     outputs:
     - 'BODY: Tattooed'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  'trimmed pussy':
+  trimmed pussy:
     outputs:
     - 'BODY: Shaved'
     disposition: map
     notes: 'Reconciliation: existing tag -> canonical form.'
-  # ---------------------------------------------------------------------
-  # Foreign-tag ignores: no canonical equivalent; ignored to avoid noise.
-  # ---------------------------------------------------------------------
-  '180°':
+  180°:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
   'demo: female mixed-race (primarily middle eastern)':
@@ -5322,78 +4814,433 @@ mappings:
   'era: pre-2000':
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'egg vibrator':
+  egg vibrator:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'escort':
+  escort:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'exclusive distribution':
+  exclusive distribution:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'eyes rolling':
+  eyes rolling:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'housewife':
+  housewife:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'innie pussy':
+  innie pussy:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'lotion':
+  lotion:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'molester':
+  molester:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'multiple cumshots':
+  multiple cumshots:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'neighbors':
+  neighbors:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'original collaboration':
+  original collaboration:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'other fetish':
+  other fetish:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'outie pussy':
+  outie pussy:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'planning':
+  planning:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'prebooks':
+  prebooks:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'prostitutes':
+  prostitutes:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'pussy gape':
+  pussy gape:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'race queen':
+  race queen:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'sex game':
+  sex game:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'shoes':
+  shoes:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'stewardess':
+  stewardess:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'sunglasses':
+  sunglasses:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'sweaty':
+  sweaty:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
-  'training':
+  training:
     disposition: ignore
     notes: 'Reconciliation: no canonical equivalent; ignored.'
+  fake nails:
+    disposition: ignore
+  tall:
+    disposition: ignore
+  punishment:
+    disposition: map
+    outputs:
+    - 'KINK: Dom/Sub'
+    notes: 'FIX 2026-07-12: was wrongly mapped to ACT: Cunnilingus; punishment is a D/s dynamic descriptor.'
+
+  # --- Ops patch 2026-07-12: approved mappings ---
+  discipline:
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+  female slave:
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+  oil:
+    outputs:
+    - 'BODY: Oiled'
+    disposition: map
+  wet look:
+    outputs:
+    - 'BODY: Oiled'
+    disposition: map
+  little people:
+    outputs:
+    - 'BODY: Petite'
+    disposition: map
+  tazapper:
+    outputs:
+    - 'KINK: Electro play'
+    disposition: map
+  pain slut:
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+  cage:
+    outputs:
+    - 'SET: Dungeon'
+    disposition: map
+  tattoos & piercings:
+    outputs:
+    - 'BODY: Tattooed'
+    - 'BODY: Pierced'
+    disposition: map
+  girls finishing the job:
+    outputs:
+    - 'ACT: Handjob'
+    disposition: map
+  metal restraints:
+    outputs:
+    - 'KINK: Bondage'
+    - 'KINK: Gags/restraints'
+    disposition: map
+  massive cumshot:
+    outputs:
+    - 'ACT: Cumshot - body'
+    disposition: map
+  bukkake:
+    outputs:
+    - 'ACT: Bukkake'
+    disposition: map
+  jewelry:
+    outputs:
+    - 'WARD: Jewelry'
+    disposition: map
+  teacher:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  double handed:
+    outputs:
+    - 'ACT: Handjob'
+    disposition: map
+  student:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  breast sucking:
+    outputs:
+    - 'ACT: Titjob'
+    disposition: map
+  babysitter:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  cop:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  male boss:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  boss:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  coach:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  doctor:
+    outputs:
+    - 'THEME: Roleplay'
+    disposition: map
+  daughter:
+    outputs:
+    - 'THEME: Step-family'
+    disposition: map
+  parents:
+    outputs:
+    - 'THEME: Step-family'
+    disposition: map
+  mother:
+    outputs:
+    - 'THEME: Step-family'
+    disposition: map
+  louboutin shoes:
+    outputs:
+    - 'WARD: Heels'
+    disposition: map
+  pussy piercing:
+    outputs:
+    - 'BODY: Pierced'
+    disposition: map
+  reverse cowgirl blowjob:
+    outputs:
+    - 'ACT: Blowjob'
+    disposition: map
+  jerk off instruction:
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+  cum on forehead:
+    outputs:
+    - 'ACT: Cumshot - face'
+    disposition: map
+  double facial (2 targets):
+    outputs:
+    - 'ACT: Cumshot - face'
+    disposition: map
+  costume:
+    outputs:
+    - 'WARD: Uniform'
+    disposition: map
+  under-the-knee socks:
+    outputs:
+    - 'WARD: Casual'
+    disposition: map
+  virgin:
+    outputs:
+    - 'THEME: First time'
+    disposition: map
+  ass jiggle:
+    outputs:
+    - 'BODY: Big ass'
+    disposition: map
+  ass stacking:
+    outputs:
+    - 'BODY: Big ass'
+    disposition: map
+  broken:
+    outputs:
+    - 'KINK: Dom/Sub'
+    disposition: map
+  # --- Ops patch 2026-07-12: approved ignores ---
+  gimp:
+    disposition: ignore
+    notes: 'Ops patch: blacklisted per Shahram - BDSM role too vague for canonical mapping.'
+  perky tits:
+    disposition: ignore
+    notes: 'Ops patch: blacklisted per Shahram.'
+  clothed sex:
+    disposition: ignore
+    notes: 'Ops patch: blacklisted per Shahram.'
+  home:
+    disposition: ignore
+    notes: 'Ops patch: blacklisted per Shahram - too vague as setting.'
+  striptease:
+    disposition: ignore
+    notes: 'Ops patch: blacklisted per Shahram.'
+  boyfriend:
+    disposition: ignore
+    notes: 'Ops patch: relationship label noise.'
+  girlfriend:
+    disposition: ignore
+    notes: 'Ops patch: relationship label noise.'
+  no tattoos:
+    disposition: ignore
+    notes: 'Ops patch: negative descriptor noise.'
+  work fantasies:
+    disposition: ignore
+    notes: 'Ops patch: vague scenario wrapper.'
+  average dick:
+    disposition: ignore
+    notes: 'Ops patch: default/negative descriptor.'
+  manicured:
+    disposition: ignore
+    notes: 'Ops patch: grooming detail noise.'
+  pedicured:
+    disposition: ignore
+    notes: 'Ops patch: grooming detail noise.'
+  medium height:
+    disposition: ignore
+    notes: 'Ops patch: generic body default.'
+  has kids:
+    disposition: ignore
+    notes: 'Ops patch: meta/IRL descriptor noise.'
+  modelesque:
+    disposition: ignore
+    notes: 'Ops patch: subjective/vague.'
+  wet pussy:
+    disposition: ignore
+    notes: 'Ops patch: arousal state, not a body descriptor.'
+  smoking:
+    disposition: ignore
+    notes: 'Ops patch: noise descriptor.'
+  smoking fetish:
+    disposition: ignore
+    notes: 'Ops patch: noise descriptor.'
+  standing missionary:
+    disposition: ignore
+    notes: 'Ops patch: position variant, not in axis system.'
+  yoga:
+    disposition: ignore
+    notes: 'Ops patch: activity noise.'
+  party:
+    disposition: ignore
+    notes: 'Ops patch: vague scenario.'
+  flexible:
+    disposition: ignore
+    notes: 'Ops patch: body attribute noise.'
+  no bra:
+    disposition: ignore
+    notes: 'Ops patch: negative descriptor.'
+  blue collar:
+    disposition: ignore
+    notes: 'Ops patch: socio-economic label noise.'
+  floor:
+    disposition: ignore
+    notes: 'Ops patch: too vague as setting.'
+  table:
+    disposition: ignore
+    notes: 'Ops patch: too vague as setting.'
+  criminal:
+    disposition: ignore
+    notes: 'Ops patch: vague roleplay label.'
+  mask:
+    disposition: ignore
+    notes: 'Ops patch: vague descriptor.'
+  pigtails:
+    disposition: ignore
+    notes: 'Ops patch: hairstyle noise.'
+  gloves:
+    disposition: ignore
+    notes: 'Ops patch: wardrobe noise.'
+  arabic:
+    disposition: ignore
+    notes: 'Ops patch: ethnicity/language noise.'
+  native:
+    disposition: ignore
+    notes: 'Ops patch: ethnicity noise.'
+  cfnm:
+    disposition: ignore
+    notes: 'Ops patch: niche fetish acronym, overlaps with clothed sex (also blacklisted).'
+  religious:
+    disposition: ignore
+    notes: 'Ops patch: noise descriptor.'
+  sports:
+    disposition: ignore
+    notes: 'Ops patch: activity noise.'
+  robe:
+    disposition: ignore
+    notes: 'Ops patch: wardrobe noise.'
+  cleaning:
+    disposition: ignore
+    notes: 'Ops patch: activity noise.'
+  hat:
+    disposition: ignore
+    notes: 'Ops patch: wardrobe noise.'
+  finger sucking:
+    disposition: ignore
+    notes: 'Ops patch: micro-act noise.'
+  lube:
+    disposition: ignore
+    notes: 'Ops patch: production detail.'
+  castingcouchx:
+    disposition: ignore
+    notes: 'Ops patch: brand/site name.'
+  braces:
+    disposition: ignore
+    notes: 'Ops patch: grooming detail noise.'
+  see-through:
+    disposition: ignore
+    notes: 'Ops patch: wardrobe micro-detail.'
+  store:
+    disposition: ignore
+    notes: 'Ops patch: too vague as setting.'
+  kneeling:
+    disposition: ignore
+    notes: 'Ops patch: position detail noise.'
+  upskirt:
+    disposition: ignore
+    notes: 'Ops patch: voyeur micro-detail.'
+  cuban:
+    disposition: ignore
+    notes: 'Ops patch: nationality noise.'
+  canadian:
+    disposition: ignore
+    notes: 'Ops patch: nationality noise.'
+  eastern european:
+    disposition: ignore
+    notes: 'Ops patch: ethnicity noise.'
+  shaved head:
+    disposition: ignore
+    notes: 'Ops patch: grooming noise.'
+  bald head:
+    disposition: ignore
+    notes: 'Ops patch: grooming noise.'
+  soap:
+    disposition: ignore
+    notes: 'Ops patch: production/setting detail.'
+  condom:
+    disposition: ignore
+    notes: 'Ops patch: production detail.'
+  stockings (black):
+    outputs:
+    - 'WARD: Stockings'
+    disposition: map
+  stockings (nude):
+    outputs:
+    - 'WARD: Stockings'
+    disposition: map
+  sports bra:
+    outputs:
+    - 'WARD: Casual'
+    disposition: map
+  one-piece:
+    outputs:
+    - 'WARD: Bikini'
+    disposition: map
+  spread legs:
+    disposition: ignore
+    notes: 'Ops patch: position detail noise.'
+  chair:
+    disposition: ignore
+    notes: 'Ops patch: too vague as furniture/setting.'
+  fuck n lick:
+    disposition: ignore
+    notes: 'Ops patch: generic act combo noise.'
+
 derived:
   age_buckets:
   - min: 18
