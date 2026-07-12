@@ -73,7 +73,7 @@ from curator.processing import (  # noqa: E402
     Scope,
 )
 from curator.providers import ProviderLookup  # noqa: E402
-from curator.reporting import ReportEngine  # noqa: E402
+from curator.reporting import ReportEngine, _atomic_write  # noqa: E402, SLF001
 from curator.rollback import (  # noqa: E402
     POLICY_SKIP_WITH_WARNING,
     RollbackEngine,
@@ -1135,6 +1135,53 @@ def _run_validate_rules(ctx: TaskContext) -> dict[str, Any]:
     }
 
 
+def _write_save_result(ctx: TaskContext, result: Mapping[str, Any]) -> None:
+    """Persist the save-mapping result to a side-channel JSON the UI reads.
+
+    Stash's ``findJob`` relays a plugin task's ``status``/``error``/``progress``
+    but NOT the plugin's stdout JSON, and the curator contract exits 0 even on
+    handled failures (``validation_failed``/``rules_changed``/``run_lock_active``),
+    so Stash marks those jobs ``FINISHED`` with ``error=null``.  The UI therefore
+    cannot tell a failed save from a successful one via the job object alone.
+
+    This writes the full result dict -- tagged with the caller's
+    ``save_request_id`` and a ``written_at`` timestamp -- to both the
+    authoritative snapshots dir and the transient ``assets/`` mirror the UI
+    fetches at ``/plugin/stash-tag-curator/assets/save_result.json``.  The UI
+    keys on ``save_request_id`` (a value it generated) so it never trusts a
+    stale result from an earlier edit.
+
+    Best-effort: any I/O failure is logged to stderr and swallowed -- a
+    result-file write failure MUST NOT fail the save itself.
+    """
+    payload = {
+        "save_request_id": str(result.get("save_request_id") or ""),
+        "saved": bool(result.get("saved")),
+        "error": result.get("error"),
+        "message": result.get("message"),
+        "errors": list(result["errors"]) if isinstance(result.get("errors"), list) else None,
+        "new_rules_sha": result.get("new_rules_sha"),
+        "held_by_run_id": result.get("held_by_run_id"),
+        "written_at": _now_iso(),
+    }
+    # Drop None values so the payload stays compact; the UI treats absent keys
+    # as null.
+    payload = {k: v for k, v in payload.items() if v is not None}
+    serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2)
+    try:
+        snapshots_dir = ctx.snapshots_dir
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write(snapshots_dir / "save_result.json", serialized)
+    except Exception as exc:  # pragma: no cover -- defensive; best-effort
+        _log(f"save_result.json authoritative write failed: {exc}")
+    try:
+        assets_dir = ctx.assets_dir
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write(assets_dir / "save_result.json", serialized)
+    except Exception as exc:  # pragma: no cover -- defensive; best-effort
+        _log(f"save_result.json assets mirror write failed: {exc}")
+
+
 def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
     """Save a rules edit via :class:`curator.rules_editor.RulesEditor` (T31).
 
@@ -1143,12 +1190,24 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
       * ``changes``             -- list of ``{normalized_key, disposition,
                                  outputs?, notes?}`` mapping edits.
       * ``canonical_additions``-- optional list of ``{axis, name}``.
+      * ``save_request_id``    -- optional caller-generated token echoed in
+                                 ``save_result.json`` so the UI can match the
+                                 result to its dispatch.  Generated if absent.
 
     When ``expected_rules_sha`` is absent the handler degrades to a
     validate-only route that returns the current checksum so the UI can
     bootstrap its optimistic-concurrency token.
+
+    Every return path writes the result to ``save_result.json`` (see
+    :func:`_write_save_result`) so the UI can distinguish a handled failure
+    (``validation_failed``/``rules_changed``/``run_lock_active``) from success
+    -- which Stash's job object alone cannot convey.
     """
     from curator.rules_editor import RulesEditor
+
+    save_request_id = str(ctx.args.get("save_request_id") or "").strip()
+    if not save_request_id:
+        save_request_id = secrets.token_hex(8)
 
     expected_sha = str(ctx.args.get("expected_rules_sha") or "").strip()
     changes_raw = ctx.args.get("changes")
@@ -1158,7 +1217,22 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
         try:
             rules = ctx.load_rules()
         except RulesValidationError as exc:
+            result: dict[str, Any] = {
+                "save_request_id": save_request_id,
+                "saved": False,
+                "error": "validation_failed",
+                "errors": list(exc.errors),
+            }
+            _write_save_result(ctx, result)
             return {"saved": False, "errors": list(exc.errors)}
+        result = {
+            "save_request_id": save_request_id,
+            "saved": False,
+            "message": "no expected_rules_sha provided; validate-only",
+            "rules_sha": rules.rules_sha,
+            "rules_path": str(getattr(rules, "source_path", ctx.rules_path)),
+        }
+        _write_save_result(ctx, result)
         return {
             "saved": False,
             "message": "no expected_rules_sha provided; validate-only",
@@ -1180,6 +1254,14 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
         )
         if not acquired.acquired:
             held = state.current_lock()
+            result = {
+                "save_request_id": save_request_id,
+                "saved": False,
+                "error": "run_lock_active",
+                "message": "another curator operation is still running",
+                "held_by_run_id": str(held["run_id"]) if held else None,
+            }
+            _write_save_result(ctx, result)
             return {
                 "saved": False,
                 "error": "run_lock_active",
@@ -1194,9 +1276,11 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
             lock_owner_run_id=lock_run_id,
         )
         result = editor.save_mapping(expected_sha, changes, additions)
-        if "new_rules_sha" in result:
-            return {"saved": True, **result}
-        return {"saved": False, **result}
+        result["save_request_id"] = save_request_id
+        result["saved"] = "new_rules_sha" in result
+        _write_save_result(ctx, result)
+        result.pop("save_request_id", None)
+        return result
     finally:
         state.release_lock(lock_run_id)
         state.close()

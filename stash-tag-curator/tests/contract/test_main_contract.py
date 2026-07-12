@@ -782,6 +782,141 @@ class TestSaveMappingRoute:
         finally:
             check.close()
 
+    def test_save_result_json_written_on_success_and_failure(
+        self, tmp_path: Path,
+    ) -> None:
+        """The backend mirrors its result to ``save_result.json`` so the UI can
+        distinguish a handled failure (exit 0, ``{"saved": false}``) from a
+        real success -- Stash's ``findJob`` cannot convey the plugin's stdout
+        JSON.  The file is keyed by the caller's ``save_request_id`` so the UI
+        never trusts a stale result from an earlier edit.
+
+        Asserts both the success and the ``rules_changed`` failure paths write
+        a matching ``save_result.json`` to the authoritative snapshots dir, and
+        that the stdout return value does NOT leak ``save_request_id``.
+        """
+        from curator.rules import Rules
+
+        stash_dir = tmp_path / "stash"
+        data_dir = stash_dir / "stash-tag-curator-data"
+        data_dir.mkdir(parents=True)
+        rules_path = data_dir / "tag-rules.yml"
+        rules_path.write_text(
+            (PLUGIN_ROOT / "config" / "default-tag-rules.yaml").read_text()
+        )
+        sha = Rules.load(str(rules_path)).rules_sha
+        snapshots_dir = data_dir / "snapshots"
+
+        client = _StubClient(
+            responses={"GetAppVersion": {"version": {"version": "0.31.1"}}}
+        )
+
+        # --- Success path ---
+        req_id_success = "ui-success-1234"
+        result = _dispatch(
+            _envelope(
+                "save_mapping",
+                server_connection={"Dir": str(stash_dir)},
+                args={
+                    "expected_rules_sha": sha,
+                    "changes": [
+                        {"normalized_key": "save result side channel", "disposition": "ignore"}
+                    ],
+                    "save_request_id": req_id_success,
+                },
+            ),
+            client=client,
+        )
+        assert result["saved"] is True
+        # stdout must NOT carry save_request_id (internal UI token, not for logs)
+        assert "save_request_id" not in result
+
+        save_result_path = snapshots_dir / "save_result.json"
+        assert save_result_path.exists(), "save_result.json not written on success"
+        written = json.loads(save_result_path.read_text())
+        assert written["save_request_id"] == req_id_success
+        assert written["saved"] is True
+        # error is omitted (None) on success; the payload drops None values.
+        assert "error" not in written
+        assert written["new_rules_sha"] == result["new_rules_sha"]
+        assert "written_at" in written
+
+        # --- Failure path: stale expected_rules_sha -> rules_changed ---
+        req_id_fail = "ui-fail-5678"
+        result_fail = _dispatch(
+            _envelope(
+                "save_mapping",
+                server_connection={"Dir": str(stash_dir)},
+                args={
+                    "expected_rules_sha": "deadbeef",
+                    "changes": [
+                        {"normalized_key": "should not apply", "disposition": "ignore"}
+                    ],
+                    "save_request_id": req_id_fail,
+                },
+            ),
+            client=client,
+        )
+        assert result_fail["saved"] is False
+        assert result_fail["error"] == "rules_changed"
+        assert "save_request_id" not in result_fail
+
+        written_fail = json.loads(save_result_path.read_text())
+        assert written_fail["save_request_id"] == req_id_fail
+        assert written_fail["saved"] is False
+        assert written_fail["error"] == "rules_changed"
+
+    def test_save_result_json_written_on_validation_failure(
+        self, tmp_path: Path,
+    ) -> None:
+        """A ``validation_failed`` outcome (handled failure, exit 0) is written
+        to ``save_result.json`` with the caller's ``save_request_id`` so the UI
+        surfaces the real validation error instead of the misleading 'Rules
+        changed' modal.
+        """
+        stash_dir = tmp_path / "stash"
+        data_dir = stash_dir / "stash-tag-curator-data"
+        data_dir.mkdir(parents=True)
+        rules_path = data_dir / "tag-rules.yml"
+        rules_path.write_text(
+            (PLUGIN_ROOT / "config" / "default-tag-rules.yaml").read_text()
+        )
+        from curator.rules import Rules
+        sha = Rules.load(str(rules_path)).rules_sha
+        snapshots_dir = data_dir / "snapshots"
+
+        client = _StubClient(
+            responses={"GetAppVersion": {"version": {"version": "0.31.1"}}}
+        )
+        req_id = "ui-validation-9999"
+        # A canonical_additions name missing the required "AXIS: " prefix trips
+        # validation in the editor (not the optimistic-concurrency gate).
+        result = _dispatch(
+            _envelope(
+                "save_mapping",
+                server_connection={"Dir": str(stash_dir)},
+                args={
+                    "expected_rules_sha": sha,
+                    "changes": [
+                        {"normalized_key": "ok key", "disposition": "ignore"}
+                    ],
+                    "canonical_additions": [
+                        {"axis": "ACT", "name": "no-prefix-here"}
+                    ],
+                    "save_request_id": req_id,
+                },
+            ),
+            client=client,
+        )
+        assert result["saved"] is False
+        assert result["error"] == "validation_failed"
+
+        written = json.loads((snapshots_dir / "save_result.json").read_text())
+        assert written["save_request_id"] == req_id
+        assert written["saved"] is False
+        assert written["error"] == "validation_failed"
+        assert isinstance(written.get("errors"), list) and written["errors"]
+
     def test_save_mapping_subprocess_reaches_rules_editor(self, tmp_path: Path) -> None:
         """Regression: the lazy import inside ``_run_save_mapping`` MUST use
         the absolute ``from curator.rules_editor`` form (not ``from

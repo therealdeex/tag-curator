@@ -1871,14 +1871,39 @@
       return data && data.rules_checksum;
     }
 
+    // Fetch the backend save-result side-channel written by _run_save_mapping.
+    // Stash's findJob conveys a plugin task's status/error/progress but NOT its
+    // stdout JSON, and the curator contract exits 0 even on handled failures
+    // (validation_failed / rules_changed / run_lock_active) -- so Stash marks
+    // those jobs FINISHED with error=null.  The backend therefore mirrors its
+    // result dict to assets/save_result.json, tagged with the save_request_id
+    // we generated at dispatch time so we never act on a stale result.
+    async function fetchSaveResult() {
+      const url = ASSET_BASE + "save_result.json?_=" + Date.now();
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error("save result asset HTTP " + response.status);
+      }
+      const data = await response.json();
+      return data && typeof data === "object" ? data : null;
+    }
+
     function confirmAndSave() {
       const payload = buildSavePayload();
       const expectedSha = rulesChecksum;
       expectedShaRef.current = expectedSha;
+      // Caller-generated token echoed in save_result.json so verifySaveResult
+      // can match the result to THIS dispatch and never trust a stale file.
+      const saveRequestId =
+        Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
       const argsMap = {
         expected_rules_sha: expectedSha,
         changes: payload.changes,
         canonical_additions: payload.canonical_additions,
+        save_request_id: saveRequestId,
       };
       setConfirmOpen(false);
       setSaveError(null);
@@ -1889,11 +1914,12 @@
         argsMap: argsMap,
         label: "Save Mapping Edit",
         argsLabel: pendingCount + " change" + (pendingCount === 1 ? "" : "s"),
-        onComplete: (finalJob) => verifySaveResult(finalJob, expectedSha),
+        onComplete: (finalJob) =>
+          verifySaveResult(finalJob, expectedSha, saveRequestId),
       });
     }
 
-    async function verifySaveResult(finalJob, expectedSha) {
+    async function verifySaveResult(finalJob, expectedSha, saveRequestId) {
       if (!finalJob) return;
       const status = String(finalJob.status || "").toUpperCase();
       if (status === "FAILED" || status === "CANCELLED" || status === "REMOVED") {
@@ -1905,6 +1931,69 @@
         }
         return;
       }
+      // Job is READY/FINISHED (Stash treats a stdout-JSON exit-0 plugin as a
+      // successful task even when the plugin itself returned {"saved": false}).
+      // Consult the save_result.json side-channel -- keyed by save_request_id
+      // -- for the authoritative outcome.
+      let result = null;
+      try {
+        result = await fetchSaveResult();
+      } catch (err) {
+        // Side-channel unreadable: fall back to the checksum-drift heuristic
+        // below, but never jump to the "Rules changed" modal on a fetch
+        // failure -- that modal is only for a confirmed rules_changed result.
+        result = null;
+      }
+      const matches =
+        result &&
+        result.save_request_id &&
+        result.save_request_id === saveRequestId;
+      if (matches) {
+        const err = String(result.error || "");
+        if (result.saved) {
+          // Success.
+          snapshot.refresh();
+          if (props.onRulesAuditRefresh) props.onRulesAuditRefresh();
+          if (props.onRulesChanged) props.onRulesChanged();
+          setPending({});
+          setSaveResultError(null);
+          setConflictOpen(false);
+          return;
+        }
+        if (err === "rules_changed") {
+          setConflictOpen(true);
+          return;
+        }
+        if (err === "validation_failed") {
+          const errs = Array.isArray(result.errors) ? result.errors : [];
+          setSaveResultError(
+            "Save rejected by validation" +
+              (errs.length ? ": " + errs.join("; ") : "") +
+              ". No changes were applied."
+          );
+        } else if (err === "run_lock_active") {
+          const held = result.held_by_run_id
+            ? " (held by " + result.held_by_run_id + ")"
+            : "";
+          setSaveResultError(
+            "Save blocked: another curator operation is still running" +
+              held +
+              ". Wait for it to finish or release the lock, then try again."
+          );
+        } else {
+          setSaveResultError(
+            "Save failed: " +
+              (result.message || err || "unknown error") +
+              ". No changes were applied."
+          );
+        }
+        setConflictOpen(false);
+        return;
+      }
+      // Fallback: no matching side-channel result (stale file, write failure,
+      // or backend predating this feature).  Use checksum drift as the only
+      // available signal, and surface a generic error instead of the
+      // misleading "Rules changed" modal when nothing changed.
       try {
         const freshChecksum = await fetchRulesAuditChecksum();
         if (freshChecksum && freshChecksum !== expectedSha) {
@@ -1916,8 +2005,13 @@
           setSaveResultError(null);
           setConflictOpen(false);
         } else {
-          // Checksum did not change: rules_changed (or validation failure).
-          setConflictOpen(true);
+          // Could not confirm success and no explicit error -- do NOT assume
+          // rules_changed; tell the user to reload.
+          setSaveResultError(
+            "Could not confirm the save result. The rules file was not " +
+              "changed. Reload the panel and try again."
+          );
+          setConflictOpen(false);
         }
       } catch (err) {
         setSaveResultError(
