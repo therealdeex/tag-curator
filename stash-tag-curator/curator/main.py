@@ -119,6 +119,7 @@ _LOCK_MODES: frozenset[str] = frozenset({
     "cleanup_safe",
     "cleanup_plugin",
     "save_mapping",
+    "curate_library",
 })
 
 #: Read-only report modes (no lock, no mutation, read-only SQLite).
@@ -134,6 +135,7 @@ _ALL_MODES: frozenset[str] = (
     frozenset({
         "preflight", "validate_rules", "rollback",
         "resume_run", "abandon_run", "force_release", "undo_cleanup",
+        "curate_library",
     })
     | _LOCK_MODES
     | _REPORT_MODES
@@ -167,6 +169,13 @@ def _now_iso() -> str:
 def _log(message: str) -> None:
     """Write a diagnostic line to **stderr** (never stdout)."""
     sys.stderr.write(f"curator: {message}\n")
+    sys.stderr.flush()
+
+
+def _progress(fraction: float) -> None:
+    """Emit a Stash raw-plugin progress frame on stderr."""
+    clipped = max(0.0, min(1.0, float(fraction)))
+    sys.stderr.write(f"\x01p\x02{clipped}\n")
     sys.stderr.flush()
 
 
@@ -1139,7 +1148,7 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
     validate-only route that returns the current checksum so the UI can
     bootstrap its optimistic-concurrency token.
     """
-    from .rules_editor import RulesEditor
+    from curator.rules_editor import RulesEditor
 
     expected_sha = str(ctx.args.get("expected_rules_sha") or "").strip()
     changes_raw = ctx.args.get("changes")
@@ -1161,18 +1170,35 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
     additions = list(additions_raw) if isinstance(additions_raw, list) else None
 
     state = ctx.open_state()
+    lock_run_id = f"save-mapping-{secrets.token_hex(8)}"
     try:
+        # Serialize the complete read/check/backup/write operation and use the
+        # same stale-lock recovery policy as other mutation tasks.  The editor
+        # is told which lock it owns so it still rejects every competing run.
+        acquired = state.acquire_lock_or_reclaim(
+            lock_run_id, "save_mapping", expected_sha,
+        )
+        if not acquired.acquired:
+            held = state.current_lock()
+            return {
+                "saved": False,
+                "error": "run_lock_active",
+                "message": "another curator operation is still running",
+                "held_by_run_id": str(held["run_id"]) if held else None,
+            }
         editor = RulesEditor(
             state,
             str(ctx.rules_path),
             str(ctx.data_dir),
             str(ctx.plugin_dir),
+            lock_owner_run_id=lock_run_id,
         )
         result = editor.save_mapping(expected_sha, changes, additions)
         if "new_rules_sha" in result:
             return {"saved": True, **result}
         return {"saved": False, **result}
     finally:
+        state.release_lock(lock_run_id)
         state.close()
 
 
@@ -1280,6 +1306,138 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
             _log(f"released lock run_id={run_id}")
 
         # D14: regenerate the dashboard snapshot after the mutation.
+        _regenerate_snapshots(ctx, rules, state)
+        return result
+    finally:
+        state.close()
+
+
+def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
+    """Run the safe, user-facing end-to-end library maintenance workflow.
+
+    One confirmed invocation performs four idempotent scene phases followed
+    by globally-safe orphan cleanup:
+
+    1. never-processed scenes;
+    2. scenes stale against the active rules;
+    3. prior failures;
+    4. additive performer enrichment across all scenes;
+    5. deletion of tags whose association counts are zero everywhere.
+
+    The whole workflow holds the singleton lock.  Every scene mutation and
+    tag deletion is journaled by the existing engines.  Direct execution from
+    Stash's generic Tasks page is safe by default because ``confirmed=true``
+    is required; the dashboard supplies it only after its confirmation modal.
+    """
+    if not _as_bool(ctx.args.get("confirmed"), False):
+        return {
+            "mode": "curate_library",
+            "confirmed": False,
+            "confirmation_required": True,
+            "message": (
+                "Open the Tag Curator dashboard and review the Curate Library "
+                "confirmation before running this maintenance workflow."
+            ),
+        }
+
+    rules = ctx.load_rules()
+    state = ctx.open_state()
+    run_id = f"curate-library-{secrets.token_hex(8)}"
+    try:
+        providers = ProviderLookup(ctx.client, ctx.settings)
+        engine_settings = ctx.engine_settings(rules)
+        try:
+            endpoints = providers.discover_endpoints()
+            engine_settings["provider_fingerprint"] = ",".join(
+                sorted(e.endpoint for e in endpoints)
+            )
+        except Exception as exc:
+            _log(f"provider discovery failed (continuing): {exc}")
+
+        _log(f"acquiring lock run_id={run_id}")
+        _acquire_run_lock(state, run_id, "curate_library", rules.rules_sha)
+        heartbeat = _HeartbeatThread(state, run_id)
+        heartbeat.start()
+        _record_run_start(
+            state, run_id, "curate_library", rules.rules_sha,
+            scope="maintenance",
+        )
+        result: dict[str, Any] = {
+            "mode": "curate_library",
+            "run_id": run_id,
+            "confirmed": True,
+            "scene_phases": {},
+        }
+        run_error: "str | None" = None
+        try:
+            engine_settings["tag_name_to_id"] = _resolve_finite_tags(
+                ctx.client, rules, engine_settings["tag_name_to_id"]
+            )
+
+            phase_specs = (
+                ("never_processed", SCOPE_NEVER_PROCESSED, 0.00, 0.20),
+                ("stale_rules", SCOPE_STALE_RULES, 0.20, 0.40),
+                ("failed", SCOPE_FAILED, 0.40, 0.55),
+                ("performer_enrichment", SCOPE_ENRICH_ONLY, 0.55, 0.92),
+            )
+            for phase_name, scope_name, floor, cap in phase_specs:
+                span = cap - floor
+
+                def phase_progress(
+                    fraction: float, *, _floor: float = floor, _span: float = span
+                ) -> None:
+                    _progress(_floor + max(0.0, min(1.0, fraction)) * _span)
+
+                engine = RebuildEngine(
+                    ctx.client,
+                    state,
+                    Journal(state),
+                    rules,
+                    providers,
+                    settings=engine_settings,
+                    progress_fn=phase_progress,
+                )
+                dry = engine.run_dry(
+                    Scope(scope_name), run_id=run_id, progress_cap=0.5,
+                )
+                execute = engine.run_execute(
+                    dry.proposed_run_id,
+                    run_id=run_id,
+                    progress_floor=0.5,
+                    progress_cap=1.0,
+                )
+                result["scene_phases"][phase_name] = {
+                    "dry_run": dry.to_dict(),
+                    "execute": execute.to_dict(),
+                }
+                state.heartbeat(run_id)
+
+            _progress(0.94)
+            cleanup = CleanupEngine(
+                ctx.client, state, rules, run_id=run_id,
+            )
+            proposal = cleanup.dry_run(SCOPE_SAFE_GLOBAL)
+            cleanup_report = cleanup.execute_cleanup(proposal.token)
+            result["orphan_cleanup"] = {
+                "proposal": proposal.to_dict(),
+                "execute": cleanup_report.to_dict(),
+            }
+            _progress(1.0)
+        except Exception as exc:
+            run_error = str(exc)
+            raise
+        finally:
+            _record_run_end(
+                state,
+                run_id,
+                status="failed" if run_error else "completed",
+                totals=result or None,
+                error=run_error,
+            )
+            heartbeat.stop()
+            state.release_lock(run_id)
+            _log(f"released lock run_id={run_id}")
+
         _regenerate_snapshots(ctx, rules, state)
         return result
     finally:
@@ -1870,7 +2028,7 @@ def _dispatch(
         )
         # Only the rebuild family calls providers; cleanup / rollback / save
         # do not need stash-box endpoints.
-        require_providers = mode in _REBUILD_SCOPES
+        require_providers = mode in _REBUILD_SCOPES or mode == "curate_library"
         preflight = Preflight(
             ctx.client, ctx.data_dir,
             strict=strict, require_providers=require_providers,
@@ -1879,6 +2037,8 @@ def _dispatch(
         _log(f"preflight passed={pf_result['passed']}")
 
     # -- Route ------------------------------------------------------
+    if mode == "curate_library":
+        return _run_curate_library(ctx)
     if mode in _REBUILD_SCOPES:
         return _run_rebuild_family(ctx, mode)
     if mode in ("cleanup_safe", "cleanup_plugin"):

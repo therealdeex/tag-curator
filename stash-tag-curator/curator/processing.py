@@ -308,7 +308,9 @@ class Scope:
         # scene's existing tags through the rules).
         self.local_audit = local_audit or (name == SCOPE_LOCAL_AUDIT)
         self.target_scene_ids: list[str] | None = (
-            [str(sid) for sid in target_scene_ids] if target_scene_ids else None
+            [str(sid) for sid in target_scene_ids]
+            if target_scene_ids is not None
+            else None
         )
 
 
@@ -590,7 +592,9 @@ class RebuildEngine:
         express the "no CURATOR: Core Processed tag" predicate cleanly).
         """
         ids = scope.target_scene_ids
-        if ids:
+        if ids is not None:
+            if not ids:
+                return
             yield from self._client.find_scenes(ids=ids, page_size=self._batch_size)
             return
         # Whole-library stream.  ``never_processed`` filtering happens in the
@@ -910,13 +914,19 @@ class RebuildEngine:
         self,
         scene: Mapping[str, Any],
         provider_result: ProviderResult,
+        *,
+        preserve_existing: bool = False,
     ) -> tuple[list[str], list[str], list[str]]:
         """Compute the proposed tag-name set for one scene.
 
         Returns ``(proposed_names, unmapped_raw, markers)``.
 
         For ``UNIQUE_MATCH`` the computed set is the canonical mapped names
-        (after the narrow ethnicity override) + enrichment + markers.
+        (after the narrow ethnicity override) + enrichment + markers.  In
+        standalone enrichment mode, ``preserve_existing`` makes this an
+        additive union with every currently attached tag.  Stash's
+        ``sceneUpdate(tag_ids=...)`` replaces the complete tag set, so sending
+        enrichment tags alone would erase unrelated metadata.
         For every PRESERVE status the computed set is the scene's currently-
         attached tag names + markers (D2/Issue 8 -- marker-only additions go
         through ``sceneUpdate`` full-replacement of the union).
@@ -936,6 +946,18 @@ class RebuildEngine:
             markers = self._markers_for_status(status, has_unmapped=bool(unmapped))
             proposed: list[str] = []
             seen: set[str] = set()
+            if preserve_existing:
+                for tag in scene.get("tags") or []:
+                    if not isinstance(tag, Mapping):
+                        continue
+                    existing_name = tag.get("name")
+                    if (
+                        isinstance(existing_name, str)
+                        and existing_name
+                        and existing_name not in seen
+                    ):
+                        seen.add(existing_name)
+                        proposed.append(existing_name)
             for name in canonical + enrichment + markers:
                 if name not in seen:
                     seen.add(name)
@@ -1312,7 +1334,7 @@ class RebuildEngine:
                 continue
 
             proposed_names, unmapped, markers = self._compute_proposed_names(
-                scene, result
+                scene, result, preserve_existing=scope.enrich_only
             )
             scene_state_fp = self._scene_state_fp(scene)
             raw_tags_payload = [
@@ -1361,7 +1383,7 @@ class RebuildEngine:
         Returns ``0`` on any failure (the caller's ``max(..., 1)`` guard
         keeps progress math safe).
         """
-        if scope.target_scene_ids:
+        if scope.target_scene_ids is not None:
             return len(scope.target_scene_ids)
         # Whole-library stream: ask Stash for the total count once.
         try:
@@ -1380,26 +1402,28 @@ class RebuildEngine:
 
     def _resolve_state_driven_scope(self, scope: Scope) -> Scope:
         """Populate ``target_scene_ids`` for state-driven scopes."""
-        if scope.target_scene_ids:
+        if scope.target_scene_ids is not None:
             return scope
         if scope.name == SCOPE_AFFECTED_BY_MAPPING:
             keys = self._settings.get("affected_raw_tags") or []
             if isinstance(keys, str):
                 keys = [keys]
             ids = self._state.scenes_affected_by_raw_tags(keys)
-            scope.target_scene_ids = [str(i) for i in ids] or None
+            scope.target_scene_ids = [str(i) for i in ids]
         elif scope.name == SCOPE_STALE_RULES:
             rows = self._state.connection.execute(
                 "SELECT scene_id FROM scene_state "
-                "WHERE rules_sha IS NOT NULL AND rules_sha != ?",
-                (self._rules_sha,),
+                "WHERE last_successful_run_id IS NOT NULL AND ("
+                " COALESCE(rules_sha, '') != ? OR"
+                " COALESCE(provider_fingerprint, '') != ?)",
+                (self._rules_sha, self._provider_fingerprint),
             ).fetchall()
-            scope.target_scene_ids = [str(r["scene_id"]) for r in rows] or None
+            scope.target_scene_ids = [str(r["scene_id"]) for r in rows]
         elif scope.name == SCOPE_FAILED:
             rows = self._state.connection.execute(
                 "SELECT scene_id FROM scene_state WHERE status = 'failed'"
             ).fetchall()
-            scope.target_scene_ids = [str(r["scene_id"]) for r in rows] or None
+            scope.target_scene_ids = [str(r["scene_id"]) for r in rows]
         return scope
 
     # ------------------------------------------------------------------

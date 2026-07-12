@@ -6,9 +6,10 @@ deterministically, enriches them from performer metadata, cleans up orphans,
 and records enough history to roll any run back. Operations are exposed as
 Stash tasks and through a dashboard UI route.
 
-Every destructive operation runs dry-run first, then executes only on a second
-explicit confirmation. Active state, rules, and rollback history live outside
-the plugin package so a plugin upgrade never overwrites your data.
+Every destructive dashboard operation requires explicit confirmation. Scene
+workflows calculate and journal a proposal before execution, and cleanup
+deletions are journaled for undo. Active state, rules, and rollback history
+live outside the plugin package so a plugin upgrade never overwrites your data.
 
 - **Interface:** raw Python task + UI route
 - **Target:** Stash v0.31.1
@@ -125,11 +126,17 @@ If you are migrating from a v2 rules file, use the migrator described in
 
 ## Use
 
-Run **Preflight** first. Then run **Dry-Run Full Library Rebuild** and read the
-proposal before any destructive run. The two-phase gate is enforced for every
-operation that can mutate tags: the dry-run produces a proposal, and a second
-explicit task applies it. For cleanup, the proposal is single-use and tied to a
-confirmation token, so a replay cannot destroy a second batch.
+Run **Preflight** first. For routine maintenance, open the dashboard and use
+**Curate Library**. After one explicit confirmation it processes new, stale,
+and previously failed scenes, additively enriches every scene from performer
+metadata, and removes only tags whose association counts are zero everywhere.
+Scene mutations are journaled for rollback, and deleted tags are recorded for
+**Undo Cleanup**.
+
+For a deliberate taxonomy reset, run **Dry-Run Full Library Rebuild** and read
+the proposal before starting **Full Library Rebuild**. Routine maintenance
+should use **Curate Library**, whose dashboard confirmation summarizes the
+scope before its internally journaled phases begin.
 
 Recommended first-run sequence against a copy of your library, not your only
 production database:
@@ -148,8 +155,10 @@ Tasks are grouped by purpose. The full set lives in `stash-tag-curator.yml`.
 from provider metadata. `Dry-Run Full Library Rebuild` simulates the same and
 writes nothing. `Process Never-Processed`, `Reprocess Stale`, `Reprocess
 Failed`, and `Reprocess Affected-by-Mapping` target subsets of the library.
-`Enrich from Performer Metadata` derives cast, demographic, body, era, and
-married-IRL tags without a full provider re-scrape.
+`Enrich from Performer Metadata` additively derives cast, demographic, body,
+era, and married-IRL tags without a full provider re-scrape. It preserves the
+complete existing scene tag set; enrichment never treats its partial derived
+set as a replacement.
 
 **Cleanup.** `Cleanup Safe-Global Orphans` removes non-curator tags that are
 orphaned across scenes, markers, images, galleries, performers, studios,
@@ -267,4 +276,4 @@ manager.
 
 ## Version
 
-0.1.0
+0.2.0

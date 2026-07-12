@@ -29,7 +29,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from curator.rules import Rules
+from curator.rules import DISPOSITION_IGNORE, Rules
 from curator.rules_editor import RulesEditor
 
 
@@ -317,6 +317,57 @@ class TestBackupCreated:
         assert b"vaginal sex" in backup_bytes
 
 
+class TestBootstrapSeedsActiveFromDefault:
+    """On a pristine install the active ``tag-rules.yml`` does not exist; the
+    read path falls back to the bundled default.  The first mapping edit must
+    seed the active file from that default and then apply the edit, rather
+    than refusing with ``rules_not_found`` (the original bug: the editor could
+    never create the file it is responsible for editing).
+    """
+
+    def test_first_edit_seeds_active_file(
+        self, editor: RulesEditor, data_dir: Path
+    ) -> None:
+        # Remove the pre-seeded active file to simulate a pristine install.
+        active = data_dir / "tag-rules.yml"
+        active.unlink()
+        assert not active.exists()
+
+        # The checksum the UI holds is the bundled default's (what Rules.load
+        # returns when the active file is absent).
+        sha = Rules.load(str(active)).rules_sha
+
+        result = editor.save_mapping(
+            sha,
+            changes=[{"normalized_key": "foo", "disposition": "ignore"}],
+        )
+        assert "new_rules_sha" in result, result
+        # The active file now exists and carries the edit.
+        assert active.exists()
+        loaded = Rules.load(str(active))
+        assert loaded.map_raw("foo").disposition == DISPOSITION_IGNORE
+        assert loaded.rules_sha == result["new_rules_sha"]
+
+    def test_bootstrap_backup_is_the_seeded_default(
+        self, editor: RulesEditor, data_dir: Path
+    ) -> None:
+        """The backup taken during bootstrap reflects the freshly-seeded
+        default (the pre-edit state), so the operator can roll back the very
+        first edit just like any other."""
+        active = data_dir / "tag-rules.yml"
+        active.unlink()
+        sha = Rules.load(str(active)).rules_sha
+
+        editor.save_mapping(
+            sha,
+            changes=[{"normalized_key": "bar", "disposition": "ignore"}],
+        )
+        backups = list((data_dir / "backups").glob("tag-rules.yml.bak.*"))
+        assert len(backups) == 1
+        backup_sha = Rules.load(str(backups[0])).rules_sha
+        assert backup_sha == sha  # the seeded default, pre-edit
+
+
 # ---------------------------------------------------------------------------
 # Atomic write / crash survival
 # ---------------------------------------------------------------------------
@@ -422,6 +473,26 @@ class TestRulesEditLock:
         )
         assert result == {"error": "run_lock_active"}
         assert (data_dir / "tag-rules.yml").read_bytes() == original_bytes
+
+    def test_editor_accepts_the_lock_owned_by_its_save_operation(
+        self, state: Any, data_dir: Path, plugin_dir: Path,
+    ) -> None:
+        sha = Rules.load(str(data_dir / "tag-rules.yml")).rules_sha
+        assert state.acquire_lock("save-1", "save_mapping", sha)
+        editor = RulesEditor(
+            state,
+            data_dir / "tag-rules.yml",
+            data_dir,
+            plugin_dir,
+            lock_owner_run_id="save-1",
+        )
+
+        result = editor.save_mapping(
+            sha,
+            [{"normalized_key": "foo", "disposition": "ignore"}],
+        )
+
+        assert "new_rules_sha" in result
 
 
 # ---------------------------------------------------------------------------

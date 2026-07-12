@@ -160,11 +160,13 @@ class RulesEditor:
         rules_path: str | os.PathLike[str],
         data_dir: str | os.PathLike[str],
         plugin_dir: str | os.PathLike[str] | None = None,
+        lock_owner_run_id: str | None = None,
     ) -> None:
         self.state: StateDB = state
         self.rules_path: Path = Path(rules_path)
         self.data_dir: Path = Path(data_dir)
         self.plugin_dir: Path | None = Path(plugin_dir) if plugin_dir else None
+        self.lock_owner_run_id = lock_owner_run_id
 
     # ------------------------------------------------------------------
     # Public API
@@ -206,9 +208,14 @@ class RulesEditor:
         if err is not None:
             return err
 
-        # Step 3: reload current active rules.
-        if not self.rules_path.exists():
-            return {"error": "rules_not_found", "message": str(self.rules_path)}
+        # Step 3: reload current active rules.  When the active file is
+        # missing, ``Rules.load`` transparently falls back to the bundled
+        # default -- so the read path works on a pristine install.  The WRITE
+        # path must mirror that: seed the active file from the bundled default
+        # so the optimistic-concurrency check, backup, and atomic write all
+        # operate on a real ``<data-dir>/tag-rules.yml``.  Without this the
+        # very first UI mapping edit would always fail with ``rules_not_found``
+        # (the editor can never bootstrap the file it is supposed to edit).
         try:
             current = Rules.load(str(self.rules_path))
         except RulesValidationError as exc:
@@ -218,6 +225,11 @@ class RulesEditor:
                 "message": "active rules file is invalid",
                 "errors": list(exc.errors),
             }
+        if not self.rules_path.exists():
+            # Materialise the bundled default as the active file.  ``current``
+            # was loaded from the fallback source path; copy THAT (not the
+            # constant) so the on-disk bytes match the checksum we just read.
+            self._seed_active_from(current)
 
         # Step 4: optimistic concurrency.
         if current.rules_sha != expected_rules_sha:
@@ -287,9 +299,14 @@ class RulesEditor:
         ``sqlite3.Connection`` (the harness's in-memory state).
         """
         row = self.state.connection.execute(
-            "SELECT 1 FROM run_lock LIMIT 1"
+            "SELECT run_id FROM run_lock LIMIT 1"
         ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        return not (
+            self.lock_owner_run_id
+            and str(row["run_id"]) == self.lock_owner_run_id
+        )
 
     def _validate_args(
         self,
@@ -520,6 +537,18 @@ class RulesEditor:
             target = backups_dir / f"tag-rules.yml.bak.{ts}.{idx}"
             idx += 1
         shutil.copy2(str(self.rules_path), str(target))
+
+    def _seed_active_from(self, source: Rules) -> None:
+        """Materialise the active ``self.rules_path`` from ``source``.
+
+        Used on the first mapping edit when no active file exists yet: the
+        read path falls back to the bundled default, so the write path must
+        seed the active file before it can be edited, backed up, and written
+        atomically.  Reuses :meth:`_atomic_write_yaml` so the seeded file is
+        byte-stable (same re-serialisation as every subsequent edit) and the
+        parent directory exists.
+        """
+        self._atomic_write_yaml(source._raw)  # noqa: SLF001 -- same-package; no public getter
 
     def _atomic_write_yaml(self, raw: Mapping[str, Any]) -> None:
         """Atomically write ``raw`` as YAML to ``self.rules_path``.

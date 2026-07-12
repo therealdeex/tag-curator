@@ -258,6 +258,29 @@
   padding: var(--curator-space-3);
 }
 
+.stash-tag-curator-op-primary {
+  grid-column: 1 / -1;
+  border-color: var(--primary, #137cbd);
+  border-width: 2px;
+  background: linear-gradient(
+    135deg,
+    var(--curator-surface-bg),
+    rgba(19, 124, 189, 0.09)
+  );
+}
+
+.stash-tag-curator-op-primary .stash-tag-curator-op-name {
+  font-size: 1.15rem;
+}
+
+.stash-tag-curator-advanced-toggle {
+  margin-top: var(--curator-space-2);
+}
+
+.stash-tag-curator-advanced-toggle .btn-link {
+  padding-left: 0;
+}
+
 .stash-tag-curator-op-label {
   display: flex;
   align-items: center;

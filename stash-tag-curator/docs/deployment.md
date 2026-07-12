@@ -189,7 +189,7 @@ It excludes state, tests, caches, databases, logs, and transient
 
 ```bash
 python3 scripts/package_plugin.py \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --output dist
 ```
 

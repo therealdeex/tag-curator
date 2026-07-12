@@ -897,6 +897,54 @@ class TestEnrichOnlyScope:
         config_calls = [c for c in client.calls if "GetConfigurationStashBoxes" in c["query"]]
         assert config_calls == []
 
+    def test_enrich_only_preserves_every_existing_scene_tag(
+        self, state: StateDB,
+    ) -> None:
+        """Regression: enrichment is additive although sceneUpdate replaces."""
+        scene = _minimal_scene(
+            1,
+            tags=[
+                ("810", "External Provider Tag"),
+                ("811", "User Tag Without Protected Prefix"),
+            ],
+            performers=[_performer("p001", height_cm=165, weight=55)],
+        )
+        client = StatefulScenesClient([scene])
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS},
+        })
+
+        dry = engine.run_dry(
+            SCOPE_ENRICH_ONLY, proposed_run_id="prop-safe", run_id="run-safe",
+        )
+        result = engine.run_execute(dry.proposed_run_id, run_id="run-safe")
+
+        assert result.mutations_applied == 1
+        assert len(client.scene_update_calls) == 1
+        written_ids = set(client.scene_update_calls[0]["tag_ids"])
+        assert {"810", "811"} <= written_ids
+        assert set(ENRICHMENT_TAG_IDS.values()) <= written_ids
+        assert MARKER_IDS[MARKER_CORE_PROCESSED] in written_ids
+
+
+class TestEmptyStateDrivenScope:
+    """An empty target query must mean zero scenes, never the whole library."""
+
+    @pytest.mark.parametrize("scope_name", [SCOPE_STALE_RULES, SCOPE_FAILED])
+    def test_empty_scope_does_not_expand_to_all_scenes(
+        self, state: StateDB, scope_name: str,
+    ) -> None:
+        client = StatefulScenesClient([_minimal_scene(1)])
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": MARKER_IDS,
+        })
+
+        report = engine.run_dry(scope_name, proposed_run_id="prop-empty")
+
+        assert report.scenes_inspected == 0
+        assert report.proposals_written == 0
+        assert not any("ScrapeMultiScenes" in c["query"] for c in client.calls)
+
 
 # ---------------------------------------------------------------------------
 # local_audit scope (no-network re-map of existing tags)
@@ -1241,6 +1289,34 @@ class TestScopeSelectors:
             "SELECT scene_id FROM dry_run_proposals ORDER BY scene_id",
         ).fetchall()
         assert [int(r["scene_id"]) for r in rows] == [20, 21]
+
+    def test_stale_scope_includes_provider_configuration_changes(
+        self, state: StateDB,
+    ) -> None:
+        rules = _build_rules()
+        state.upsert_scene_state(
+            23,
+            status="success",
+            last_successful_run_id="run-old-provider",
+            rules_sha=rules.rules_sha,
+            provider_fingerprint="fp-old",
+        )
+        client = StatefulScenesClient([_minimal_scene(23)])
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "provider_fingerprint": "fp-v1",
+            "tag_name_to_id": MARKER_IDS,
+        })
+
+        engine.run_dry(
+            SCOPE_STALE_RULES,
+            proposed_run_id="prop-provider-stale",
+            run_id="run-provider-stale",
+        )
+
+        rows = state.connection.execute(
+            "SELECT scene_id FROM dry_run_proposals"
+        ).fetchall()
+        assert [int(r["scene_id"]) for r in rows] == [23]
 
     def test_failed_targets_only_failure_rows(self, state: StateDB) -> None:
         state.upsert_scene_state(30, status="failed", last_run_id="run-x")

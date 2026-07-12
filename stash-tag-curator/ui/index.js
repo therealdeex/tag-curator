@@ -263,6 +263,18 @@
 
   const OPERATIONS = [
     {
+      key: "curateLibrary",
+      label: "Curate Library",
+      taskName: "Curate Library",
+      destructive: true,
+      primary: true,
+      scope:
+        "Recommended maintenance: process new, stale, and failed scenes; add performer-derived tags without removing existing tags; then delete only tags unused everywhere. Changes are journaled for rollback and cleanup undo.",
+      estimateFromTotals: (t) => (t ? t.total_scenes : null),
+      estimateLabel: "scenes checked for enrichment",
+      argsMap: { confirmed: "true" },
+    },
+    {
       key: "dryRebuild",
       label: "Dry-Run Full Library Rebuild",
       taskName: "Dry-Run Full Library Rebuild",
@@ -312,7 +324,7 @@
       taskName: "Enrich from Performer Metadata",
       destructive: true,
       scope:
-        "Derive additional tags from performer metadata (cast, demographics, body, theme) without a full provider re-scrape.",
+        "Add tags derived from performer metadata (cast, demographics, body, theme) without a full provider re-scrape. Every existing scene tag is preserved.",
       estimateFromTotals: (t) => (t ? t.processed || t.total_scenes : null),
       estimateLabel: "scenes would be enriched",
       argsMap: {},
@@ -1006,9 +1018,12 @@
     const setPendingArgs = props.setPendingArgs;
     const cleanupProposal = props.cleanupProposal;
     const setCleanupProposal = props.setCleanupProposal;
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     const totals = (dashboard.data && dashboard.data.totals) || {};
     const jobInProgress = !!(jobState.job && !isTerminalStatus(jobState.job.status));
+    const recommendedOps = OPERATIONS.filter((op) => op.primary);
+    const advancedOps = OPERATIONS.filter((op) => !op.primary);
 
     function openConfirm(op) {
       const next = Object.assign({}, pendingArgs);
@@ -1079,12 +1094,12 @@
       h(
         "p",
         { className: "stash-tag-curator-operations-help" },
-        "Each operation runs as a Stash plugin task and is tracked in the job panel below. Destructive operations ask for confirmation first."
+        "For normal maintenance, use Curate Library. It runs the complete safe workflow and is tracked in the job panel below."
       ),
       h(
         "div",
         { className: "stash-tag-curator-op-grid" },
-        OPERATIONS.map((op) =>
+        recommendedOps.map((op) =>
           h(OperationButton, {
             key: op.key,
             op: op,
@@ -1094,6 +1109,35 @@
           })
         )
       ),
+      h(
+        "div",
+        { className: "stash-tag-curator-advanced-toggle" },
+        h(
+          BSButton,
+          {
+            type: "button",
+            variant: "link",
+            size: "sm",
+            onClick: () => setShowAdvanced(!showAdvanced),
+            "aria-expanded": showAdvanced,
+          },
+          showAdvanced ? "Hide advanced operations" : "Show advanced operations"
+        )
+      ),
+      showAdvanced &&
+        h(
+          "div",
+          { className: "stash-tag-curator-op-grid" },
+          advancedOps.map((op) =>
+            h(OperationButton, {
+              key: op.key,
+              op: op,
+              totals: totals,
+              jobInProgress: jobInProgress,
+              onActivate: () => openConfirm(op),
+            })
+          )
+        ),
       cleanupProposal &&
         h(
           BSAlert,
@@ -1143,7 +1187,11 @@
 
     return h(
       "div",
-      { className: "stash-tag-curator-op" },
+      {
+        className:
+          "stash-tag-curator-op" +
+          (op.primary ? " stash-tag-curator-op-primary" : ""),
+      },
       h(
         "div",
         { className: "stash-tag-curator-op-label" },
@@ -1187,12 +1235,16 @@
         BSButton,
         {
           type: "button",
-          variant: variant,
+          variant: op.primary ? "primary" : variant,
           onClick: props.onActivate,
           disabled: disabled,
           className: "stash-tag-curator-op-button",
         },
-        op.destructive ? "Review and confirm" : "Run"
+        op.primary
+          ? "Review and curate library"
+          : op.destructive
+            ? "Review and confirm"
+            : "Run"
       )
     );
   }
@@ -3212,61 +3264,83 @@
   // ------------------------------------------------------------------
 
   // ------------------------------------------------------------------
-  // Nav-bar patch: inject a "Tag Curator" tile into the main menu so
-  // the dashboard is reachable without typing the URL. Direct URL
-  // access to /plugin/* returns 404 from Stash's Go server (no SPA
-  // fallback for plugin paths), so a client-side nav link is required.
+  // Nav-bar patch: Stash v0.31.1 plugin routes are client-side only, so
+  // users need an in-app link to enter /plugin/stash-tag-curator. The
+  // PluginApi.patch surface is experimental; this callback must always
+  // return a valid argument list and fall back to Stash's original props.
   // ------------------------------------------------------------------
   try {
     var RRDOM = (api.libraries && api.libraries.ReactRouterDOM) || {};
     var FAS = (api.libraries && api.libraries.FontAwesomeSolid) || {};
     var IconCmp = (api.components && api.components.Icon) || null;
+    var hasNavLink =
+      RRDOM.NavLink &&
+      (typeof RRDOM.NavLink === "function" ||
+        (typeof RRDOM.NavLink === "object" && RRDOM.NavLink.render));
 
-    if (api.patch && api.patch.before && RRDOM.NavLink) {
+    if (
+      api.patch &&
+      typeof api.patch.before === "function" &&
+      hasNavLink
+    ) {
       var NavLink = RRDOM.NavLink;
       var navIcon = FAS.faTags || null;
 
       api.patch.before("MainNavBar.MenuItems", function (props) {
-        var existing =
-          props && props.children != null ? props.children : null;
-        var tile = h(
-          "div",
-          {
-            key: "stash-tag-curator-nav",
-            className: "col-4 col-sm-3 col-md-2 col-lg-auto",
-          },
-          h(
-            NavLink,
-            {
-              exact: true,
-              to: ROUTE_PATH,
-              activeClassName: "active",
-              className:
-                "minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary",
-            },
-            navIcon && IconCmp
+        try {
+          if (!props || typeof props !== "object") {
+            return [{}];
+          }
+
+          var existing = props.children != null ? props.children : null;
+          var icon =
+            navIcon && typeof IconCmp === "function"
               ? h(IconCmp, {
                   icon: navIcon,
                   className:
                     "nav-menu-icon d-block d-xl-inline mb-2 mb-xl-0",
                 })
-              : null,
-            h("span", null, "Tag Curator")
-          )
-        );
-        return [
-          {
-            children: h(React.Fragment, null, existing, tile),
-          },
-        ];
+              : null;
+          var tile = h(
+            "div",
+            {
+              key: "stash-tag-curator-nav",
+              className: "col-4 col-sm-3 col-md-2 col-lg-auto",
+            },
+            h(
+              NavLink,
+              {
+                exact: true,
+                to: ROUTE_PATH,
+                activeClassName: "active",
+                className:
+                  "minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary",
+              },
+              icon,
+              h("span", null, "Tag Curator")
+            )
+          );
+
+          return [
+            {
+              children: h(React.Fragment, null, existing, tile),
+            },
+          ];
+        } catch (navPatchError) {
+          console.error(
+            "[stash-tag-curator] nav patch render failed; leaving Stash nav unchanged",
+            navPatchError
+          );
+          return [props || {}];
+        }
       });
     } else {
       console.warn(
-        "[stash-tag-curator] nav patch skipped: PluginApi.patch or NavLink unavailable"
+        "[stash-tag-curator] nav patch skipped: PluginApi.patch.before or NavLink unavailable"
       );
     }
   } catch (navError) {
-    console.error("[stash-tag-curator] nav patch failed", navError);
+    console.error("[stash-tag-curator] nav patch registration failed", navError);
   }
 
   try {

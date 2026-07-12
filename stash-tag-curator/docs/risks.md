@@ -1,6 +1,6 @@
 # Risks and compatibility disclosure
 
-This document lists the material risks for Stash Tag Curator v0.1.0, the
+This document lists the material risks for Stash Tag Curator v0.2.0, the
 conditions under which each risk manifests, the mitigation the plugin
 already applies, and the decision reference from the design record. It also
 records the Metis review guardrails and how each is satisfied.

@@ -30,6 +30,24 @@ configurable local `stash_api_key` is used only for authenticated local
 GraphQL calls when Stash requires it, and is never written to logs or
 snapshots.
 
+## [0.2.0] - 2026-07-12
+
+### Added
+
+- Prominent one-button **Curate Library** workflow for new, stale, and failed
+  scenes, additive performer enrichment, and globally safe orphan cleanup.
+- Dashboard confirmation gate and collapsed advanced-operation controls.
+- Regression coverage for complete existing-tag preservation during
+  standalone enrichment and empty state-driven scopes.
+
+### Fixed
+
+- Standalone performer enrichment no longer passes a partial derived tag set
+  to Stash's full-replacement `sceneUpdate` mutation.
+- Mapping saves reclaim stale orphan locks, serialize edits under their own
+  lock, and work on a pristine active-rules directory.
+- Empty stale/failed target lists no longer expand into a full-library pass.
+
 ## [0.1.0] - unreleased
 
 First usable release. Hybrid raw-Python-task plus UI-route plugin that

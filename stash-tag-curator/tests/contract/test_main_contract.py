@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -36,8 +37,10 @@ from curator.main import (
     _LOCK_MODES,
     _normalize_mode,
     _dispatch,
+    _run_curate_library,
     main,
 )
+from curator.state import StateDB
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -244,6 +247,7 @@ class TestModeNormalization:
             ("ReprocessFailed", "reprocess_failed"),
             ("ReprocessAffected", "reprocess_affected"),
             ("Enrich", "enrich"),
+            ("CurateLibrary", "curate_library"),
             ("CleanupSafe", "cleanup_safe"),
             ("CleanupPlugin", "cleanup_plugin"),
             ("Rollback", "rollback"),
@@ -292,9 +296,9 @@ class TestModeNormalization:
         else:  # pragma: no cover -- should always exist
             pytest.fail("manifest not found")
 
-        # The manifest declares exactly 21 tasks.
-        assert len(manifest_tokens) == 21, (
-            f"expected 21 manifest task tokens, got {len(manifest_tokens)}: "
+        # The manifest declares exactly 22 tasks.
+        assert len(manifest_tokens) == 22, (
+            f"expected 22 manifest task tokens, got {len(manifest_tokens)}: "
             f"{manifest_tokens}"
         )
         for token in manifest_tokens:
@@ -304,8 +308,8 @@ class TestModeNormalization:
                 f"which is not in _ALL_MODES"
             )
 
-    def test_mode_count_is_21(self) -> None:
-        assert len(_ALL_MODES) == 21, (
+    def test_mode_count_is_22(self) -> None:
+        assert len(_ALL_MODES) == 22, (
             f"_ALL_MODES has {len(_ALL_MODES)} entries: {sorted(_ALL_MODES)}"
         )
 
@@ -731,6 +735,222 @@ class TestSaveMappingRoute:
         assert result["saved"] is False
         assert "rules_sha" in result
 
+    def test_save_mapping_reclaims_a_stale_orphan_lock(self, tmp_path: Path) -> None:
+        from curator.rules import Rules
+        from curator.state import StateDB
+
+        stash_dir = tmp_path / "stash"
+        data_dir = stash_dir / "stash-tag-curator-data"
+        data_dir.mkdir(parents=True)
+        rules_path = data_dir / "tag-rules.yml"
+        rules_path.write_text(
+            (PLUGIN_ROOT / "config" / "default-tag-rules.yaml").read_text()
+        )
+        sha = Rules.load(str(rules_path)).rules_sha
+        state = StateDB(str(data_dir / "state" / "curator.db"))
+        try:
+            assert state.acquire_lock("dead-run", "undo_cleanup", sha)
+            with state._txn():
+                state.connection.execute(
+                    "UPDATE run_lock SET heartbeat_ts = ? WHERE lock_id = 1",
+                    ("2000-01-01T00:00:00+00:00",),
+                )
+        finally:
+            state.close()
+
+        client = _StubClient(
+            responses={"GetAppVersion": {"version": {"version": "0.31.1"}}}
+        )
+        result = _dispatch(
+            _envelope(
+                "save_mapping",
+                server_connection={"Dir": str(stash_dir)},
+                args={
+                    "expected_rules_sha": sha,
+                    "changes": [
+                        {"normalized_key": "stale lock regression", "disposition": "ignore"}
+                    ],
+                },
+            ),
+            client=client,
+        )
+
+        assert result["saved"] is True
+        check = StateDB(str(data_dir / "state" / "curator.db"))
+        try:
+            assert check.current_lock() is None
+        finally:
+            check.close()
+
+    def test_save_mapping_subprocess_reaches_rules_editor(self, tmp_path: Path) -> None:
+        """Regression: the lazy import inside ``_run_save_mapping`` MUST use
+        the absolute ``from curator.rules_editor`` form (not ``from
+        .rules_editor``) because Stash runs ``main.py`` as a direct script,
+        where ``__package__`` is empty and relative imports raise
+        ``ImportError``.
+
+        The validate-only early return (no ``expected_rules_sha``) hides the
+        import, so we supply a checksum to force the handler past it.  With
+        ``strict=False`` the preflight gate lets the run proceed without a
+        live Stash, and a minimal rules file under the data dir lets the
+        handler reach the optimistic-concurrency check.  The contract: stdout
+        is one parseable JSON object whose ``error`` is ``rules_changed`` (or
+        ``rules_not_found``), never ``ImportError``.
+        """
+        stash_dir = tmp_path / "stash"
+        data_dir = stash_dir / "stash-tag-curator-data"
+        data_dir.mkdir(parents=True)
+        # Seed the active rules file from the bundled v3 default so it passes
+        # structural validation and the handler reaches the optimistic-
+        # concurrency check (the real point of this test).
+        default_rules = PLUGIN_ROOT / "config" / "default-tag-rules.yaml"
+        (data_dir / "tag-rules.yml").write_text(default_rules.read_text())
+        envelope = {
+            "args": {
+                "task": "SaveMapping",
+                "strict": False,
+                "expected_rules_sha": "deadbeef",
+                "changes": [{"normalized_key": "x", "disposition": "ignore"}],
+                "canonical_additions": [],
+            },
+            "server_connection": {
+                "Scheme": "http",
+                "Host": "127.0.0.1",
+                "Port": 1,
+                "Dir": str(stash_dir),
+            },
+            "settings": {},
+        }
+        code, stdout, stderr = _run_main(json.dumps(envelope))
+        lines = [ln for ln in stdout.splitlines() if ln.strip()]
+        assert len(lines) == 1, f"expected 1 stdout line, got {len(lines)}: {lines!r}"
+        payload = json.loads(lines[0])
+        # The handler must run to completion and return a structured result;
+        # an ``ImportError`` would surface as ``{"error": "attempted relative
+        # import ..."}`` instead.
+        combined = stdout + stderr
+        assert "relative import" not in combined, (
+            "save_mapping hit a relative-import crash when run as a script"
+        )
+        if "output" in payload:
+            err = payload["output"].get("error", "")
+            assert err in {"rules_changed", "rules_not_found"}, (
+                f"unexpected save_mapping outcome: {payload!r}"
+            )
+        else:
+            assert "error" in payload
+
+
+class TestCurateLibraryRoute:
+    def test_requires_explicit_dashboard_confirmation(self, tmp_path: Path) -> None:
+        client = _StubClient(
+            responses={
+                "GetAppVersion": {"version": {"version": "0.31.1"}},
+                "GetConfigurationStashBoxes": {
+                    "configuration": {
+                        "general": {
+                            "stashBoxes": [
+                                {"endpoint": "https://stashdb.org/graphql"}
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        result = _dispatch(
+            _envelope(
+                "curate_library",
+                server_connection={"Dir": str(tmp_path)},
+            ),
+            client=client,
+        )
+
+        assert result["confirmation_required"] is True
+        assert result["confirmed"] is False
+        state = StateDB(str(tmp_path / "stash-tag-curator-data" / "state" / "curator.db"))
+        try:
+            assert state.current_lock() is None
+            assert state.connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+        finally:
+            state.close()
+
+    def test_confirmed_workflow_runs_all_phases_and_safe_cleanup(
+        self, tmp_path: Path,
+    ) -> None:
+        seen_scopes: list[str] = []
+
+        class FakeProviders:
+            def __init__(self, client: Any, settings: Any) -> None:
+                pass
+
+            def discover_endpoints(self) -> list[Any]:
+                return [SimpleNamespace(endpoint="https://stashdb.org/graphql")]
+
+        class FakeReport:
+            def __init__(self, **payload: Any) -> None:
+                self.payload = payload
+                self.proposed_run_id = payload.get("proposed_run_id", "proposal")
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self.payload)
+
+        class FakeRebuildEngine:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.progress_fn = kwargs["progress_fn"]
+
+            def run_dry(self, scope: Any, **kwargs: Any) -> FakeReport:
+                seen_scopes.append(scope.name)
+                self.progress_fn(1.0)
+                return FakeReport(proposed_run_id="proposal-" + scope.name)
+
+            def run_execute(self, proposed_run_id: str, **kwargs: Any) -> FakeReport:
+                return FakeReport(proposed_run_id=proposed_run_id, mutations_applied=0)
+
+        class FakeCleanupEngine:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            def dry_run(self, scope: str) -> Any:
+                assert scope == "safe_global"
+                return SimpleNamespace(
+                    token="cleanup-token",
+                    to_dict=lambda: {"candidate_count": 0},
+                )
+
+            def execute_cleanup(self, token: str) -> Any:
+                assert token == "cleanup-token"
+                return SimpleNamespace(to_dict=lambda: {"destroyed_count": 0})
+
+        ctx = TaskContext(
+            {"Dir": str(tmp_path)},
+            {},
+            {"task": "CurateLibrary", "confirmed": "true"},
+            client=_StubClient(),
+        )
+        with (
+            patch("curator.main.ProviderLookup", FakeProviders),
+            patch("curator.main.RebuildEngine", FakeRebuildEngine),
+            patch("curator.main.CleanupEngine", FakeCleanupEngine),
+            patch("curator.main._resolve_finite_tags", return_value={}),
+            patch("curator.main._regenerate_snapshots"),
+        ):
+            result = _run_curate_library(ctx)
+
+        assert seen_scopes == [
+            "never_processed", "stale_rules", "failed", "enrich_only"
+        ]
+        assert result["orphan_cleanup"]["execute"]["destroyed_count"] == 0
+        state = StateDB(str(ctx.state_path))
+        try:
+            assert state.current_lock() is None
+            row = state.connection.execute(
+                "SELECT status FROM runs WHERE run_id = ?", (result["run_id"],)
+            ).fetchone()
+            assert row["status"] == "completed"
+        finally:
+            state.close()
+
 
 class TestNoCancelPolling:
     """D5: there must be NO ``cancel_requested`` polling anywhere in main.py."""
@@ -952,7 +1172,7 @@ class TestRecoveryModes:
         "task,extra_args,expected_error",
         [
             ("ResumeRun", {"run_id": "test-resume"}, "no run row"),
-            ("AbandonRun", {"run_id": "test-abandon"}, "no run row"),
+            ("AbandonRun", {"run_id": "test-abandon"}, ""),
             ("ForceRelease", {"run_id": "test-release"}, ""),  # returns released=False
             ("UndoCleanup", {"cleanup_run_id": "test-cleanup"}, ""),
         ],
@@ -962,6 +1182,7 @@ class TestRecoveryModes:
         task: str,
         extra_args: dict[str, Any],
         expected_error: str,
+        tmp_path: Path,
     ) -> None:
         envelope = {
             "args": {"task": task, **extra_args},
@@ -969,6 +1190,7 @@ class TestRecoveryModes:
                 "Scheme": "http",
                 "Host": "127.0.0.1",
                 "Port": 1,
+                "Dir": str(tmp_path / task),
             },
             "settings": {},
         }
@@ -1030,36 +1252,36 @@ class TestRecoveryModes:
             "error"
         ]
 
-    def test_resume_run_requires_run_id(self) -> None:
-        """``ResumeRun`` without run_id raises a clear error."""
+    def test_resume_run_without_lock_is_a_safe_noop(self, tmp_path: Path) -> None:
+        """Resume auto-detects a held lock; a cold state is a safe no-op."""
         envelope = {
             "args": {"task": "ResumeRun"},
             "server_connection": {
                 "Scheme": "http",
                 "Host": "127.0.0.1",
                 "Port": 1,
+                "Dir": str(tmp_path / "resume"),
             },
             "settings": {},
         }
         code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 1, f"expected exit 1, got {code}"
+        assert code == 0, f"expected exit 0, got {code}"
         payload = json.loads(stdout.strip().splitlines()[0])
-        assert "error" in payload, payload
-        assert "run_id" in payload["error"].lower(), payload["error"]
+        assert payload["output"]["status"] == "no-op", payload
 
-    def test_abandon_run_requires_run_id(self) -> None:
-        """``AbandonRun`` without run_id raises a clear error."""
+    def test_abandon_run_without_lock_is_a_safe_noop(self, tmp_path: Path) -> None:
+        """Abandon auto-detects a held lock; a cold state is a safe no-op."""
         envelope = {
             "args": {"task": "AbandonRun"},
             "server_connection": {
                 "Scheme": "http",
                 "Host": "127.0.0.1",
                 "Port": 1,
+                "Dir": str(tmp_path / "abandon"),
             },
             "settings": {},
         }
         code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 1, f"expected exit 1, got {code}"
+        assert code == 0, f"expected exit 0, got {code}"
         payload = json.loads(stdout.strip().splitlines()[0])
-        assert "error" in payload, payload
-        assert "run_id" in payload["error"].lower(), payload["error"]
+        assert payload["output"]["status"] == "no-op", payload

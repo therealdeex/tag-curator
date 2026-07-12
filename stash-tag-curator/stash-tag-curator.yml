@@ -3,7 +3,7 @@ description: >-
   Hybrid raw+UI plugin that curates scene tags from provider metadata using
   configurable mapping rules, with reversible cleanup, run history, and a
   dashboard. Targets Stash v0.31.1.
-version: 0.1.0
+version: 0.2.0
 url: https://example.invalid/stash-tag-curator
 
 exec:
@@ -58,6 +58,15 @@ settings:
     type: STRING
 
 tasks:
+  - name: Curate Library
+    description: >-
+      Recommended one-button maintenance workflow. Processes new, stale, and
+      previously failed scenes; additively enriches every scene from performer
+      metadata; then removes only tags with zero associations everywhere.
+      Requires confirmation from the dashboard.
+    defaultArgs:
+      task: CurateLibrary
+      confirmed: "false"
   - name: Full Library Rebuild
     description: >-
       Re-derive every scene's tags from provider metadata using the active
@@ -97,8 +106,9 @@ tasks:
       task: ReprocessAffected
   - name: Enrich from Performer Metadata
     description: >-
-      Derive additional tags from performer metadata (e.g. cast, demographic,
-      era buckets) without a full provider re-scrape.
+      Add tags derived from performer metadata (e.g. cast, demographic, era
+      buckets) without a full provider re-scrape. Existing scene tags are
+      preserved.
     defaultArgs:
       task: Enrich
   - name: Cleanup Safe-Global Orphans
