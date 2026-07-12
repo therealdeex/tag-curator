@@ -91,10 +91,15 @@ _VALID_DISPOSITIONS: frozenset[str] = frozenset(
 #: label.  Mirrors ``config/tag-rules.schema.json``.
 _CANONICAL_NAME_RE = re.compile(r"^[A-Z]+: .+$")
 
-#: Forbidden substrings in any user-supplied string -- path-traversal and
-#: filesystem escape defence.  ``..`` catches relative traversal; ``/`` and
-#: ``\\`` catch absolute/path separators; NUL catches binary injection.
-_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = ("..", "/", "\\", "\x00")
+#: NUL is rejected everywhere; it has no legitimate place in YAML values and
+#: breaks C-string-based tools.  Path separators (``/``, ``\``) and ``..`` are
+#: NOT banned here -- arg strings are written as YAML *values* (tag names,
+#: notes), never used as filesystem paths, and the plugin's own defaults ship
+#: canonical tags containing ``/`` (e.g. ``KINK: Dom/Sub``).  Real path inputs
+#: (rules file, snapshot names) are guarded separately: snapshot names use
+#: ``_SNAPSHOT_NAME_RE`` in reporting.py, and file paths derive from
+#: ``rules_path`` / ``data_dir``, never from caller strings.
+_FORBIDDEN_SUBSTRINGS: tuple[str, ...] = ("\x00",)
 
 
 # ---------------------------------------------------------------------------
@@ -108,10 +113,10 @@ def _now_iso() -> str:
 
 
 def _is_unsafe_string(value: object) -> bool:
-    """Return True if ``value`` is a non-empty string containing a forbidden
-    path-escape substring.
+    """Return True if ``value`` is a string containing a forbidden byte.
 
-    A non-string is treated as unsafe (rejected) by callers via a separate
+    Currently only NUL is forbidden (see ``_FORBIDDEN_SUBSTRINGS``).  A
+    non-string is treated as unsafe (rejected) by callers via a separate
     type check; this helper only scans the content of confirmed strings.
     """
     if not isinstance(value, str):
@@ -314,13 +319,15 @@ class RulesEditor:
         changes: list[Mapping[str, Any]],
         canonical_additions: list[Mapping[str, str]] | None,
     ) -> dict[str, Any] | None:
-        """Validate arg shapes and reject path-traversal tokens.
+        r"""Validate arg shapes and reject NUL bytes in caller strings.
 
         Returns ``None`` on success or an ``{"error": ...}`` dict on failure.
-        Defence-in-depth: no caller-supplied string may contain a path
-        separator, parent-traversal token, or NUL -- this makes path
-        traversal structurally impossible even if a future caller passes an
-        arg into a filesystem operation.
+        Defence-in-depth: no caller-supplied string may contain a NUL byte --
+        it has no legitimate place in a YAML value and breaks C-string
+        tooling.  Path separators (``/``, ``\``) are permitted because these
+        strings are written as YAML *values* (tag names, notes), never used as
+        filesystem paths; the bundled defaults themselves ship canonical tags
+        containing ``/`` (e.g. ``KINK: Dom/Sub``).
         """
         if not isinstance(expected_rules_sha, str) or not expected_rules_sha:
             return {"error": "validation_failed", "errors": ["expected_rules_sha must be a non-empty string"]}

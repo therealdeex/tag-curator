@@ -9,7 +9,7 @@ Covers the acceptance criteria from the plan:
 * A timestamped ``.bak`` is created before every successful write.
 * Write is atomic (tempfile + ``os.replace``); a crash mid-write leaves the
   original intact.
-* Path-traversal args are rejected.
+* NUL bytes in args are rejected (path separators are allowed).
 * Rules-edit lock: while a ``run_lock`` row exists the save is refused.
 * After save, the rules-audit snapshot reflects the change.
 
@@ -416,7 +416,7 @@ class TestAtomicWrite:
 
 
 class TestPathTraversal:
-    def test_path_traversal_rejected(
+    def test_nul_byte_rejected(
         self, editor: RulesEditor, data_dir: Path
     ) -> None:
         sha = _current_sha(data_dir)
@@ -426,7 +426,7 @@ class TestPathTraversal:
             sha,
             changes=[
                 {
-                    "normalized_key": "../../etc/passwd",
+                    "normalized_key": "bad\x00name",
                     "disposition": "ignore",
                 }
             ],
@@ -434,18 +434,37 @@ class TestPathTraversal:
         assert result.get("error") == "path_traversal_rejected"
         assert (data_dir / "tag-rules.yml").read_bytes() == original_bytes
 
-    def test_path_traversal_in_canonical_rejected(
+    def test_nul_byte_in_canonical_rejected(
         self, editor: RulesEditor, data_dir: Path
     ) -> None:
         sha = _current_sha(data_dir)
         result = editor.save_mapping(
             sha,
             changes=[],
-            canonical_additions=[{"axis": "ACT", "name": "../etc/passwd"}],
+            canonical_additions=[{"axis": "ACT", "name": "ACT: bad\x00name"}],
         )
-        # Either the canonical pattern check OR the path-traversal check
-        # fires; both yield a validation_failed/path_traversal_rejected.
+        # Either the canonical pattern check OR the NUL check fires; both
+        # yield a validation_failed/path_traversal_rejected.
         assert result.get("error") in {"validation_failed", "path_traversal_rejected"}
+
+    def test_slash_in_canonical_tag_name_accepted(
+        self, editor: RulesEditor, data_dir: Path
+    ) -> None:
+        """Regression: the bundled defaults ship canonical tags containing
+        ``/`` (e.g. ``KINK: Dom/Sub``).  A new tag name following that
+        convention must NOT be rejected as path traversal -- these strings
+        are written as YAML values, never used as filesystem paths.
+        """
+        sha = _current_sha(data_dir)
+        result = editor.save_mapping(
+            sha,
+            changes=[],
+            canonical_additions=[{"axis": "KINK", "name": "KINK: Dom/Sub"}],
+        )
+        assert "new_rules_sha" in result, result
+        assert result["new_rules_sha"] != sha
+        raw = _read_active(data_dir)
+        assert "KINK: Dom/Sub" in raw["canonical_tags"]["KINK"]
 
 
 # ---------------------------------------------------------------------------
