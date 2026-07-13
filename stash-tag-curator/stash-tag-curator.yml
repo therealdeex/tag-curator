@@ -78,16 +78,22 @@ settings:
   scan_before_curate:
     displayName: Scan Before Curate
     description: >-
-      When true, the Curate Library workflow triggers a full-library metadata
-      scan before processing. This is a real Stash job and is NOT reversible
-      through plugin rollback.
+      DO NOT ENABLE. Synchronously polling a metadata scan from inside this
+      plugin task self-deadlocks on Stash v0.31.1 (single serial job queue:
+      the scan is queued behind this task and never starts). Run Scan from
+      Stash's native Tasks UI instead. Kept for the planned staged-
+      continuation architecture; enabling it now fails the run immediately
+      with an explanatory error.
     type: BOOLEAN
   generate_before_curate:
     displayName: Generate Before Curate
     description: >-
-      When true, the Curate Library workflow triggers a metadata generate job
-      (previews, image previews, phashes) before processing. This is a real
-      Stash job and is NOT reversible through plugin rollback.
+      DO NOT ENABLE. Synchronously polling a metadata generate from inside
+      this plugin task self-deadlocks on Stash v0.31.1 (single serial job
+      queue: the generate is queued behind this task and never starts). Run
+      Generate from Stash's native Tasks UI instead. Kept for the planned
+      staged-continuation architecture; enabling it now fails the run
+      immediately with an explanatory error.
     type: BOOLEAN
   generate_previews:
     displayName: Generate Previews
@@ -123,13 +129,14 @@ settings:
 tasks:
   - name: Curate Library
     description: >-
-      Complete one-button workflow: scans for new media, generates previews/
-      image previews/phashes, identifies scenes via stash-box, applies tags,
-      fills missing scene metadata, creates missing performers/studios (capped),
-      enriches from performer metadata, then removes tags with zero associations.
-      Scan and Generate are real Stash jobs (not plugin-reversible). All tag,
-      metadata, and entity changes are journaled for rollback. Requires
-      confirmation from the dashboard.
+      One-button curation workflow: identifies scenes via stash-box, applies
+      tags, fills missing scene metadata, creates missing performers/studios
+      (capped), enriches from performer metadata, then removes tags with zero
+      associations. Run Scan and Generate from Stash's native Tasks UI first
+      (synchronous scan/generate from inside this task self-deadlocks on
+      Stash v0.31.1's single serial job queue). All tag, metadata, and entity
+      changes are journaled for rollback. Requires confirmation from the
+      dashboard.
     defaultArgs:
       task: CurateLibrary
       confirmed: "false"

@@ -4,9 +4,20 @@ Provides ``run_and_wait`` — a blocking fire-and-poll helper that submits a
 Stash metadata job (Scan or Generate) and polls ``findJob`` until it reaches
 a terminal state.
 
-G2 verification (2026-07-13) proved this is **deadlock-safe**: Stash runs
-metadata jobs on an independent worker pool (6 parallel sub-tasks), so a
-plugin process can submit and poll without blocking the job-executing worker.
+DEADLOCK WARNING (confirmed live 2026-07-13): ``run_and_wait`` MUST NOT be
+called from inside a running Stash plugin task.  Stash v0.31.1 dispatches
+jobs from a single serial queue; while this plugin is itself a RUNNING task
+it occupies a slot, so the ``metadataScan``/``metadataGenerate`` it submits
+sits at ``READY`` behind it and is never dispatched.  The poll loop then
+blocks until the scan/generate timeout — a self-deadlock (observed: job 5
+"Scanning..." stuck at READY for 5+ minutes behind the plugin task, job 4).
+
+The earlier claim that this arrangement is "deadlock-safe" (independent
+worker pool) was wrong and has been removed.  ``main.py`` enforces this with
+an :class:`~curator.main.InTaskPollingError` guard.  ``run_and_wait`` is
+retained for the planned staged-continuation architecture, where the plugin
+submits a job, persists its ID, enqueues a continuation task, and EXITS —
+never polling in-process.
 
 Design contracts (plan §8):
 

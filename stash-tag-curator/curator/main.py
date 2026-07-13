@@ -636,11 +636,18 @@ class TaskContext:
             ),
             # Milestone 3/4: provider priority + scan/generate settings.
             "provider_priority": str(self.settings.get("provider_priority") or ""),
+            # Defaults: False.  Synchronous fire-and-poll from inside a Stash
+            # plugin task DEADLOCKS on Stash v0.31.1 (one serial job queue:
+            # the metadata job sits at READY behind this task forever).
+            # The guard in _run_curate_library rejects any True value.  These
+            # settings exist for the planned staged-continuation architecture
+            # (bootstrap → after_scan → after_generate) which re-enables them
+            # via asynchronous self-enqueue without in-process polling.
             "scan_before_curate": _as_bool(
-                self.settings.get("scan_before_curate"), True
+                self.settings.get("scan_before_curate"), False
             ),
             "generate_before_curate": _as_bool(
-                self.settings.get("generate_before_curate"), True
+                self.settings.get("generate_before_curate"), False
             ),
             "generate_previews": _as_bool(
                 self.settings.get("generate_previews"), True
@@ -1437,6 +1444,26 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
         state.close()
 
 
+class InTaskPollingError(Exception):
+    """Raised when synchronous scan/generate polling is requested while the
+    plugin is executing inside a Stash task.
+
+    Stash v0.31.1 runs a single serial job queue.  When this plugin is itself
+    a RUNNING task (job) it occupies a queue slot; a ``metadataScan`` /
+    ``metadataGenerate`` mutation it submits sits at ``READY`` behind it and
+    is never dispatched.  The plugin's poll loop would then block forever
+    (until the scan/generate timeout) waiting for a job that cannot start —
+    a classical self-deadlock.
+
+    The fix is architectural: the plugin must NOT poll for a job it queued
+    behind itself.  The planned staged-continuation design (bootstrap →
+    after_scan → after_generate) re-enables scan/generate by enqueuing a
+    continuation task and exiting, never by in-process polling.  Until that
+    lands, this guard fails fast so the run reports the real cause instead
+    of appearing to stall.
+    """
+
+
 def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
     """Run the safe, user-facing end-to-end library maintenance workflow.
 
@@ -1502,109 +1529,43 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             )
 
             # -- Phase 1: metadata scan (full library) -----------------
-            # G2-verified: a plugin process CAN fire-and-poll a Stash
-            # metadata job without deadlocking (Stash uses an independent
-            # worker pool for metadata jobs).  Fail-closed: a scan failure
-            # aborts the remaining pipeline (plan §3.3).
+            # DEADLOCK GUARD: Stash v0.31.1 uses ONE serial job queue.
+            # This plugin is itself a RUNNING task, so any metadataScan it
+            # submits is queued behind itself (status=READY, never
+            # dispatched) and submit_scan's poll loop blocks until the scan
+            # timeout — a self-deadlock confirmed live on 2026-07-13.
+            # Synchronous fire-and-poll from inside a Stash task is
+            # prohibited; scan_before_curate defaults to false.  When a user
+            # opts in (the setting still exists for the planned staged
+            # continuation architecture), fail fast with the real cause
+            # rather than appearing to stall for ~1 hour.
             if engine_settings.get("scan_before_curate"):
-                _log("curate_library: starting full-library scan")
-                from curator.stash_jobs import JobError as _JobError, submit_scan
-
-                def _scan_progress(fraction: float) -> None:
-                    # Map job progress 0..1 into overall 0.00–0.15.
-                    _progress(0.00 + max(0.0, min(1.0, fraction)) * 0.15)
-
-                try:
-                    scan_result = submit_scan(
-                        ctx.client,
-                        full_library=True,
-                        progress_fn=_scan_progress,
-                        timeout=engine_settings.get("scan_timeout_minutes", 60.0) * 60,
-                        poll_interval=engine_settings.get(
-                            "stash_job_poll_interval_seconds", 5.0
-                        ),
-                    )
-                    result["scan"] = {
-                        "ran": True,
-                        "job_id": scan_result.job_id,
-                        "status": scan_result.status,
-                        "timed_out": scan_result.timed_out,
-                        "error": scan_result.error,
-                        "reversible": False,  # plan §3.1: not plugin-reversible
-                    }
-                    _progress(0.15)
-                    _log(f"scan complete: {scan_result.status}")
-                except _JobError as exc:
-                    result["scan"] = {
-                        "ran": True,
-                        "job_id": exc.result.job_id,
-                        "status": exc.result.status,
-                        "timed_out": False,
-                        "error": exc.result.error,
-                        "reversible": False,
-                    }
-                    run_error = f"scan failed: {exc}"
-                    raise
-            else:
-                _log("curate_library: scan skipped (scan_before_curate=false)")
-                _progress(0.15)  # advance past the scan range
+                raise InTaskPollingError(
+                    "scan_before_curate cannot run synchronously inside a Stash "
+                    "plugin task: Stash v0.31.1 queues the metadataScan behind "
+                    "this task (READY), so it never starts and the poll loop "
+                    "self-deadlocks. Run Scan via Stash's native Tasks UI before "
+                    "Curate Library, or await the staged-continuation "
+                    "architecture. (settings.scan_before_curate=true is rejected.)"
+                )
+            _log("curate_library: scan skipped (scan_before_curate=false)")
+            _progress(0.15)  # advance past the scan range
 
             # -- Phase 2: metadata generate -----------------------------
+            # Same deadlock guard as Phase 1: a plugin task cannot poll a
+            # metadataGenerate job it queued behind itself.
             if engine_settings.get("generate_before_curate"):
-                _log("curate_library: starting metadata generate")
-                from curator.stash_jobs import JobError as _JobError, submit_generate
-
-                def _generate_progress(fraction: float) -> None:
-                    # Map job progress 0..1 into overall 0.15–0.45.
-                    _progress(0.15 + max(0.0, min(1.0, fraction)) * 0.30)
-
-                try:
-                    gen_result = submit_generate(
-                        ctx.client,
-                        previews=engine_settings.get("generate_previews", True),
-                        image_previews=engine_settings.get(
-                            "generate_image_previews", True
-                        ),
-                        phashes=engine_settings.get("generate_phashes", True),
-                        progress_fn=_generate_progress,
-                        timeout=engine_settings.get(
-                            "generate_timeout_minutes", 120.0
-                        ) * 60,
-                        poll_interval=engine_settings.get(
-                            "stash_job_poll_interval_seconds", 5.0
-                        ),
-                    )
-                    result["generate"] = {
-                        "ran": True,
-                        "job_id": gen_result.job_id,
-                        "status": gen_result.status,
-                        "timed_out": gen_result.timed_out,
-                        "error": gen_result.error,
-                        "options": {
-                            "previews": engine_settings.get("generate_previews", True),
-                            "image_previews": engine_settings.get(
-                                "generate_image_previews", True
-                            ),
-                            "phashes": engine_settings.get("generate_phashes", True),
-                        },
-                        "reversible": False,
-                    }
-                    _progress(0.45)
-                    _log(f"generate complete: {gen_result.status}")
-                except _JobError as exc:
-                    result["generate"] = {
-                        "ran": True,
-                        "job_id": exc.result.job_id,
-                        "status": exc.result.status,
-                        "timed_out": False,
-                        "error": exc.result.error,
-                        "reversible": False,
-                    }
-                    run_error = f"generate failed: {exc}"
-                    raise
-            else:
-                _log("curate_library: generate skipped (generate_before_curate=false)")
-                _progress(0.45)  # advance past the generate range
+                raise InTaskPollingError(
+                    "generate_before_curate cannot run synchronously inside a "
+                    "Stash plugin task: Stash v0.31.1 queues the "
+                    "metadataGenerate behind this task (READY), so it never "
+                    "starts and the poll loop self-deadlocks. Run Generate via "
+                    "Stash's native Tasks UI before Curate Library, or await "
+                    "the staged-continuation architecture. "
+                    "(settings.generate_before_curate=true is rejected.)"
+                )
+            _log("curate_library: generate skipped (generate_before_curate=false)")
+            _progress(0.45)  # advance past the generate range
 
             # -- Phases 3-6: scene processing (tags + metadata + entities)
             # Progress ranges shifted to 0.45–0.92 to make room for the

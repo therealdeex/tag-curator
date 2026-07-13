@@ -1063,32 +1063,22 @@ class TestCurateLibraryRoute:
             {"task": "CurateLibrary", "confirmed": "true"},
             client=_StubClient(),
         )
-        # Fake scan/generate results so the pipeline runs without a live Stash.
-        _fake_scan = SimpleNamespace(
-            job_id="scan-1", status="FINISHED", timed_out=False, error=None
-        )
-        _fake_generate = SimpleNamespace(
-            job_id="gen-1", status="FINISHED", timed_out=False, error=None
-        )
         with (
             patch("curator.main.ProviderLookup", FakeProviders),
             patch("curator.main.RebuildEngine", FakeRebuildEngine),
             patch("curator.main.CleanupEngine", FakeCleanupEngine),
             patch("curator.main._resolve_finite_tags", return_value={}),
             patch("curator.main._regenerate_snapshots"),
-            patch("curator.stash_jobs.submit_scan", return_value=_fake_scan),
-            patch("curator.stash_jobs.submit_generate", return_value=_fake_generate),
         ):
             result = _run_curate_library(ctx)
 
         assert seen_scopes == [
             "never_processed", "stale_rules", "failed", "enrich_only"
         ]
-        # Scan + generate ran (patched to immediate FINISHED).
-        assert result["scan"]["ran"] is True
-        assert result["scan"]["status"] == "FINISHED"
-        assert result["generate"]["ran"] is True
-        assert result["generate"]["status"] == "FINISHED"
+        # Scan + generate are skipped by default (synchronous fire-and-poll
+        # from inside a Stash task self-deadlocks; see InTaskPollingError).
+        assert result["scan"] is None
+        assert result["generate"] is None
         assert result["orphan_cleanup"]["execute"]["destroyed_count"] == 0
         state = StateDB(str(ctx.state_path))
         try:
@@ -1100,70 +1090,66 @@ class TestCurateLibraryRoute:
         finally:
             state.close()
 
-    def test_scan_failure_aborts_pipeline(self, tmp_path: Path) -> None:
-        """Fail-closed: scan JobError aborts before scene phases (plan §3.3)."""
-        from curator.stash_jobs import JobError, JobResult
+    def test_scan_before_curate_rejects_in_task_polling(self, tmp_path: Path) -> None:
+        """Deadlock guard: scan_before_curate=true inside a Stash plugin task
+        must fail fast instead of self-deadlocking.
 
-        seen_scopes: list[str] = []
-
-        class FakeReport:
-            def __init__(self, **kw):
-                self.proposed_run_id = kw.get("proposed_run_id", "p")
-            def to_dict(self):
-                return {}
-
-        class FakeRebuildEngine:
-            def __init__(self, *a, **kw):
-                self.progress_fn = kw["progress_fn"]
-            def run_dry(self, scope, **kw):
-                seen_scopes.append(scope.name)
-                self.progress_fn(1.0)
-                return FakeReport(proposed_run_id="p-" + scope.name)
-            def run_execute(self, proposed_run_id, **kw):
-                return FakeReport()
-
-        class FakeCleanupEngine:
-            def __init__(self, *a, **kw): pass
-            def dry_run(self, scope): return SimpleNamespace(token="t", to_dict=lambda: {})
-            def execute_cleanup(self, token): return SimpleNamespace(to_dict=lambda: {})
+        Regression for the live incident on 2026-07-13: the plugin (a RUNNING
+        task) submitted metadataScan, which sat at READY behind it forever;
+        the poll loop blocked until the scan timeout.  Stash v0.31.1 uses a
+        single serial job queue, so a plugin task CANNOT synchronously poll a
+        metadata job it queued behind itself.  The guard rejects this up front.
+        """
+        from curator.main import InTaskPollingError
 
         ctx = TaskContext(
-            {"Dir": str(tmp_path)}, {},
+            {"Dir": str(tmp_path)},
+            {"scan_before_curate": True},  # opted in -> must be rejected
             {"task": "CurateLibrary", "confirmed": "true"},
             client=_StubClient(),
         )
-        _scan_fail = JobError(JobResult(
-            job_id="scan-x", status="FAILED", error="disk error"
-        ))
         with (
             patch("curator.main.ProviderLookup", type("FP", (), {
                 "__init__": lambda s, c, st: None,
                 "discover_endpoints": lambda s: [SimpleNamespace(endpoint="https://x")],
             })),
-            patch("curator.main.RebuildEngine", FakeRebuildEngine),
-            patch("curator.main.CleanupEngine", FakeCleanupEngine),
             patch("curator.main._resolve_finite_tags", return_value={}),
-            patch("curator.main._regenerate_snapshots"),
-            patch("curator.stash_jobs.submit_scan", side_effect=_scan_fail),
         ):
-            # Fail-closed: the scan failure propagates (the run is recorded
-            # as 'failed' in the finally block, then the exception re-raises).
-            with pytest.raises(Exception, match="scan"):
-                result = _run_curate_library(ctx)
+            # The guard fires before any scene phase or cleanup runs.
+            with pytest.raises(InTaskPollingError, match="scan_before_curate"):
+                _run_curate_library(ctx)
 
-        # The run was recorded as failed even though the exception propagated.
+        # The run was recorded as failed.
         state = StateDB(str(ctx.state_path))
         try:
             row = state.connection.execute(
-                "SELECT status, totals_json FROM runs ORDER BY started_at DESC LIMIT 1"
+                "SELECT status FROM runs ORDER BY started_at DESC LIMIT 1"
             ).fetchone()
             assert row["status"] == "failed"
-            # The scan failure was captured in the totals before the raise.
-            import json as _json
-            totals = _json.loads(row["totals_json"]) if row["totals_json"] else {}
-            assert totals.get("scan", {}).get("status") == "FAILED"
         finally:
             state.close()
+
+    def test_generate_before_curate_rejects_in_task_polling(
+        self, tmp_path: Path,
+    ) -> None:
+        """Same deadlock guard as scan, for the generate phase."""
+        from curator.main import InTaskPollingError
+
+        ctx = TaskContext(
+            {"Dir": str(tmp_path)},
+            {"generate_before_curate": True},  # opted in -> must be rejected
+            {"task": "CurateLibrary", "confirmed": "true"},
+            client=_StubClient(),
+        )
+        with (
+            patch("curator.main.ProviderLookup", type("FP", (), {
+                "__init__": lambda s, c, st: None,
+                "discover_endpoints": lambda s: [SimpleNamespace(endpoint="https://x")],
+            })),
+            patch("curator.main._resolve_finite_tags", return_value={}),
+        ):
+            with pytest.raises(InTaskPollingError, match="generate_before_curate"):
+                _run_curate_library(ctx)
 
     def test_scan_disabled_skips_scan_phase(self, tmp_path: Path) -> None:
         """When scan_before_curate=false, scan phase is skipped."""
@@ -1192,11 +1178,10 @@ class TestCurateLibraryRoute:
 
         ctx = TaskContext(
             {"Dir": str(tmp_path)},
-            {"scan_before_curate": False},  # scan disabled
+            {"scan_before_curate": False},  # scan disabled (also the default)
             {"task": "CurateLibrary", "confirmed": "true"},
             client=_StubClient(),
         )
-        _fake_gen = SimpleNamespace(job_id="g1", status="FINISHED", timed_out=False, error=None)
         with (
             patch("curator.main.ProviderLookup", type("FP", (), {
                 "__init__": lambda s, c, st: None,
@@ -1206,13 +1191,12 @@ class TestCurateLibraryRoute:
             patch("curator.main.CleanupEngine", FakeCleanupEngine),
             patch("curator.main._resolve_finite_tags", return_value={}),
             patch("curator.main._regenerate_snapshots"),
-            patch("curator.stash_jobs.submit_generate", return_value=_fake_gen),
         ):
             result = _run_curate_library(ctx)
 
-        # Scan was skipped; generate ran; scene phases ran.
+        # Scan + generate both skipped (defaults); scene phases still ran.
         assert result["scan"] is None
-        assert result["generate"]["ran"] is True
+        assert result["generate"] is None
         assert len(seen_scopes) == 4  # all scene phases still ran
 
 
