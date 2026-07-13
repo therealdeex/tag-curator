@@ -51,6 +51,7 @@ from .graphql_queries import FIND_JOB, METADATA_GENERATE, METADATA_SCAN
 __all__ = [
     "JobResult",
     "JobError",
+    "InTaskPollingError",
     "run_and_wait",
     "submit_scan",
     "submit_generate",
@@ -58,6 +59,10 @@ __all__ = [
     "DEFAULT_POLL_INTERVAL",
     "DEFAULT_SCAN_TIMEOUT",
     "DEFAULT_GENERATE_TIMEOUT",
+    "set_task_context",
+    "clear_task_context",
+    "task_context",
+    "is_in_task_context",
 ]
 
 # ---------------------------------------------------------------------------
@@ -76,6 +81,88 @@ DEFAULT_SCAN_TIMEOUT: float = 3600.0
 
 #: Default generate timeout (seconds) = 120 minutes.
 DEFAULT_GENERATE_TIMEOUT: float = 7200.0
+
+
+# ---------------------------------------------------------------------------
+# Execution context: are we running inside a Stash plugin task?
+# ---------------------------------------------------------------------------
+
+class InTaskPollingError(Exception):
+    """Raised when synchronous job polling is attempted inside a Stash task.
+
+    Stash v0.31.1 uses a single serial job queue.  When this plugin is itself
+    a RUNNING task it occupies a queue slot; a ``metadataScan`` /
+    ``metadataGenerate`` mutation it submits sits at ``READY`` behind it and
+    is never dispatched.  ``run_and_wait``'s poll loop would then block
+    forever (until the scan/generate timeout) waiting for a job that cannot
+    start — a classical self-deadlock.
+
+    The guard at the top of :func:`run_and_wait` raises this whenever the
+    execution context indicates the plugin is running as a Stash task.
+    """
+
+    def __init__(self, operation_kind: str = "job") -> None:
+        super().__init__(
+            f"synchronous polling for {operation_kind} is forbidden inside a "
+            f"Stash plugin task: Stash v0.31.1's single serial job queue would "
+            f"never dispatch the job (self-deadlock). Submit the job, persist "
+            f"its ID, enqueue a continuation, and exit instead."
+        )
+
+
+#: Module-level flag: True when code runs inside a Stash plugin task.
+#: Set via :func:`set_task_context` / :class:`task_context` by ``main.py``
+#: when dispatching a task.  Defaults to False (standalone/test context) so
+#: that direct calls outside a task (e.g. unit tests, ad-hoc scripts) are not
+#: blocked.
+_IN_TASK_CONTEXT: bool = False
+
+
+def set_task_context(in_task: bool = True) -> None:
+    """Mark that subsequent code runs inside a Stash plugin task.
+
+    Once set, any call to :func:`run_and_wait` (directly or via
+    :func:`submit_scan` / :func:`submit_generate`) raises
+    :class:`InTaskPollingError` immediately, before submitting or polling.
+    """
+    global _IN_TASK_CONTEXT
+    _IN_TASK_CONTEXT = in_task
+
+
+def clear_task_context() -> None:
+    """Mark that code is no longer inside a Stash plugin task."""
+    global _IN_TASK_CONTEXT
+    _IN_TASK_CONTEXT = False
+
+
+def is_in_task_context() -> bool:
+    """Return whether code is currently inside a Stash plugin task."""
+    return _IN_TASK_CONTEXT
+
+
+class task_context:  # noqa: N801 - intentional context-manager class name
+    """Context manager that sets the in-task flag for its duration.
+
+    Usage::
+
+        with task_context():
+            # any run_and_wait / submit_* inside raises InTaskPollingError
+            _dispatch(envelope)
+    """
+
+    def __init__(self, in_task: bool = True) -> None:
+        self._in_task = in_task
+        self._prev: bool = False
+
+    def __enter__(self) -> "task_context":
+        global _IN_TASK_CONTEXT
+        self._prev = _IN_TASK_CONTEXT
+        _IN_TASK_CONTEXT = self._in_task
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        global _IN_TASK_CONTEXT
+        _IN_TASK_CONTEXT = self._prev
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +251,23 @@ def run_and_wait(
         If the job ended in ``FAILED`` or ``CANCELLED`` status, or if the
         mutation submission itself failed.  (Timeout does NOT raise by
         default — the caller decides how to handle it via ``result.timed_out``.)
+    InTaskPollingError
+        If the execution context indicates this code runs inside a Stash
+        plugin task (:func:`set_task_context` was called).  Synchronous
+        polling from inside a task self-deadlocks on Stash v0.31.1's single
+        serial job queue.  This is the centralized choke-point guard: it
+        catches every path — direct ``run_and_wait`` calls and both
+        ``submit_scan`` / ``submit_generate`` wrappers.
     """
+    # -- Deadlock guard (choke point) -----------------------------------
+    # This is the ONLY function in the package that polls findJob.  Guarding
+    # here catches every synchronous job-waiting path, including the
+    # submit_scan/submit_generate wrappers.  When in task context, raise
+    # before any submit or poll — the caller must use the staged-continuation
+    # path (submit + persist ID + enqueue continuation + exit) instead.
+    if _IN_TASK_CONTEXT:
+        raise InTaskPollingError(operation_kind)
+
     _sleep = sleep_fn or time.sleep
     _clock = clock or time.monotonic
 

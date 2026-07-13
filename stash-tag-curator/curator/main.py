@@ -1444,24 +1444,12 @@ def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
         state.close()
 
 
-class InTaskPollingError(Exception):
-    """Raised when synchronous scan/generate polling is requested while the
-    plugin is executing inside a Stash task.
-
-    Stash v0.31.1 runs a single serial job queue.  When this plugin is itself
-    a RUNNING task (job) it occupies a queue slot; a ``metadataScan`` /
-    ``metadataGenerate`` mutation it submits sits at ``READY`` behind it and
-    is never dispatched.  The plugin's poll loop would then block forever
-    (until the scan/generate timeout) waiting for a job that cannot start —
-    a classical self-deadlock.
-
-    The fix is architectural: the plugin must NOT poll for a job it queued
-    behind itself.  The planned staged-continuation design (bootstrap →
-    after_scan → after_generate) re-enables scan/generate by enqueuing a
-    continuation task and exiting, never by in-process polling.  Until that
-    lands, this guard fails fast so the run reports the real cause instead
-    of appearing to stall.
-    """
+# Re-exported from stash_jobs so the centralized choke-point guard and its
+# exception live together.  ``main.py`` sets task context via
+# ``task_context()`` in ``_dispatch``; ``run_and_wait`` then enforces the
+# no-polling-in-task rule for every code path.
+from curator.stash_jobs import InTaskPollingError  # noqa: E402,F401
+from curator.stash_jobs import task_context  # noqa: E402
 
 
 def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
@@ -2208,53 +2196,61 @@ def _dispatch(
 
     ctx = TaskContext(raw_conn, raw_settings, args, client=client)
 
-    # -- Preflight mode (standalone) --------------------------------
-    if mode == "preflight":
-        return _run_preflight_mode(ctx)
+    # -- Execution context -------------------------------------------
+    # Every task dispatched through this entrypoint runs inside a Stash plugin
+    # task (the plugin process itself is a RUNNING job in Stash's single
+    # serial queue).  Setting task context arms the centralized deadlock
+    # guard in stash_jobs.run_and_wait: any synchronous job polling raises
+    # InTaskPollingError instead of self-deadlocking.  Read-only preflight
+    # and validate_rules also run under task context for uniformity.
+    with task_context():
+        # -- Preflight mode (standalone) ----------------------------
+        if mode == "preflight":
+            return _run_preflight_mode(ctx)
 
-    # -- Validate rules (no client, no lock) ------------------------
-    if mode == "validate_rules":
-        return _run_validate_rules(ctx)
+        # -- Validate rules (no client, no lock) --------------------
+        if mode == "validate_rules":
+            return _run_validate_rules(ctx)
 
-    # -- Mutation-task preflight gate (D1) --------------------------
-    if mode in _LOCK_MODES or mode == "rollback":
-        strict = _as_bool(
-            args.get("strict"),
-            default=_as_bool(raw_settings.get("strict_version"), True),
-        )
-        # Only the rebuild family calls providers; cleanup / rollback / save
-        # do not need stash-box endpoints.
-        require_providers = mode in _REBUILD_SCOPES or mode == "curate_library"
-        preflight = Preflight(
-            ctx.client, ctx.data_dir,
-            strict=strict, require_providers=require_providers,
-        )
-        pf_result = preflight.run()
-        _log(f"preflight passed={pf_result['passed']}")
+        # -- Mutation-task preflight gate (D1) ----------------------
+        if mode in _LOCK_MODES or mode == "rollback":
+            strict = _as_bool(
+                args.get("strict"),
+                default=_as_bool(raw_settings.get("strict_version"), True),
+            )
+            # Only the rebuild family calls providers; cleanup / rollback / save
+            # do not need stash-box endpoints.
+            require_providers = mode in _REBUILD_SCOPES or mode == "curate_library"
+            preflight = Preflight(
+                ctx.client, ctx.data_dir,
+                strict=strict, require_providers=require_providers,
+            )
+            pf_result = preflight.run()
+            _log(f"preflight passed={pf_result['passed']}")
 
-    # -- Route ------------------------------------------------------
-    if mode == "curate_library":
-        return _run_curate_library(ctx)
-    if mode in _REBUILD_SCOPES:
-        return _run_rebuild_family(ctx, mode)
-    if mode in ("cleanup_safe", "cleanup_plugin"):
-        return _run_cleanup(ctx, mode)
-    if mode == "rollback":
-        return _run_rollback(ctx)
-    if mode == "save_mapping":
-        return _run_save_mapping(ctx)
-    if mode == "resume_run":
-        return _run_resume_run(ctx)
-    if mode == "abandon_run":
-        return _run_abandon_run(ctx)
-    if mode == "force_release":
-        return _run_force_release(ctx)
-    if mode == "undo_cleanup":
-        return _run_undo_cleanup(ctx)
-    if mode in _REPORT_MODES:
-        return _run_report(ctx, mode)
-    # Should be unreachable -- mode was validated against _ALL_MODES.
-    raise ValueError(f"unrouted mode: {mode!r}")  # pragma: no cover
+        # -- Route --------------------------------------------------
+        if mode == "curate_library":
+            return _run_curate_library(ctx)
+        if mode in _REBUILD_SCOPES:
+            return _run_rebuild_family(ctx, mode)
+        if mode in ("cleanup_safe", "cleanup_plugin"):
+            return _run_cleanup(ctx, mode)
+        if mode == "rollback":
+            return _run_rollback(ctx)
+        if mode == "save_mapping":
+            return _run_save_mapping(ctx)
+        if mode == "resume_run":
+            return _run_resume_run(ctx)
+        if mode == "abandon_run":
+            return _run_abandon_run(ctx)
+        if mode == "force_release":
+            return _run_force_release(ctx)
+        if mode == "undo_cleanup":
+            return _run_undo_cleanup(ctx)
+        if mode in _REPORT_MODES:
+            return _run_report(ctx, mode)
+        # Should be unreachable -- mode was validated against _ALL_MODES.
+        raise ValueError(f"unrouted mode: {mode!r}")  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------

@@ -23,12 +23,17 @@ from curator.stash_jobs import (
     DEFAULT_GENERATE_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_SCAN_TIMEOUT,
+    InTaskPollingError,
     JobError,
     JobResult,
     TERMINAL_STATUSES,
+    clear_task_context,
+    is_in_task_context,
     run_and_wait,
+    set_task_context,
     submit_generate,
     submit_scan,
+    task_context,
 )
 from curator.graphql_queries import FIND_JOB, METADATA_GENERATE, METADATA_SCAN
 
@@ -465,3 +470,160 @@ class TestProgressMonotonic:
         assert all(0.0 <= v <= 1.0 for v in progress_vals)
         # Final value is 1.0 (flushed on FINISHED)
         assert progress_vals[-1] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Centralized deadlock guard (choke point in run_and_wait)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_task_context():
+    """Ensure no test leaks task-context state into another test."""
+    clear_task_context()
+    yield
+    clear_task_context()
+
+
+class TestTaskContextFlag:
+    """The execution-context flag and context manager."""
+
+    def test_defaults_to_not_in_task(self) -> None:
+        assert is_in_task_context() is False
+
+    def test_set_and_clear(self) -> None:
+        set_task_context()
+        assert is_in_task_context() is True
+        clear_task_context()
+        assert is_in_task_context() is False
+
+    def test_context_manager_sets_then_restores(self) -> None:
+        assert is_in_task_context() is False
+        with task_context():
+            assert is_in_task_context() is True
+        assert is_in_task_context() is False
+
+    def test_context_manager_restores_prior_state(self) -> None:
+        """Nested entry restores the outer state, not just False."""
+        with task_context():
+            with task_context():
+                assert is_in_task_context() is True
+            assert is_in_task_context() is True  # still in outer
+        assert is_in_task_context() is False
+
+
+class TestGuardBlocksEveryJobReturningHelper:
+    """In task context, every synchronous job-polling path must raise.
+
+    These are the ONLY job-returning helpers in the package.  The guard lives
+    in run_and_wait (the single choke point) and is inherited by both
+    submit_scan and submit_generate wrappers.  Parameterized so a new helper
+    can't silently bypass the guard.
+    """
+
+    @pytest.mark.parametrize(
+        "helper,kwargs",
+        [
+            (
+                "run_and_wait",
+                dict(
+                    mutation=METADATA_SCAN, variables={"input": {}},
+                    operation_kind="scan",
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+            (
+                "submit_scan",
+                dict(
+                    full_library=True,
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+            (
+                "submit_generate",
+                dict(
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+        ],
+    )
+    def test_raises_in_task_context(self, helper, kwargs) -> None:
+        """Every helper raises before submitting or polling."""
+        client = ScriptedJobClient(
+            submit_response={"metadataScan": "1", "metadataGenerate": "1"},
+            poll_sequence=[_find_job_response(status="FINISHED")],
+        )
+        fn = {"run_and_wait": run_and_wait,
+              "submit_scan": submit_scan,
+              "submit_generate": submit_generate}[helper]
+        with task_context():
+            with pytest.raises(InTaskPollingError):
+                fn(client, **kwargs)
+        # No submit call was made — the guard fired before any HTTP request.
+        assert client.submit_calls == []
+
+    @pytest.mark.parametrize(
+        "helper,kwargs",
+        [
+            (
+                "run_and_wait",
+                dict(
+                    mutation=METADATA_SCAN, variables={"input": {}},
+                    operation_kind="scan",
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+            (
+                "submit_scan",
+                dict(
+                    full_library=True,
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+            (
+                "submit_generate",
+                dict(
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                ),
+            ),
+        ],
+    )
+    def test_allows_outside_task_context(self, helper, kwargs) -> None:
+        """Outside a task (default), polling works normally."""
+        client = ScriptedJobClient(
+            submit_response={"metadataScan": "1", "metadataGenerate": "1"},
+            poll_sequence=[_find_job_response(status="FINISHED", progress=1.0)],
+        )
+        fn = {"run_and_wait": run_and_wait,
+              "submit_scan": submit_scan,
+              "submit_generate": submit_generate}[helper]
+        # Must not raise — guard is inert outside task context.
+        result = fn(client, **kwargs)
+        assert result.status == "FINISHED"
+
+    def test_guard_fires_before_existing_job_poll(self) -> None:
+        """Even joining an existing job (existing_job_id, no submit) is
+        blocked — the poll loop itself is the deadlock, not the submit."""
+        client = ScriptedJobClient(
+            submit_response={"findJob": _find_job_response(status="RUNNING")},
+            poll_sequence=[_find_job_response(status="FINISHED")],
+        )
+        with task_context():
+            with pytest.raises(InTaskPollingError):
+                run_and_wait(
+                    client, FIND_JOB, {"id": "preexisting"},
+                    operation_kind="scan",
+                    existing_job_id="preexisting",
+                    sleep_fn=lambda _: None, clock=FakeClock(),
+                )
+        assert client.submit_calls == []
+
+
+class TestGuardMessage:
+    """The error message must explain the root cause and the remedy."""
+
+    def test_message_mentions_deadlock_and_continuation(self) -> None:
+        exc = InTaskPollingError("scan")
+        msg = str(exc)
+        assert "deadlock" in msg.lower() or "serial" in msg.lower()
+        assert "continuation" in msg.lower()
