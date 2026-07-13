@@ -1508,7 +1508,7 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             # aborts the remaining pipeline (plan §3.3).
             if engine_settings.get("scan_before_curate"):
                 _log("curate_library: starting full-library scan")
-                from .stash_jobs import JobError as _JobError, submit_scan
+                from curator.stash_jobs import JobError as _JobError, submit_scan
 
                 def _scan_progress(fraction: float) -> None:
                     # Map job progress 0..1 into overall 0.00–0.15.
@@ -1552,7 +1552,7 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             # -- Phase 2: metadata generate -----------------------------
             if engine_settings.get("generate_before_curate"):
                 _log("curate_library: starting metadata generate")
-                from .stash_jobs import JobError as _JobError, submit_generate
+                from curator.stash_jobs import JobError as _JobError, submit_generate
 
                 def _generate_progress(fraction: float) -> None:
                     # Map job progress 0..1 into overall 0.15–0.45.
