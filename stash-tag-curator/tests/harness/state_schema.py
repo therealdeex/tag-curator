@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS mutations(
     rules_sha             TEXT,
     provider_match_status TEXT,
     provider_raw_tags_json TEXT,
+    -- v3 (Milestone 2): scene-metadata enrichment journaling for rollback.
+    old_metadata_json     TEXT,
+    new_metadata_json     TEXT,
     created_at            TEXT,
     applied_at            TEXT,
     reverted_at           TEXT,
@@ -201,6 +204,9 @@ CREATE TABLE IF NOT EXISTS dry_run_proposals(
     applied_at               TEXT,
     applied_by_run_id        TEXT,
     skip_reason              TEXT,
+    -- v2 (Milestone 1): scene-metadata enrichment (fill-empty) proposals.
+    proposed_metadata_json   TEXT,
+    applied_metadata_json    TEXT,
     PRIMARY KEY (proposed_run_id, scene_id)
 );
 
@@ -251,6 +257,21 @@ CREATE TABLE IF NOT EXISTS tag_deletions(
     deletion_proposal_token  TEXT,
     deleted_at               TEXT,
     restored_at              TEXT
+);
+
+-- Entity creation journal (v4 / Milestone 3) for performer/studio rollback --
+CREATE TABLE IF NOT EXISTS entity_creates(
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id                   TEXT    NOT NULL,
+    kind                     TEXT    NOT NULL CHECK (kind IN ('performer', 'studio')),
+    name                     TEXT    NOT NULL,
+    remote_site_id           TEXT,
+    endpoint                 TEXT,
+    local_id                 TEXT,
+    status                   TEXT    NOT NULL,
+    created_at               TEXT,
+    reverted_at              TEXT,
+    revert_reason            TEXT
 );
 
 -- Indexes used by the hot reconciliation / rollback paths -------------------

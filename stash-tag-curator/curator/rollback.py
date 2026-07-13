@@ -45,6 +45,7 @@ from .graphql_queries import (
     TAG_CREATE,
 )
 from .journal import Journal
+from .metadata import diff_from_json
 from .state import StateDB
 
 __all__ = [
@@ -80,6 +81,19 @@ ALL_POLICIES: tuple[str, ...] = (
 def _now_iso() -> str:
     """UTC timestamp in ISO-8601 (the canonical wire format for the state DB)."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _values_equal(current: Any, written: Any) -> bool:
+    """Loose equality for metadata-rollback conflict detection.
+
+    Scalar strings are compared stripped (G3: Stash stores null/"" both as
+    "").  Lists are compared as sorted sets (order-independent).
+    """
+    if isinstance(written, str) and isinstance(current, str):
+        return current.strip() == written.strip()
+    if isinstance(written, list) and isinstance(current, list):
+        return sorted(map(str, current)) == sorted(map(str, written))
+    return current == written
 
 
 def _default_progress(fraction: float) -> None:
@@ -323,17 +337,22 @@ class RollbackEngine:
 
     def _scene_update(
         self, scene_id: int, tag_ids: Sequence[str],
+        *,
+        metadata_fields: "Mapping[str, Any] | None" = None,
     ) -> None:
-        """Issue a full-replacement ``sceneUpdate(input: {id, tag_ids})`` call."""
-        self._client.submit(
-            SCENE_UPDATE,
-            {
-                "input": {
-                    "id": str(scene_id),
-                    "tag_ids": [str(t) for t in tag_ids],
-                }
-            },
-        )
+        """Issue a full-replacement ``sceneUpdate`` with optional metadata."""
+        inp: dict[str, Any] = {
+            "id": str(scene_id),
+            "tag_ids": [str(t) for t in tag_ids],
+        }
+        if metadata_fields:
+            for key in (
+                "title", "date", "code", "details", "director",
+                "urls", "studio_id", "performer_ids",
+            ):
+                if key in metadata_fields:
+                    inp[key] = metadata_fields[key]
+        self._client.submit(SCENE_UPDATE, {"input": inp})
 
     def _recreate_tag(self, name: str) -> str | None:
         """Best-effort ``tagCreate`` returning the new id (or None)."""
@@ -408,6 +427,78 @@ class RollbackEngine:
             raw_tags=[],
             rules_sha=rules_sha or "",
         )
+
+    @staticmethod
+    def _compute_metadata_rollback(
+        row: Any,
+        scene: Mapping[str, Any],
+    ) -> "dict[str, Any] | None":
+        """Compute metadata fields to restore for rollback (Milestone 2).
+
+        Reads ``new_metadata_json`` (what the curator wrote) and
+        ``old_metadata_json`` (the original values) from the journal row.
+        For each field, if the scene's CURRENT value still equals what the
+        curator wrote, the old value is restored (via clear: ``""`` for
+        scalars, ``[]`` for lists — G3 semantics).  If the current value
+        differs (user edited it after the curator write), the field is
+        skipped (default skip-with-warning policy).
+
+        Returns a dict of ``sceneUpdate`` metadata fields, or ``None`` when
+        there are no metadata changes to restore.
+        """
+        keys = set(row.keys())
+        if "new_metadata_json" not in keys:
+            return None
+        new_meta = diff_from_json(row["new_metadata_json"]) if "new_metadata_json" in keys else None
+        old_meta = diff_from_json(row["old_metadata_json"]) if "old_metadata_json" in keys else None
+        if not new_meta:
+            return None
+
+        restore: dict[str, Any] = {}
+
+        # The journal's new_metadata_json is a flat dict {field: value} of
+        # what the curator wrote.  Entity fields (studio_id, performer_ids)
+        # are handled separately below.
+        entity_keys = {"studio_id", "performer_ids"}
+        for fname, written_val in new_meta.items():
+            if fname in entity_keys:
+                continue
+            if isinstance(written_val, Mapping):
+                # Nested form (not expected from current journaling) — skip.
+                continue
+            # Direct value comparison: current scene field vs what we wrote.
+            current = scene.get(fname)
+            if _values_equal(current, written_val):
+                # Restore: clear (old was empty per fill-empty policy).
+                # G3: scalars clear with "", urls list clears with [].
+                restore[fname] = "" if fname != "urls" else []
+
+        # Studio: restore (clear) if current studio_id matches what we wrote.
+        if "studio_id" in new_meta:
+            current_studio = scene.get("studio")
+            current_sid = (
+                str(current_studio["id"])
+                if isinstance(current_studio, Mapping) and current_studio.get("id")
+                else None
+            )
+            if current_sid and _values_equal(current_sid, new_meta["studio_id"]):
+                restore["studio_id"] = None
+
+        # Performers: restore (clear) if current performer_ids match.
+        if "performer_ids" in new_meta:
+            current_perfs = scene.get("performers")
+            current_pids = sorted(
+                str(p["id"])
+                for p in current_perfs
+                if isinstance(p, Mapping) and p.get("id")
+            ) if isinstance(current_perfs, list) else []
+            written_pids = sorted(new_meta["performer_ids"]) if isinstance(
+                new_meta["performer_ids"], list
+            ) else []
+            if current_pids == written_pids:
+                restore["performer_ids"] = []
+
+        return restore if restore else None
 
     # ------------------------------------------------------------------
     # Public: run
@@ -616,9 +707,16 @@ class RollbackEngine:
             report.scenes_reverted += 1
             return
 
-        # Step 5: sceneUpdate full-replacement.
+        # Step 5: sceneUpdate full-replacement + metadata restore.
+        # Metadata rollback (Milestone 2): restore old metadata values for
+        # fields the curator wrote, IF the current value still matches what
+        # we wrote (per-field conflict check, default skip-with-warning).
+        meta_restore = self._compute_metadata_rollback(row, scene)
         try:
-            self._scene_update(scene_id, target_ids)
+            self._scene_update(
+                scene_id, target_ids,
+                metadata_fields=meta_restore,
+            )
         except Exception as exc:
             report.scenes_skipped["mutation_failure"] = (
                 report.scenes_skipped.get("mutation_failure", 0) + 1

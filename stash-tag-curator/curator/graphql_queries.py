@@ -60,6 +60,9 @@ _SCENE_FIELDS = """
       title
       date
       code
+      details
+      director
+      urls
       files {
         fingerprints {
           type
@@ -214,6 +217,7 @@ _SCRAPED_SCENE_FIELDS = """
     performers {
       stored_id
       name
+      remote_site_id
     }
     fingerprints {
       algorithm
@@ -361,6 +365,113 @@ query JobQueue {
 STOP_JOB = """
 mutation StopJob($job_id: ID!) {
   stopJob(job_id: $job_id)
+"""
+
+# ---------------------------------------------------------------------------
+# Entity (performer/studio) queries + mutations — Milestone 3 (Workstream B)
+# ---------------------------------------------------------------------------
+
+FIND_PERFORMER_BY_ID = """
+query FindPerformerById($id: ID!) {
+  findPerformer(id: $id) {
+    id
+    name
+    stash_ids { endpoint stash_id }
+  }
+}
+"""
+
+FIND_STUDIO_BY_ID = """
+query FindStudioById($id: ID!) {
+  findStudio(id: $id) {
+    id
+    name
+    stash_ids { endpoint stash_id }
+  }
+}
+"""
+
+FIND_PERFORMERS_BY_NAME = """
+query FindPerformersByName($filter: PerformerFilterType, $ff: FindFilterType) {
+  findPerformers(performer_filter: $filter, filter: $ff) {
+    count
+    performers { id name disambiguation stash_ids { endpoint stash_id } }
+  }
+}
+"""
+
+FIND_STUDIOS_BY_NAME = """
+query FindStudiosByName($filter: StudioFilterType, $ff: FindFilterType) {
+  findStudios(studio_filter: $filter, filter: $ff) {
+    count
+    studios { id name stash_ids { endpoint stash_id } }
+  }
+}
+"""
+
+FIND_PERFORMERS_BY_STASH_ID = """
+query FindPerformersByStashId($filter: PerformerFilterType) {
+  findPerformers(performer_filter: $filter) {
+    count
+    performers { id name stash_ids { endpoint stash_id } }
+  }
+}
+"""
+
+FIND_STUDIOS_BY_STASH_ID = """
+query FindStudiosByStashId($filter: StudioFilterType) {
+  findStudios(studio_filter: $filter) {
+    count
+    studios { id name stash_ids { endpoint stash_id } }
+  }
+}
+"""
+
+PERFORMER_CREATE = """
+mutation PerformerCreate($input: PerformerCreateInput!) {
+  performerCreate(input: $input) {
+    id
+    name
+  }
+}
+"""
+
+STUDIO_CREATE = """
+mutation StudioCreate($input: StudioCreateInput!) {
+  studioCreate(input: $input) {
+    id
+    name
+  }
+}
+"""
+
+PERFORMER_UPDATE = """
+mutation PerformerUpdate($input: PerformerUpdateInput!) {
+  performerUpdate(input: $input) {
+    id
+    name
+  }
+}
+"""
+
+STUDIO_UPDATE = """
+mutation StudioUpdate($input: StudioUpdateInput!) {
+  studioUpdate(input: $input) {
+    id
+    name
+  }
+}
+"""
+
+PERFORMER_DESTROY = """
+mutation PerformerDestroy($input: PerformerDestroyInput!) {
+  performerDestroy(input: $input)
+}
+"""
+
+STUDIO_DESTROY = """
+mutation StudioDestroy($input: StudioDestroyInput!) {
+  studioDestroy(input: $input)
 }
 """
 
@@ -381,4 +492,16 @@ __all__ = [
     "FIND_JOB",
     "JOB_QUEUE",
     "STOP_JOB",
+    "FIND_PERFORMER_BY_ID",
+    "FIND_STUDIO_BY_ID",
+    "FIND_PERFORMERS_BY_NAME",
+    "FIND_STUDIOS_BY_NAME",
+    "FIND_PERFORMERS_BY_STASH_ID",
+    "FIND_STUDIOS_BY_STASH_ID",
+    "PERFORMER_CREATE",
+    "STUDIO_CREATE",
+    "PERFORMER_UPDATE",
+    "STUDIO_UPDATE",
+    "PERFORMER_DESTROY",
+    "STUDIO_DESTROY",
 ]

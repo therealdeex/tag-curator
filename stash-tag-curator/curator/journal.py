@@ -62,6 +62,9 @@ class Journal:
         status: str,
         raw_tags: list[dict[str, Any]],
         rules_sha: str,
+        *,
+        old_metadata: "dict[str, Any] | None" = None,
+        new_metadata: "dict[str, Any] | None" = None,
     ) -> None:
         """Insert a new mutation row for ``(run_id, scene_id)``.
 
@@ -69,6 +72,10 @@ class Journal:
         ``old_tag_ids_json`` / ``new_tag_ids_json`` columns.  ``raw_tags``
         (provider tag objects/dicts) are serialised to
         ``provider_raw_tags_json``.
+
+        ``old_metadata`` / ``new_metadata`` (optional, v3) record the
+        scene-metadata changes for rollback.  Each is a diff-dict from
+        :mod:`curator.metadata` (or ``None`` when no metadata changed).
 
         ``applied_at`` is populated automatically when ``status`` is one of
         ``applied`` or ``reconciled_applied``; otherwise it is left NULL.
@@ -78,6 +85,8 @@ class Journal:
 
         now = _now_iso()
         applied_at = now if status in ("applied", "reconciled_applied") else None
+        old_meta_json = json.dumps(old_metadata) if old_metadata else None
+        new_meta_json = json.dumps(new_metadata) if new_metadata else None
 
         with self._db._txn():
             self._db.connection.execute(
@@ -85,8 +94,9 @@ class Journal:
                 "(run_id, scene_id, mutation_seq, status, old_tag_ids_json, "
                 " new_tag_ids_json, old_tag_names_json, new_tag_names_json, "
                 " rules_sha, provider_match_status, provider_raw_tags_json, "
+                " old_metadata_json, new_metadata_json, "
                 " created_at, applied_at, reverted_at, reverted_by_run_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     scene_id,
@@ -99,6 +109,8 @@ class Journal:
                     rules_sha,
                     None,
                     json.dumps(raw_tags),
+                    old_meta_json,
+                    new_meta_json,
                     now,
                     applied_at,
                     None,

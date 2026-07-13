@@ -59,6 +59,9 @@ __all__ = [
     "ProviderResult",
     "RawTag",
     "StashBoxEndpoint",
+    "ScrapedEntity",
+    "MetadataField",
+    "SceneMetadata",
     # Status string constants (used by the engine + SQLite journal).
     "UNIQUE_MATCH",
     "AMBIGUOUS_MATCH",
@@ -149,6 +152,97 @@ class RawTag:
 
 
 @dataclass(frozen=True)
+class ScrapedEntity:
+    """A scraped performer or studio from a ``ScrapedScene`` result.
+
+    ``stored_id`` is the local Stash entity id when the stash-box entity is
+    already matched locally (may be ``None``).  ``remote_site_id`` is the
+    stash-box UUID for the entity.  ``name`` is the display name.
+    """
+
+    stored_id: "str | None"
+    name: "str | None"
+    remote_site_id: "str | None"
+    endpoint: "str | None" = None
+
+
+@dataclass(frozen=True)
+class MetadataField:
+    """A single scalar scene-metadata field value with provenance.
+
+    ``source_endpoint`` is the stash-box endpoint URL that supplied the value.
+    ``source_provider`` is an optional human-readable provider name.
+    """
+
+    value: Any
+    source_endpoint: str
+    source_provider: "str | None" = None
+
+
+@dataclass(frozen=True)
+class SceneMetadata:
+    """Structured scene metadata extracted from a provider ``ScrapedScene``.
+
+    Each field is either ``None`` (the provider did not supply it) or a
+    :class:`MetadataField` wrapping the value + provenance.  ``performers``
+    and ``studio`` carry :class:`ScrapedEntity` objects so the resolution
+    pipeline (Workstream B) can dedup/create as needed.
+
+    ``duration`` is intentionally absent: ``SceneUpdateInput`` has no
+    writable ``duration`` field (it is derived from file analysis).  See
+    G1-schema.md / CHECKPOINT.md.
+    """
+
+    title: "MetadataField | None" = None
+    date: "MetadataField | None" = None
+    code: "MetadataField | None" = None
+    details: "MetadataField | None" = None
+    director: "MetadataField | None" = None
+    urls: "MetadataField | None" = None
+    studio: "ScrapedEntity | None" = None
+    performers: tuple[ScrapedEntity, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict for JSON persistence / diagnostics."""
+        def _mf(mf: "MetadataField | None") -> dict[str, Any] | None:
+            if mf is None:
+                return None
+            return {
+                "value": mf.value,
+                "source_endpoint": mf.source_endpoint,
+                "source_provider": mf.source_provider,
+            }
+
+        return {
+            "title": _mf(self.title),
+            "date": _mf(self.date),
+            "code": _mf(self.code),
+            "details": _mf(self.details),
+            "director": _mf(self.director),
+            "urls": _mf(self.urls),
+            "studio": (
+                {
+                    "stored_id": self.studio.stored_id,
+                    "name": self.studio.name,
+                    "remote_site_id": self.studio.remote_site_id,
+                    "endpoint": self.studio.endpoint,
+                }
+                if self.studio
+                else None
+            ),
+            "performers": [
+                {
+                    "stored_id": p.stored_id,
+                    "name": p.name,
+                    "remote_site_id": p.remote_site_id,
+                    "endpoint": p.endpoint,
+                }
+                for p in self.performers
+            ],
+        }
+
+
+@dataclass(frozen=True)
 class ProviderResult:
     """Per-scene merged provider-lookup result.
 
@@ -158,11 +252,16 @@ class ProviderResult:
     every other status PRESERVEs the scene's existing tags (with or without
     review markers).  ``per_provider`` records the per-endpoint classification
     for diagnostics and the SQLite journal.
+
+    ``metadata`` carries the merged scene metadata (title/date/details/etc.)
+    from the highest-priority uniquely-matching provider.  Only present for
+    ``UNIQUE_MATCH``; ``None`` for all other statuses.
     """
 
     status: str
     raw_tags: tuple[RawTag, ...] = ()
     per_provider: Mapping[str, str] = field(default_factory=dict)
+    metadata: "SceneMetadata | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +524,8 @@ class ProviderLookup:
         }
         # raw_tags_by_scene[scene_id] = list[RawTag] (union across providers)
         raw_tags_by_scene: dict[str, list[RawTag]] = {}
+        # meta_by_scene_endpoint[scene_id][endpoint_url] = SceneMetadata
+        meta_by_scene_endpoint: dict[str, dict[str, SceneMetadata]] = {}
 
         for endpoint in endpoints:
             # No-fingerprint scenes are NO_IDENTIFIERS on every endpoint.
@@ -434,10 +535,18 @@ class ProviderLookup:
             # Sub-batch fingerprinted scenes (batch_size aligned to the op).
             for i in range(0, len(fingerprinted), self.batch_size):
                 batch_ids = fingerprinted[i : i + self.batch_size]
-                status_map, tags_map = self._scrape_endpoint(endpoint, batch_ids)
+                status_map, tags_map, meta_map = self._scrape_endpoint(
+                    endpoint, batch_ids
+                )
                 provider_status[endpoint.endpoint].update(status_map)
                 for sid, tags in tags_map.items():
                     raw_tags_by_scene.setdefault(sid, []).extend(tags)
+                for sid, sm in meta_map.items():
+                    meta_by_scene_endpoint.setdefault(sid, {})[endpoint.endpoint] = sm
+
+        # Deterministic provider priority: highest first.  See
+        # ``_provider_priority_endpoints`` for ordering rules.
+        priority_endpoints = self._provider_priority_endpoints(endpoints)
 
         # Merge per scene across all providers (D2 matrix).
         results: dict[str, ProviderResult] = {}
@@ -449,10 +558,17 @@ class ProviderLookup:
             merged_status, merged_tags = self._merge_statuses(
                 per_provider, raw_tags_by_scene.get(sid, []), accept_partial
             )
+            # Merge scene metadata from uniquely-matching providers by priority.
+            merged_meta = self._merge_metadata(
+                per_provider,
+                meta_by_scene_endpoint.get(sid, {}),
+                priority_endpoints,
+            )
             results[sid] = ProviderResult(
                 status=merged_status,
                 raw_tags=tuple(merged_tags),
                 per_provider=per_provider,
+                metadata=merged_meta,
             )
         return results
 
@@ -464,7 +580,7 @@ class ProviderLookup:
         self,
         endpoint: StashBoxEndpoint,
         scene_ids: list[str],
-    ) -> "tuple[dict[str, str], dict[str, list[RawTag]]]":
+    ) -> "tuple[dict[str, str], dict[str, list[RawTag]], dict[str, SceneMetadata]]":
         """Scrape one batch of scene ids against one endpoint.
 
         Acquires one token from the per-endpoint bucket (proactive throttle),
@@ -472,12 +588,16 @@ class ProviderLookup:
         On any exception from the client (429-exhausted, 5xx-exhausted, network,
         transport), the WHOLE batch on this endpoint gets the mapped transient
         status -- the engine PRESERVEs and the scene is retried on resume.
+
+        Returns ``(status_map, tags_map, meta_map)`` where ``meta_map`` carries
+        the per-scene :class:`SceneMetadata` for uniquely-matched scenes.
         """
         bucket = self._get_or_create_bucket(endpoint)
         bucket.acquire()
 
         status_map: dict[str, str] = {}
         tags_map: dict[str, list[RawTag]] = {}
+        meta_map: dict[str, SceneMetadata] = {}
 
         try:
             data = self._client.submit(
@@ -497,7 +617,7 @@ class ProviderLookup:
             status = self._classify_exception(exc)
             for sid in scene_ids:
                 status_map[sid] = status
-            return status_map, tags_map
+            return status_map, tags_map, meta_map
 
         raw_results = (
             data.get("scrapeMultiScenes") if isinstance(data, Mapping) else None
@@ -507,7 +627,7 @@ class ProviderLookup:
             # treat as provider-side failure -- PRESERVE for the whole batch.
             for sid in scene_ids:
                 status_map[sid] = PROVIDER_UNAVAILABLE
-            return status_map, tags_map
+            return status_map, tags_map, meta_map
 
         # scrapeMultiScenes returns one inner list per input scene id
         # (positional).  When the outer list is shorter than the input (the
@@ -522,13 +642,21 @@ class ProviderLookup:
                 status_map[sid] = NO_MATCH
             elif count == 1:
                 status_map[sid] = UNIQUE_MATCH
-                tags_map[sid] = self._extract_tags(inner[0], endpoint)
+                # Extract tags + metadata from the single matched scene.
+                # ``_extract_scene`` reuses ``_extract_tags`` internally and
+                # additionally captures title/date/details/etc. that were
+                # previously discarded (no extra API call -- data is already
+                # on the wire from ``_SCRAPED_SCENE_FIELDS``).
+                scene_meta: SceneMetadata
+                tags, scene_meta = self._extract_scene(inner[0], endpoint)
+                tags_map[sid] = tags
+                meta_map[sid] = scene_meta
             else:
                 # >1 inner result -> AMBIGUOUS_MATCH.  We do NOT auto-apply
                 # tags from an ambiguous match (D2/MUST NOT).
                 status_map[sid] = AMBIGUOUS_MATCH
 
-        return status_map, tags_map
+        return status_map, tags_map, meta_map
 
     @staticmethod
     def _extract_tags(
@@ -558,6 +686,108 @@ class ProviderLookup:
                 )
             )
         return result
+
+    @staticmethod
+    def _extract_scene(
+        scraped_scene: Mapping[str, Any], endpoint: StashBoxEndpoint
+    ) -> "tuple[list[RawTag], SceneMetadata]":
+        """Extract both raw tags and structured metadata from a ``ScrapedScene``.
+
+        This is the capture-side companion to :meth:`_extract_tags`: it reuses
+        the tag-extraction logic and additionally captures every field already
+        fetched by ``_SCRAPED_SCENE_FIELDS`` (title, code, date, details,
+        director, urls, studio, performers) that was previously discarded.
+
+        The data is already on the wire — this method introduces no extra
+        API call.  Empty values (``None``, ``""``, ``[]``) yield ``None``
+        fields so the downstream fill-empty diff only proposes fields the
+        provider actually supplied.
+
+        Returns ``(raw_tags, metadata)``.
+        """
+        raw_tags = ProviderLookup._extract_tags(scraped_scene, endpoint)
+        ep = endpoint.endpoint
+        ep_name = endpoint.name
+
+        def _scalar(key: str) -> "MetadataField | None":
+            raw = scraped_scene.get(key)
+            if raw is None:
+                return None
+            val = str(raw).strip()
+            if not val:
+                return None
+            return MetadataField(
+                value=val, source_endpoint=ep, source_provider=ep_name
+            )
+
+        def _urls() -> "MetadataField | None":
+            raw = scraped_scene.get("urls")
+            if not isinstance(raw, list) or not raw:
+                return None
+            urls = [str(u).strip() for u in raw if u]
+            urls = [u for u in urls if u]
+            if not urls:
+                return None
+            return MetadataField(
+                value=urls, source_endpoint=ep, source_provider=ep_name
+            )
+
+        def _studio() -> "ScrapedEntity | None":
+            raw = scraped_scene.get("studio")
+            if not isinstance(raw, Mapping):
+                return None
+            name = str(raw.get("name") or "").strip()
+            if not name:
+                return None
+            return ScrapedEntity(
+                stored_id=(str(raw["stored_id"]) if raw.get("stored_id") else None),
+                name=name,
+                remote_site_id=(
+                    str(raw["remote_site_id"])
+                    if raw.get("remote_site_id")
+                    else None
+                ),
+                endpoint=ep,
+            )
+
+        def _performers() -> tuple[ScrapedEntity, ...]:
+            raw = scraped_scene.get("performers")
+            if not isinstance(raw, list):
+                return ()
+            out: list[ScrapedEntity] = []
+            for p in raw:
+                if not isinstance(p, Mapping):
+                    continue
+                name = str(p.get("name") or "").strip()
+                if not name:
+                    continue
+                out.append(
+                    ScrapedEntity(
+                        stored_id=(
+                            str(p["stored_id"]) if p.get("stored_id") else None
+                        ),
+                        name=name,
+                        remote_site_id=(
+                            str(p["remote_site_id"])
+                            if p.get("remote_site_id")
+                            else None
+                        ),
+                        endpoint=ep,
+                    )
+                )
+            return tuple(out)
+
+        metadata = SceneMetadata(
+            title=_scalar("title"),
+            date=_scalar("date"),
+            code=_scalar("code"),
+            details=_scalar("details"),
+            director=_scalar("director"),
+            urls=_urls(),
+            studio=_studio(),
+            performers=_performers(),
+        )
+        return raw_tags, metadata
 
     @staticmethod
     def _has_fingerprints(scene: Mapping[str, Any]) -> bool:
@@ -599,6 +829,136 @@ class ProviderLookup:
         if http_status == 429:
             return RATE_LIMITED
         return PROVIDER_UNAVAILABLE
+
+    # ------------------------------------------------------------------ #
+    # Internals -- provider priority + metadata merge
+    # ------------------------------------------------------------------ #
+
+    def _provider_priority_endpoints(
+        self, endpoints: Sequence[StashBoxEndpoint]
+    ) -> list[str]:
+        """Return endpoint URLs in deterministic priority order (highest first).
+
+        Ordering is deterministic (plan §5.3) -- never incidental discovery
+        order.  The precedence is:
+
+        1. Explicit ``provider_priority`` setting (comma-separated endpoint
+           URLs or name tokens, highest first).
+        2. Stable endpoint discovery order (the order Stash reports them in
+           ``configuration.general.stashBoxes``), which is operator-controlled.
+
+        Only endpoints in ``endpoints`` appear in the result; any priority
+        token that does not match a known endpoint is ignored.
+        """
+        raw = str(self._settings.get("provider_priority") or "").strip()
+        if raw:
+            tokens = [t.strip().lower() for t in raw.split(",") if t.strip()]
+            # Iterate tokens in declared priority order so the result respects
+            # the operator's "highest first" comma-separated list, not the
+            # endpoint discovery order.
+            ep_by_match: dict[str, str] = {}  # token -> endpoint_url
+            matched_eps: set[str] = set()
+            remaining: list[str] = []
+            for ep in endpoints:
+                ep_lower = ep.endpoint.lower()
+                name_lower = (ep.name or "").lower()
+                matched_token = None
+                for token in tokens:
+                    if token in ep_lower or token in name_lower:
+                        matched_token = token
+                        break
+                if matched_token is not None and ep.endpoint not in matched_eps:
+                    ep_by_match[matched_token] = ep.endpoint
+                    matched_eps.add(ep.endpoint)
+                else:
+                    remaining.append(ep.endpoint)
+            prioritised: list[str] = [
+                ep_by_match[tok] for tok in tokens if tok in ep_by_match
+            ]
+            return prioritised + remaining
+        # No explicit setting: stable discovery order is operator-controlled
+        # and deterministic.
+        return [ep.endpoint for ep in endpoints]
+
+    @staticmethod
+    def _merge_metadata(
+        per_provider: Mapping[str, str],
+        meta_by_endpoint: Mapping[str, SceneMetadata],
+        priority_endpoints: Sequence[str],
+    ) -> "SceneMetadata | None":
+        """Merge scene metadata from uniquely-matching providers by priority.
+
+        Only providers whose status is ``UNIQUE_MATCH`` contribute metadata
+        (plan §5.4).  For each scalar field, the first non-empty value from
+        the highest-priority matching provider wins; provenance is recorded.
+        Performers and studio are sourced atomically from a SINGLE provider
+        (never unioned/combined across providers).
+
+        Returns ``None`` when no provider uniquely matched or no metadata
+        was captured.
+        """
+        unique_eps = [
+            ep for ep in priority_endpoints if per_provider.get(ep) == UNIQUE_MATCH
+        ]
+        if not unique_eps:
+            return None
+
+        # Gather the metadata objects from uniquely-matching providers, in
+        # priority order.  Not every UNIQUE_MATCH provider will have a
+        # metadata entry (e.g. if the scrape returned a match but with no
+        # extra fields), so we filter.
+        candidates: list[SceneMetadata] = []
+        for ep in unique_eps:
+            sm = meta_by_endpoint.get(ep)
+            if sm is not None:
+                candidates.append(sm)
+        if not candidates:
+            return None
+
+        def _first(attr: str) -> "MetadataField | None":
+            for sm in candidates:
+                val = getattr(sm, attr)
+                if val is not None:
+                    return val
+            return None
+
+        # Performers + studio are sourced atomically from the first candidate
+        # that supplies them (plan §5.4: never union/combine across providers).
+        perf: tuple[ScrapedEntity, ...] = ()
+        studio: "ScrapedEntity | None" = None
+        for sm in candidates:
+            if not perf and sm.performers:
+                perf = sm.performers
+            if studio is None and sm.studio:
+                studio = sm.studio
+            if perf and studio is not None:
+                break
+
+        merged = SceneMetadata(
+            title=_first("title"),
+            date=_first("date"),
+            code=_first("code"),
+            details=_first("details"),
+            director=_first("director"),
+            urls=_first("urls"),
+            studio=studio,
+            performers=perf,
+        )
+        # Return None if every field is empty (avoids storing an all-None
+        # metadata blob in the proposal).
+        has_any = any(
+            getattr(merged, a) is not None
+            for a in (
+                "title",
+                "date",
+                "code",
+                "details",
+                "director",
+                "urls",
+                "studio",
+            )
+        ) or bool(merged.performers)
+        return merged if has_any else None
 
     # ------------------------------------------------------------------ #
     # Internals -- cross-provider merge (D2 matrix)

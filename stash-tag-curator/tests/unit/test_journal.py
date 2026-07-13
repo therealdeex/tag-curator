@@ -188,6 +188,8 @@ class TestExportJsonl:
             "rules_sha",
             "provider_match_status",
             "provider_raw_tags_json",
+            "old_metadata_json",
+            "new_metadata_json",
             "created_at",
             "applied_at",
             "reverted_at",

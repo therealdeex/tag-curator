@@ -65,6 +65,14 @@ from .graphql_queries import (
     SCENE_UPDATE,
 )
 from .journal import Journal
+from .metadata import (
+    build_applied_result,
+    compute_fill_empty_diff,
+    diff_from_json,
+    diff_to_json,
+    diff_to_update_fields,
+    reevaluate_diff_at_execute,
+)
 from .providers import (
     AMBIGUOUS_MATCH,
     NO_IDENTIFIERS,
@@ -448,6 +456,13 @@ class RebuildEngine:
         self._proposal_expiry_hours = int(
             self._settings.get("proposal_expiry_hours")
             or DEFAULT_PROPOSAL_EXPIRY_HOURS
+        )
+        # Entity-resolution caps (Milestone 3 / Workstream B).
+        self._max_performer_creates = int(
+            self._settings.get("max_performer_creates_per_run") or 50
+        )
+        self._max_studio_creates = int(
+            self._settings.get("max_studio_creates_per_run") or 20
         )
 
     # ------------------------------------------------------------------
@@ -1064,8 +1079,43 @@ class RebuildEngine:
             )
 
     def _scene_state_fp(self, scene: Mapping[str, Any]) -> str:
-        """Order-independent fingerprint of the scene's current tag-id set."""
+        """Order-independent fingerprint of the scene's current tag-id set.
+
+        Used by the D10 conflict gate: if the tag set changed between dry-run
+        and execute, the scene is flagged as externally edited.  This
+        fingerprint covers ONLY tag ids — metadata fields are re-evaluated
+        field-specifically at execute time (plan §A4) so a change to one
+        metadata field does not block unrelated tag/metadata updates.
+        """
         return _fingerprint_tag_ids(_scene_tag_ids(scene))
+
+    @staticmethod
+    def _scene_metadata_fp(scene: Mapping[str, Any]) -> str:
+        """Order-independent fingerprint of mutable metadata fields.
+
+        Captured at dry-run time and stored in the metadata diff blob so
+        execute-time re-validation can detect whether a specific field was
+        edited between the two phases.  Unlike :meth:`_scene_state_fp`,
+        a mismatch here does NOT abort the scene — it only causes the
+        affected field(s) to be skipped (fill-empty re-check).
+        """
+        parts: dict[str, Any] = {}
+        for f in ("title", "date", "code", "details", "director"):
+            raw = scene.get(f)
+            parts[f] = raw.strip() if isinstance(raw, str) else raw
+        urls = scene.get("urls")
+        parts["urls"] = sorted(urls) if isinstance(urls, list) and urls else []
+        studio = scene.get("studio")
+        parts["studio_id"] = (
+            str(studio["id"]) if isinstance(studio, Mapping) and studio.get("id") else None
+        )
+        performers = scene.get("performers")
+        parts["performer_ids"] = sorted(
+            str(p["id"])
+            for p in performers
+            if isinstance(p, Mapping) and p.get("id")
+        ) if isinstance(performers, list) else []
+        return json.dumps(parts, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
 
     def _record_scene_state_success(
         self,
@@ -1174,6 +1224,9 @@ class RebuildEngine:
         new_tag_ids: Sequence[str],
         provider_status: str,
         raw_tags_payload: Sequence[Mapping[str, Any]],
+        *,
+        old_metadata: "dict[str, Any] | None" = None,
+        new_metadata: "dict[str, Any] | None" = None,
     ) -> None:
         """D16 PENDING: write a ``mutations`` row BEFORE the GraphQL call."""
         self._journal.record_mutation(
@@ -1184,6 +1237,8 @@ class RebuildEngine:
             status="pending",
             raw_tags=[dict(r) for r in raw_tags_payload],
             rules_sha=self._rules_sha,
+            old_metadata=old_metadata,
+            new_metadata=new_metadata,
         )
 
     def _mark_mutation_applied(self, run_id: str, scene_id: int) -> None:
@@ -1202,23 +1257,39 @@ class RebuildEngine:
             )
 
     def _scene_update(
-        self, scene_id: int | str, tag_ids: Sequence[str]
+        self,
+        scene_id: int | str,
+        tag_ids: Sequence[str],
+        *,
+        metadata_fields: "Mapping[str, Any] | None" = None,
     ) -> None:
-        """Issue a ``sceneUpdate(input: {id, tag_ids})`` full-replacement call.
+        """Issue a ``sceneUpdate`` call with tags + optional metadata fields.
 
-        ``tag_ids`` is the COMPLETE desired set (D16/Issue 8).  Raises whatever
-        the client raises (``GraphQLResponseError`` / ``GraphQLError``); the
-        caller catches and records ``MUTATION_FAILURE``.
+        ``tag_ids`` is the COMPLETE desired set (D16/Issue 8).  When
+        ``metadata_fields`` is provided, its keys are merged into the update
+        input alongside ``tag_ids`` (G3: omitted fields = leave unchanged, so
+        only the supplied metadata keys are included).
+
+        Recognised metadata keys: ``title``, ``date``, ``code``, ``details``,
+        ``director``, ``urls`` (list), ``studio_id``, ``performer_ids`` (list).
+        Unknown keys are ignored (defensive).
+
+        Raises whatever the client raises; the caller catches and records
+        ``MUTATION_FAILURE``.
         """
-        self._client.submit(
-            SCENE_UPDATE,
-            {
-                "input": {
-                    "id": str(scene_id),
-                    "tag_ids": [str(t) for t in tag_ids],
-                }
-            },
-        )
+        inp: dict[str, Any] = {
+            "id": str(scene_id),
+            "tag_ids": [str(t) for t in tag_ids],
+        }
+        if metadata_fields:
+            _ALLOWED = {
+                "title", "date", "code", "details", "director",
+                "urls", "studio_id", "performer_ids",
+            }
+            for key in _ALLOWED:
+                if key in metadata_fields:
+                    inp[key] = metadata_fields[key]
+        self._client.submit(SCENE_UPDATE, {"input": inp})
 
     # ------------------------------------------------------------------
     # Public: run_dry
@@ -1343,14 +1414,28 @@ class RebuildEngine:
                  "provider_scene_id": getattr(t, "provider_scene_id", "")}
                 for t in result.raw_tags
             ]
+            # Compute fill-empty metadata diff (Milestone 1 / Workstream A3).
+            # Only UNIQUE_MATCH scenes carry metadata; for other statuses
+            # ``result.metadata`` is None and the diff is empty.
+            meta_diff = compute_fill_empty_diff(scene, result.metadata)
+            # Record the metadata-field baseline so execute-time re-validation
+            # can detect per-field edits between dry-run and execute.
+            if meta_diff["fields"] or meta_diff["entities"]["performers"] or (
+                meta_diff["entities"]["studio"]
+            ):
+                meta_diff["scene_metadata_baseline"] = self._scene_metadata_fp(scene)
+                meta_json = diff_to_json(meta_diff)
+            else:
+                meta_json = None
             with self._state._txn():
                 self._state.connection.execute(
                     "INSERT OR REPLACE INTO dry_run_proposals "
                     "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
                     " scene_state_fp, proposed_tag_names_json, "
                     " proposed_marker_names_json, provider_match_status, "
-                    " raw_tags_json, created_at, expires_at, status) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " raw_tags_json, created_at, expires_at, status, "
+                    " proposed_metadata_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         proposed_run_id,
                         sid,
@@ -1364,6 +1449,7 @@ class RebuildEngine:
                         now,
                         expires_at,
                         "proposed",
+                        meta_json,
                     ),
                 )
             report.proposals_written += 1
@@ -1585,8 +1671,76 @@ class RebuildEngine:
                     proposed_run_id, sid, "skipped", skip_reason="missing_tags",
                 )
                 continue
-            # Idempotency: current == proposed -> no-op (D3).
-            if current_tag_ids == proposed_ids:
+            # Idempotency: current == proposed -> no tag mutation needed (D3).
+            # BUT metadata enrichment may still have eligible fields, so we
+            # can't skip the scene entirely if metadata is pending.
+            tags_idempotent = current_tag_ids == proposed_ids
+
+            # -- Metadata re-evaluation (Milestone 2/3) ----------------------
+            # Re-evaluate the fill-empty diff against the freshly-fetched
+            # scene.  Fields that were empty at dry-run but are now non-empty
+            # (edited externally) are dropped per-field (plan §A4).
+            proposed_meta = diff_from_json(proposal.get("proposed_metadata_json"))
+            meta_update_fields: dict[str, Any] = {}
+            applied_meta_result: dict[str, Any] | None = None
+            meta_has_eligible = False
+            if proposed_meta:
+                eligible_meta = reevaluate_diff_at_execute(proposed_meta, scene)
+                meta_has_eligible = bool(eligible_meta["fields"]) or bool(
+                    eligible_meta["entities"]["performers"]
+                ) or bool(eligible_meta["entities"]["studio"])
+                meta_update_fields = diff_to_update_fields(eligible_meta)
+
+                # -- Entity resolution (Milestone 3 / Workstream B) ----------
+                # Resolve scraped performer/studio entities to local IDs.
+                # The resolver runs the stored_id → remote_id → name → create
+                # chain, enforcing creation caps and atomicity (performer list
+                # is all-or-nothing per plan §5.4).
+                from .entities import EntityResolver, ScrapedEntity as _SE
+
+                resolver = EntityResolver(
+                    self._client, self._state, actual_run_id,
+                    max_performer_creates=self._max_performer_creates,
+                    max_studio_creates=self._max_studio_creates,
+                )
+
+                # Resolve studio intent.
+                if eligible_meta["entities"]["studio"]:
+                    studio_data = eligible_meta["entities"]["studio"]
+                    studio_entity = _SE(
+                        stored_id=studio_data.get("stored_id"),
+                        name=studio_data.get("name"),
+                        remote_site_id=studio_data.get("remote_site_id"),
+                        endpoint=studio_data.get("endpoint"),
+                    )
+                    studio_outcome = resolver.resolve_studio(studio_entity)
+                    if studio_outcome.local_id:
+                        meta_update_fields["studio_id"] = studio_outcome.local_id
+                    else:
+                        meta_update_fields.pop("studio_id", None)
+
+                # Resolve performer intents (atomic: all or nothing).
+                if eligible_meta["entities"]["performers"]:
+                    perf_datas = eligible_meta["entities"]["performers"]
+                    perf_entities = [
+                        _SE(
+                            stored_id=p.get("stored_id"),
+                            name=p.get("name"),
+                            remote_site_id=p.get("remote_site_id"),
+                            endpoint=p.get("endpoint"),
+                        )
+                        for p in perf_datas
+                    ]
+                    perf_outcomes = resolver.resolve_performers(perf_entities)
+                    perf_ids = [o.local_id for o in perf_outcomes if o.local_id]
+                    if perf_ids and len(perf_ids) == len(perf_entities):
+                        meta_update_fields["performer_ids"] = perf_ids
+                    else:
+                        # Atomic: couldn't resolve all → skip performers entirely.
+                        meta_update_fields.pop("performer_ids", None)
+
+            # If tags are idempotent AND no metadata to apply → true no-op.
+            if tags_idempotent and not meta_has_eligible:
                 report.scenes_skipped["idempotent_noop"] = (
                     report.scenes_skipped.get("idempotent_noop", 0) + 1
                 )
@@ -1595,7 +1749,6 @@ class RebuildEngine:
                     skip_reason="idempotent_noop",
                     applied_by_run_id=actual_run_id,
                 )
-                # Refresh scene_state to reflect we touched it (no mutation).
                 self._record_scene_state_success(
                     sid, actual_run_id,
                     proposal.get("provider_match_status") or "",
@@ -1604,7 +1757,22 @@ class RebuildEngine:
                 continue
 
             # D16 PENDING: journal the intended mutation BEFORE the wire call.
+            # Include metadata old/new for rollback (Milestone 2).
             raw_tags_payload = json.loads(proposal.get("raw_tags_json") or "[]")
+            # Build journal payloads: old = current scene state for the fields
+            # being changed; new = the values being written.
+            journal_old_meta = None
+            journal_new_meta = None
+            if meta_update_fields:
+                from .metadata import scene_current_metadata as _cur_meta
+                journal_old_meta = {
+                    k: _cur_meta(scene).get(
+                        "studio_id" if k == "studio_id" else
+                        "performer_ids" if k == "performer_ids" else k
+                    )
+                    for k in meta_update_fields
+                }
+                journal_new_meta = dict(meta_update_fields)
             self._journal_pending(
                 run_id=actual_run_id,
                 scene_id=sid,
@@ -1612,15 +1780,25 @@ class RebuildEngine:
                 new_tag_ids=proposed_ids,
                 provider_status=proposal.get("provider_match_status") or "",
                 raw_tags_payload=raw_tags_payload,
+                old_metadata=journal_old_meta,
+                new_metadata=journal_new_meta,
             )
 
-            # D16 MUTATE: sceneUpdate full-replacement.
+            # D16 MUTATE: sceneUpdate full-replacement + metadata fields.
+            # If tags are idempotent, we still send them (full-replacement =
+            # same set = no-op for tags) alongside the metadata fields.  This
+            # avoids a separate mutation call and keeps the journal accurate.
             try:
-                self._scene_update(sid, proposed_ids)
+                self._scene_update(
+                    sid, proposed_ids,
+                    metadata_fields=(meta_update_fields or None),
+                )
+                mutation_ok = True
             except Exception as exc:
                 # D16 ambiguous transport failure -- mutation MAY have applied.
                 # We leave the row ``pending`` (resume reconciles per D16) and
                 # record the failure for the dashboard.  We do NOT roll back.
+                mutation_ok = False
                 report.scenes_skipped["mutation_failure"] = (
                     report.scenes_skipped.get("mutation_failure", 0) + 1
                 )
@@ -1638,11 +1816,29 @@ class RebuildEngine:
                     proposed_run_id, sid, "skipped",
                     skip_reason="mutation_failure",
                 )
+                # Record the failed metadata result for diagnostics.
+                if proposed_meta:
+                    failed_result = build_applied_result(
+                        reevaluate_diff_at_execute(proposed_meta, scene),
+                        meta_update_fields,
+                        mutation_succeeded=False,
+                    )
+                    self._store_applied_metadata(proposed_run_id, sid, failed_result)
                 continue
+
+            # Build + store the applied-metadata result blob.
+            if proposed_meta:
+                eligible_for_result = reevaluate_diff_at_execute(proposed_meta, scene)
+                applied_meta_result = build_applied_result(
+                    eligible_for_result, meta_update_fields,
+                    mutation_succeeded=True,
+                )
+                self._store_applied_metadata(proposed_run_id, sid, applied_meta_result)
 
             # D16 APPLIED: confirm the mutation row.
             self._mark_mutation_applied(actual_run_id, sid)
-            report.mutations_applied += 1
+            if not tags_idempotent:
+                report.mutations_applied += 1
             report.scenes_processed += 1
             self._record_scene_state_success(
                 sid, actual_run_id,
@@ -1666,6 +1862,20 @@ class RebuildEngine:
             (proposed_run_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def _store_applied_metadata(
+        self,
+        proposed_run_id: str,
+        scene_id: int,
+        result: dict[str, Any],
+    ) -> None:
+        """Store the applied-metadata result blob in ``dry_run_proposals``."""
+        with self._state._txn():
+            self._state.connection.execute(
+                "UPDATE dry_run_proposals SET applied_metadata_json = ? "
+                "WHERE proposed_run_id = ? AND scene_id = ?",
+                (diff_to_json(result), proposed_run_id, scene_id),
+            )
 
     def _mark_proposal_status(
         self,

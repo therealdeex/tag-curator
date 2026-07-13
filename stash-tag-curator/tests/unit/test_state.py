@@ -71,6 +71,7 @@ EXPECTED_TABLES = (
     "forced_release_audit",
     "rules_edit_audit",
     "tag_deletions",
+    "entity_creates",
 )
 
 EXPECTED_VIEWS = ("raw_tag_current_counts",)
@@ -102,9 +103,8 @@ class TestSchemaCreation:
         StateDB(str(db_path)).close()
         assert db_path.is_file()
 
-    def test_user_version_is_one(self, db: StateDB) -> None:
-        assert db.user_version == 1
-        assert SCHEMA_VERSION == 1
+    def test_user_version_matches_schema_version(self, db: StateDB) -> None:
+        assert db.user_version == SCHEMA_VERSION
 
     def test_all_expected_tables_present(self, db: StateDB) -> None:
         tables = _table_names(db.connection)
@@ -119,14 +119,14 @@ class TestSchemaCreation:
             "SELECT value FROM schema_meta WHERE key = 'user_version'"
         ).fetchone()
         assert row is not None
-        assert row["value"] == "1"
+        assert row["value"] == str(SCHEMA_VERSION)
 
     def test_reopen_existing_db_is_idempotent(self, db_path: Path) -> None:
         s1 = StateDB(str(db_path))
         s1.close()
         s2 = StateDB(str(db_path))
         try:
-            assert s2.user_version == 1
+            assert s2.user_version == SCHEMA_VERSION
             assert set(EXPECTED_TABLES) <= _table_names(s2.connection)
         finally:
             s2.close()
@@ -134,6 +134,101 @@ class TestSchemaCreation:
     def test_wal_mode_on_local_filesystem(self, db: StateDB) -> None:
         # tmp_path is on the local FS (ext4/tmpfs) -> WAL must engage.
         assert db.journal_mode() == "wal"
+
+    def test_dry_run_proposals_has_metadata_columns(self, db: StateDB) -> None:
+        """v2 schema: proposed_metadata_json + applied_metadata_json exist."""
+        cols = {
+            row[1]
+            for row in db.connection.execute(
+                "PRAGMA table_info(dry_run_proposals)"
+            ).fetchall()
+        }
+        assert "proposed_metadata_json" in cols
+        assert "applied_metadata_json" in cols
+
+    def test_mutations_has_metadata_columns(self, db: StateDB) -> None:
+        """v3 schema: old_metadata_json + new_metadata_json on mutations."""
+        cols = {
+            row[1]
+            for row in db.connection.execute(
+                "PRAGMA table_info(mutations)"
+            ).fetchall()
+        }
+        assert "old_metadata_json" in cols
+        assert "new_metadata_json" in cols
+
+    def test_v1_to_v2_migration_preserves_data(self, tmp_path: Path) -> None:
+        """An existing v1 DB (without metadata columns) migrates to v2+."""
+        import sqlite3
+
+        v1_path = tmp_path / "v1.db"
+        v1_ddl = """
+        CREATE TABLE schema_meta(key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE dry_run_proposals(
+            proposed_run_id TEXT NOT NULL, scene_id INTEGER NOT NULL,
+            rules_sha TEXT, provider_fingerprint TEXT, scene_state_fp TEXT,
+            proposed_tag_names_json TEXT, proposed_marker_names_json TEXT,
+            provider_match_status TEXT, raw_tags_json TEXT,
+            created_at TEXT, expires_at TEXT, status TEXT,
+            applied_at TEXT, applied_by_run_id TEXT, skip_reason TEXT,
+            PRIMARY KEY (proposed_run_id, scene_id)
+        );
+        CREATE TABLE mutations(
+            run_id TEXT NOT NULL, scene_id INTEGER NOT NULL,
+            mutation_seq INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            old_tag_ids_json TEXT, new_tag_ids_json TEXT,
+            old_tag_names_json TEXT, new_tag_names_json TEXT,
+            rules_sha TEXT, provider_match_status TEXT,
+            provider_raw_tags_json TEXT,
+            created_at TEXT, applied_at TEXT,
+            reverted_at TEXT, reverted_by_run_id TEXT,
+            PRIMARY KEY (run_id, scene_id)
+        );
+        INSERT INTO dry_run_proposals
+            (proposed_run_id, scene_id, status, proposed_tag_names_json)
+            VALUES ('run1', 42, 'proposed', '["TagA"]');
+        PRAGMA user_version = 1;
+        INSERT INTO schema_meta(key, value) VALUES ('user_version', '1');
+        """
+        conn = sqlite3.connect(str(v1_path))
+        conn.executescript(v1_ddl)
+        conn.commit()
+        conn.close()
+
+        # Open with StateDB → migration chain v1→v2→v3 runs
+        db = StateDB(str(v1_path))
+        try:
+            assert db.user_version == SCHEMA_VERSION
+            dlp_cols = {
+                row[1] for row in db.connection.execute(
+                    "PRAGMA table_info(dry_run_proposals)"
+                ).fetchall()
+            }
+            assert "proposed_metadata_json" in dlp_cols
+            mut_cols = {
+                row[1] for row in db.connection.execute(
+                    "PRAGMA table_info(mutations)"
+                ).fetchall()
+            }
+            assert "old_metadata_json" in mut_cols
+            assert "new_metadata_json" in mut_cols
+            # Existing row survived
+            row = db.connection.execute(
+                "SELECT proposed_run_id, scene_id, status FROM dry_run_proposals"
+            ).fetchone()
+            assert row["proposed_run_id"] == "run1"
+            assert row["scene_id"] == 42
+            assert row["status"] == "proposed"
+        finally:
+            db.close()
+
+        # Idempotent reopen
+        db2 = StateDB(str(v1_path))
+        try:
+            assert db2.user_version == SCHEMA_VERSION
+        finally:
+            db2.close()
 
 
 # ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@ __all__ = ["StateDB", "SCHEMA_VERSION", "AcquireResult"]
 
 #: Bumped on every schema change.  Migrations chain from ``PRAGMA user_version``
 #: up to this value (see :meth:`StateDB._migrate`).
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 #: Heartbeat staleness threshold (seconds) beyond which a held run lock is
 #: considered reclaimable.  The heartbeat thread refreshes every 15s
@@ -183,6 +183,9 @@ CREATE TABLE IF NOT EXISTS mutations(
     rules_sha             TEXT,
     provider_match_status TEXT,
     provider_raw_tags_json TEXT,
+    -- v3 (Milestone 2): scene-metadata enrichment journaling for rollback.
+    old_metadata_json     TEXT,
+    new_metadata_json     TEXT,
     created_at            TEXT,
     applied_at            TEXT,
     reverted_at           TEXT,
@@ -207,6 +210,9 @@ CREATE TABLE IF NOT EXISTS dry_run_proposals(
     applied_at               TEXT,
     applied_by_run_id        TEXT,
     skip_reason              TEXT,
+    -- v2 (Milestone 1): scene-metadata enrichment (fill-empty) proposals.
+    proposed_metadata_json   TEXT,
+    applied_metadata_json    TEXT,
     PRIMARY KEY (proposed_run_id, scene_id)
 );
 
@@ -257,6 +263,21 @@ CREATE TABLE IF NOT EXISTS tag_deletions(
     deletion_proposal_token  TEXT,
     deleted_at               TEXT,
     restored_at              TEXT
+);
+
+-- Entity creation journal (v4 / Milestone 3) for performer/studio rollback --
+CREATE TABLE IF NOT EXISTS entity_creates(
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id                   TEXT    NOT NULL,
+    kind                     TEXT    NOT NULL CHECK (kind IN ('performer', 'studio')),
+    name                     TEXT    NOT NULL,
+    remote_site_id           TEXT,
+    endpoint                 TEXT,
+    local_id                 TEXT,
+    status                   TEXT    NOT NULL,
+    created_at               TEXT,
+    reverted_at              TEXT,
+    revert_reason            TEXT
 );
 
 -- Indexes used by the hot reconciliation / rollback paths -------------------
@@ -452,7 +473,93 @@ class StateDB:
                 )
             self._set_user_version(1)
             current = 1
-        # Future migrations chain here as ``if current < 2: ...``.
+        # Migration 1 -> 2: scene-metadata enrichment columns (Milestone 1).
+        # Adds ``proposed_metadata_json`` and ``applied_metadata_json`` to
+        # ``dry_run_proposals`` for the fill-empty metadata feature.  SQLite's
+        # ``ALTER TABLE ADD COLUMN`` has no ``IF NOT EXISTS`` clause, so we
+        # guard with a ``PRAGMA table_info`` check (defensive against partial
+        # migrations interrupted mid-way).  A fresh v2 database already has
+        # these columns in the baseline ``SCHEMA_SQL``; this block handles
+        # existing v1 databases only.
+        if current < 2:
+            existing_cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(dry_run_proposals)"
+                ).fetchall()
+            }
+            with self._txn():
+                if "proposed_metadata_json" not in existing_cols:
+                    self._conn.execute(
+                        "ALTER TABLE dry_run_proposals "
+                        "ADD COLUMN proposed_metadata_json TEXT"
+                    )
+                if "applied_metadata_json" not in existing_cols:
+                    self._conn.execute(
+                        "ALTER TABLE dry_run_proposals "
+                        "ADD COLUMN applied_metadata_json TEXT"
+                    )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
+                    ("user_version", "2"),
+                )
+            self._set_user_version(2)
+            current = 2
+        # Migration 2 -> 3: mutation-journal metadata columns (Milestone 2).
+        # Adds ``old_metadata_json`` and ``new_metadata_json`` to the
+        # ``mutations`` table for scene-metadata rollback.  Same guard
+        # pattern as the v1->v2 migration (PRAGMA table_info check).
+        if current < 3:
+            existing_cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(mutations)"
+                ).fetchall()
+            }
+            with self._txn():
+                if "old_metadata_json" not in existing_cols:
+                    self._conn.execute(
+                        "ALTER TABLE mutations "
+                        "ADD COLUMN old_metadata_json TEXT"
+                    )
+                if "new_metadata_json" not in existing_cols:
+                    self._conn.execute(
+                        "ALTER TABLE mutations "
+                        "ADD COLUMN new_metadata_json TEXT"
+                    )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
+                    ("user_version", "3"),
+                )
+            self._set_user_version(3)
+            current = 3
+        # Migration 3 -> 4: entity_creates journal table (Milestone 3).
+        # CREATE TABLE IF NOT EXISTS is idempotent, so this is safe for both
+        # fresh DBs (already have it from the baseline SCHEMA_SQL) and
+        # existing v3 DBs (get the new table added).
+        if current < 4:
+            with self._txn():
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS entity_creates("
+                    "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "    run_id TEXT NOT NULL,"
+                    "    kind TEXT NOT NULL CHECK (kind IN ('performer', 'studio')),"
+                    "    name TEXT NOT NULL,"
+                    "    remote_site_id TEXT,"
+                    "    endpoint TEXT,"
+                    "    local_id TEXT,"
+                    "    status TEXT NOT NULL,"
+                    "    created_at TEXT,"
+                    "    reverted_at TEXT,"
+                    "    revert_reason TEXT"
+                    ")"
+                )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
+                    ("user_version", "4"),
+                )
+            self._set_user_version(4)
+            current = 4
 
     # -- transactions -------------------------------------------------------
 
