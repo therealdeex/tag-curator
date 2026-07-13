@@ -132,6 +132,44 @@ dashboard offers three recovery paths (see below). There is no `CancelRun`
 task, because Stash's sequential job dispatcher would never let a second plugin
 task run mid-run to set a cancel flag.
 
+> **Curate Library Scan/Generate caveat:** when the plugin process is killed
+> during the Scan or Generate phase, the Stash metadata job (scan/generate)
+> may still be running — Stash does not automatically cancel it. On the next
+> run, the plugin does not automatically join or check the orphaned job; the
+> operator should verify the Stash Jobs queue is idle before re-running
+> Curate Library to avoid duplicate work.
+
+## Curate Library pipeline
+
+The **Curate Library** task runs the complete one-button workflow. Each phase
+is sequential and the whole pipeline holds the singleton run lock:
+
+| Phase | Progress | Reversible? | Description |
+|---|---|---|---|
+| Scan | 0.00–0.15 | **No** | Full-library `metadataScan` (real Stash job). Gated by `scan_before_curate`. |
+| Generate | 0.15–0.45 | **No** | `metadataGenerate` with previews/image previews/phashes (real Stash job). Gated by `generate_before_curate`. |
+| Process scenes | 0.45–0.92 | Yes | Identify via stash-box → apply tags → fill-empty metadata → create missing entities → enrich. Four sub-phases: never-processed, stale, failed, enrichment. |
+| Cleanup | 0.92–1.00 | Yes | Delete tags with zero associations everywhere. |
+
+**Fail-closed:** if Scan or Generate fails (or times out), the pipeline aborts
+before the scene-processing phases. The run is recorded as `failed`.
+
+**Metadata fill-empty policy:** scene metadata fields (title, date, code,
+details, director, urls, studio, performers) are only written when the scene's
+current value is **empty**. Existing values are never overwritten, even if the
+scrape is more complete or the provider has higher priority.
+
+**Entity creation caps:** `max_performer_creates_per_run` (default 50) and
+`max_studio_creates_per_run` (default 20) limit how many new entities a single
+run may create. If the planned creation count exceeds either cap, the entire
+entity-creation phase aborts before the first create (no partial batch).
+
+**Entity rollback:** created performers/studios default to **preserve** on
+rollback (not auto-destroyed), because Stash does not guard entity deletion by
+references and auto-destroying a referenced entity would silently corrupt
+scene data. The operator can manually delete created entities after verifying
+they are unreferenced.
+
 ## Interrupted runs
 
 A run that was killed or whose process vanished leaves a stale lock in

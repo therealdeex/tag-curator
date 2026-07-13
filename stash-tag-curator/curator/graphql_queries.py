@@ -365,6 +365,28 @@ query JobQueue {
 STOP_JOB = """
 mutation StopJob($job_id: ID!) {
   stopJob(job_id: $job_id)
+}
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata job mutations — Milestone 4 (Workstream C)
+# ---------------------------------------------------------------------------
+
+# metadataScan(input: ScanMetadataInput!): ID! — returns the job ID.
+# Full-library scan = omit paths + filter.  scanGenerate* booleans run the
+# corresponding generate step during the scan (single pass).
+METADATA_SCAN = """
+mutation MetadataScan($input: ScanMetadataInput!) {
+  metadataScan(input: $input)
+}
+"""
+
+# metadataGenerate(input: GenerateMetadataInput!): ID! — returns the job ID.
+# The three user-requested options map to: previews, imagePreviews, phashes.
+METADATA_GENERATE = """
+mutation MetadataGenerate($input: GenerateMetadataInput!) {
+  metadataGenerate(input: $input)
+}
 """
 
 # ---------------------------------------------------------------------------
@@ -492,6 +514,8 @@ __all__ = [
     "FIND_JOB",
     "JOB_QUEUE",
     "STOP_JOB",
+    "METADATA_SCAN",
+    "METADATA_GENERATE",
     "FIND_PERFORMER_BY_ID",
     "FIND_STUDIO_BY_ID",
     "FIND_PERFORMERS_BY_NAME",

@@ -269,7 +269,8 @@
       destructive: true,
       primary: true,
       scope:
-        "Recommended maintenance: process new, stale, and failed scenes; add performer-derived tags without removing existing tags; then delete only tags unused everywhere. Changes are journaled for rollback and cleanup undo.",
+        "Complete one-button workflow: scan for new media, generate previews/image previews/phashes, identify scenes via stash-box, apply tags, fill missing scene metadata (title/date/details/studio/performers), create missing performers/studios (capped), enrich from performer metadata, then delete only tags unused everywhere. " +
+        "Scan and Generate are real Stash jobs and are NOT reversible through plugin rollback. All tag, metadata, and entity changes are journaled for rollback.",
       estimateFromTotals: (t) => (t ? t.total_scenes : null),
       estimateLabel: "scenes checked for enrichment",
       argsMap: { confirmed: "true" },

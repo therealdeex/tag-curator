@@ -3,7 +3,7 @@ description: >-
   Hybrid raw+UI plugin that curates scene tags from provider metadata using
   configurable mapping rules, with reversible cleanup, run history, and a
   dashboard. Targets Stash v0.31.1.
-version: 0.2.0
+version: 0.3.0
 url: https://example.invalid/stash-tag-curator
 
 exec:
@@ -56,14 +56,80 @@ settings:
       When true, tags whose labels start with a protected prefix (e.g.
       MANUAL:) are never removed by cleanup or rebuild.
     type: STRING
+  # -- Milestone 3/4: entity creation + scan/generate settings --
+  provider_priority:
+    displayName: Provider Priority
+    description: >-
+      Comma-separated provider tokens in priority order (highest first), e.g.
+      "stashdb,tpdb". When empty, provider discovery order is used. Used for
+      metadata-field merge tie-breaking.
+    type: STRING
+  max_performer_creates_per_run:
+    displayName: Max Performer Creates Per Run
+    description: >-
+      Maximum number of new performers the curator may create in a single run.
+      Entity creation aborts before the first create if this cap is exceeded.
+    type: NUMBER
+  max_studio_creates_per_run:
+    displayName: Max Studio Creates Per Run
+    description: >-
+      Maximum number of new studios the curator may create in a single run.
+    type: NUMBER
+  scan_before_curate:
+    displayName: Scan Before Curate
+    description: >-
+      When true, the Curate Library workflow triggers a full-library metadata
+      scan before processing. This is a real Stash job and is NOT reversible
+      through plugin rollback.
+    type: BOOLEAN
+  generate_before_curate:
+    displayName: Generate Before Curate
+    description: >-
+      When true, the Curate Library workflow triggers a metadata generate job
+      (previews, image previews, phashes) before processing. This is a real
+      Stash job and is NOT reversible through plugin rollback.
+    type: BOOLEAN
+  generate_previews:
+    displayName: Generate Previews
+    description: >-
+      Generate video previews during the Generate phase of Curate Library.
+    type: BOOLEAN
+  generate_image_previews:
+    displayName: Generate Image Previews
+    description: >-
+      Generate animated image previews during the Generate phase.
+    type: BOOLEAN
+  generate_phashes:
+    displayName: Generate Perceptual Hashes
+    description: >-
+      Generate video perceptual hashes (phashes) during the Generate phase.
+    type: BOOLEAN
+  stash_job_poll_interval_seconds:
+    displayName: Stash Job Poll Interval (seconds)
+    description: >-
+      How often (in seconds) to poll findJob while waiting for Scan/Generate.
+    type: NUMBER
+  scan_timeout_minutes:
+    displayName: Scan Timeout (minutes)
+    description: >-
+      Maximum minutes to wait for a Scan job before the run is marked incomplete.
+    type: NUMBER
+  generate_timeout_minutes:
+    displayName: Generate Timeout (minutes)
+    description: >-
+      Maximum minutes to wait for a Generate job before the run is marked incomplete.
+    type: NUMBER
 
 tasks:
   - name: Curate Library
     description: >-
-      Recommended one-button maintenance workflow. Processes new, stale, and
-      previously failed scenes; additively enriches every scene from performer
-      metadata; then removes only tags with zero associations everywhere.
-      Requires confirmation from the dashboard.
+      Complete one-button workflow: scans for new media, generates previews/
+      image previews/phashes, identifies scenes via stash-box, applies tags,
+      fills missing scene metadata, creates missing performers/studios (capped),
+      enriches from performer metadata, then removes tags with zero associations.
+      Scan and Generate are real Stash jobs (not plugin-reversible). All tag,
+      metadata, and entity changes are journaled for rollback. Requires
+      confirmation from the dashboard.
     defaultArgs:
       task: CurateLibrary
       confirmed: "false"

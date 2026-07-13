@@ -1,10 +1,13 @@
 # Stash Tag Curator
 
 A hybrid raw+UI StashApp plugin for **Stash v0.31.1** that curates scene tags
-from provider metadata using configurable mapping rules. It rebuilds tag sets
-deterministically, enriches them from performer metadata, cleans up orphans,
-and records enough history to roll any run back. Operations are exposed as
-Stash tasks and through a dashboard UI route.
+and metadata from provider data using configurable mapping rules. It scans for
+new media, generates previews and perceptual hashes, identifies scenes via
+stash-box, applies tags, fills missing scene metadata (title, date, details,
+studio, performers), creates missing performers and studios, enriches from
+performer metadata, cleans up orphan tags, and records enough history to roll
+any run back. Operations are exposed as Stash tasks and through a dashboard UI
+route.
 
 Every destructive dashboard operation requires explicit confirmation. Scene
 workflows calculate and journal a proposal before execution, and cleanup
@@ -89,16 +92,28 @@ connectivity, UI route registration, and a zero-mutation rebuild. See
 
 Most curator behavior is driven by the active rules file. The plugin settings
 below live in **Settings > Plugins > stash-tag-curator** and tune runtime
-behavior. Stash stores setting values as strings.
+behavior. Newer settings use native BOOLEAN and NUMBER types; the original
+six remain STRING for backward compatibility.
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `stash_api_key` | blank | API key for authenticated local GraphQL calls. Leave blank for unauthenticated localhost setups. Required only if your Stash demands an API key for localhost GraphQL. |
-| `enabled_providers` | `stashdb,tpdb` | Comma-separated provider keys used during enrichment. Must match a configured stash-box endpoint. |
-| `default_provider_batch_size` | `50` | Scenes sent to each provider lookup per request. Lower this on rate-limited connections. |
-| `dry_run_default` | `true` | When `true`, destructive tasks default to dry-run unless the task invocation explicitly overrides. |
-| `strict_version` | `true` | When `true`, the engine refuses to run against mismatched rule-schema versions. |
-| `preserve_protected` | `true` | When `true`, tags whose labels start with a protected prefix (default `MANUAL:`) are never removed. |
+| Setting | Type | Default | Purpose |
+|---|---|---|---|
+| `stash_api_key` | STRING | blank | API key for authenticated local GraphQL calls. Leave blank for unauthenticated localhost. |
+| `enabled_providers` | STRING | `stashdb,tpdb` | Comma-separated provider keys used during enrichment. |
+| `default_provider_batch_size` | STRING | `50` | Scenes sent to each provider lookup per request. |
+| `dry_run_default` | STRING | `true` | When `true`, destructive tasks default to dry-run unless overridden. |
+| `strict_version` | STRING | `true` | When `true`, refuses to run against mismatched rule-schema versions. |
+| `preserve_protected` | STRING | `true` | When `true`, tags with protected prefixes (e.g. `MANUAL:`) are never removed. |
+| `provider_priority` | STRING | blank | Comma-separated provider tokens in priority order (highest first), e.g. `stashdb,tpdb`. Controls metadata-field merge tie-breaking. When empty, discovery order is used. |
+| `max_performer_creates_per_run` | NUMBER | `50` | Max new performers created per run. Creation aborts before the first create if exceeded. |
+| `max_studio_creates_per_run` | NUMBER | `20` | Max new studios created per run. |
+| `scan_before_curate` | BOOLEAN | `true` | When `true`, Curate Library triggers a full-library metadata scan before processing. **Not reversible** through plugin rollback. |
+| `generate_before_curate` | BOOLEAN | `true` | When `true`, Curate Library generates previews/image previews/phashes before processing. **Not reversible.** |
+| `generate_previews` | BOOLEAN | `true` | Generate video previews during the Generate phase. |
+| `generate_image_previews` | BOOLEAN | `true` | Generate animated image previews during the Generate phase. |
+| `generate_phashes` | BOOLEAN | `true` | Generate perceptual hashes during the Generate phase. |
+| `stash_job_poll_interval_seconds` | NUMBER | `5` | How often to poll findJob while waiting for Scan/Generate. |
+| `scan_timeout_minutes` | NUMBER | `60` | Max minutes to wait for a Scan job before the run is marked incomplete. |
+| `generate_timeout_minutes` | NUMBER | `120` | Max minutes to wait for a Generate job. |
 
 ### stash-box must be configured in Stash
 
@@ -127,11 +142,27 @@ If you are migrating from a v2 rules file, use the migrator described in
 ## Use
 
 Run **Preflight** first. For routine maintenance, open the dashboard and use
-**Curate Library**. After one explicit confirmation it processes new, stale,
-and previously failed scenes, additively enriches every scene from performer
-metadata, and removes only tags whose association counts are zero everywhere.
-Scene mutations are journaled for rollback, and deleted tags are recorded for
-**Undo Cleanup**.
+**Curate Library** — the single recommended button. After one explicit
+confirmation it runs the complete pipeline:
+
+1. **Scan** — triggers a full-library metadata scan (real Stash job).
+2. **Generate** — generates previews, image previews, and perceptual hashes
+   (real Stash job).
+3. **Identify + tag** — identifies scenes via stash-box `scrapeMultiScenes`,
+   applies mapped canonical tags.
+4. **Fill metadata** — fills empty scene fields (title, date, code, details,
+   director, urls) from the highest-priority provider match. **Never
+   overwrites** existing values (fill-empty-only policy).
+5. **Create entities** — creates missing performers and studios when a safe
+   match isn't found (capped per run), attaching stash-box UUIDs for future
+   auto-matching.
+6. **Enrich** — adds performer-derived tags additively.
+7. **Cleanup** — removes only tags whose association counts are zero everywhere.
+
+> **Scan and Generate are real Stash jobs and are NOT reversible through
+> plugin rollback.** All tag, metadata, and entity changes are journaled and
+> rollback-eligible. Newly-created performers/studios default to
+> **preserve** on rollback (not auto-destroyed) for safety.
 
 For a deliberate taxonomy reset, run **Dry-Run Full Library Rebuild** and read
 the proposal before starting **Full Library Rebuild**. Routine maintenance

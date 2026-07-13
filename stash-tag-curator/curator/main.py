@@ -198,6 +198,14 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _as_float(value: Any, default: float) -> float:
+    """Parse ``value`` as float; return ``default`` on failure."""
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def _as_list(value: Any) -> list[str]:
     """Coerce ``value`` (string, list, or None) to a list of non-empty strings."""
     if value is None:
@@ -619,6 +627,39 @@ class TaskContext:
             ),
             "tag_name_to_id": _resolve_tag_name_to_id(self.args),
             "provider_fingerprint": "",
+            # Milestone 3: entity creation caps.
+            "max_performer_creates_per_run": _as_int(
+                self.settings.get("max_performer_creates_per_run"), 50
+            ),
+            "max_studio_creates_per_run": _as_int(
+                self.settings.get("max_studio_creates_per_run"), 20
+            ),
+            # Milestone 3/4: provider priority + scan/generate settings.
+            "provider_priority": str(self.settings.get("provider_priority") or ""),
+            "scan_before_curate": _as_bool(
+                self.settings.get("scan_before_curate"), True
+            ),
+            "generate_before_curate": _as_bool(
+                self.settings.get("generate_before_curate"), True
+            ),
+            "generate_previews": _as_bool(
+                self.settings.get("generate_previews"), True
+            ),
+            "generate_image_previews": _as_bool(
+                self.settings.get("generate_image_previews"), True
+            ),
+            "generate_phashes": _as_bool(
+                self.settings.get("generate_phashes"), True
+            ),
+            "stash_job_poll_interval_seconds": _as_float(
+                self.settings.get("stash_job_poll_interval_seconds"), 5.0
+            ),
+            "scan_timeout_minutes": _as_float(
+                self.settings.get("scan_timeout_minutes"), 60.0
+            ),
+            "generate_timeout_minutes": _as_float(
+                self.settings.get("generate_timeout_minutes"), 120.0
+            ),
         }
 
 
@@ -1450,6 +1491,8 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             "mode": "curate_library",
             "run_id": run_id,
             "confirmed": True,
+            "scan": None,
+            "generate": None,
             "scene_phases": {},
         }
         run_error: "str | None" = None
@@ -1458,11 +1501,119 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
                 ctx.client, rules, engine_settings["tag_name_to_id"]
             )
 
+            # -- Phase 1: metadata scan (full library) -----------------
+            # G2-verified: a plugin process CAN fire-and-poll a Stash
+            # metadata job without deadlocking (Stash uses an independent
+            # worker pool for metadata jobs).  Fail-closed: a scan failure
+            # aborts the remaining pipeline (plan §3.3).
+            if engine_settings.get("scan_before_curate"):
+                _log("curate_library: starting full-library scan")
+                from .stash_jobs import JobError as _JobError, submit_scan
+
+                def _scan_progress(fraction: float) -> None:
+                    # Map job progress 0..1 into overall 0.00–0.15.
+                    _progress(0.00 + max(0.0, min(1.0, fraction)) * 0.15)
+
+                try:
+                    scan_result = submit_scan(
+                        ctx.client,
+                        full_library=True,
+                        progress_fn=_scan_progress,
+                        timeout=engine_settings.get("scan_timeout_minutes", 60.0) * 60,
+                        poll_interval=engine_settings.get(
+                            "stash_job_poll_interval_seconds", 5.0
+                        ),
+                    )
+                    result["scan"] = {
+                        "ran": True,
+                        "job_id": scan_result.job_id,
+                        "status": scan_result.status,
+                        "timed_out": scan_result.timed_out,
+                        "error": scan_result.error,
+                        "reversible": False,  # plan §3.1: not plugin-reversible
+                    }
+                    _progress(0.15)
+                    _log(f"scan complete: {scan_result.status}")
+                except _JobError as exc:
+                    result["scan"] = {
+                        "ran": True,
+                        "job_id": exc.result.job_id,
+                        "status": exc.result.status,
+                        "timed_out": False,
+                        "error": exc.result.error,
+                        "reversible": False,
+                    }
+                    run_error = f"scan failed: {exc}"
+                    raise
+            else:
+                _log("curate_library: scan skipped (scan_before_curate=false)")
+                _progress(0.15)  # advance past the scan range
+
+            # -- Phase 2: metadata generate -----------------------------
+            if engine_settings.get("generate_before_curate"):
+                _log("curate_library: starting metadata generate")
+                from .stash_jobs import JobError as _JobError, submit_generate
+
+                def _generate_progress(fraction: float) -> None:
+                    # Map job progress 0..1 into overall 0.15–0.45.
+                    _progress(0.15 + max(0.0, min(1.0, fraction)) * 0.30)
+
+                try:
+                    gen_result = submit_generate(
+                        ctx.client,
+                        previews=engine_settings.get("generate_previews", True),
+                        image_previews=engine_settings.get(
+                            "generate_image_previews", True
+                        ),
+                        phashes=engine_settings.get("generate_phashes", True),
+                        progress_fn=_generate_progress,
+                        timeout=engine_settings.get(
+                            "generate_timeout_minutes", 120.0
+                        ) * 60,
+                        poll_interval=engine_settings.get(
+                            "stash_job_poll_interval_seconds", 5.0
+                        ),
+                    )
+                    result["generate"] = {
+                        "ran": True,
+                        "job_id": gen_result.job_id,
+                        "status": gen_result.status,
+                        "timed_out": gen_result.timed_out,
+                        "error": gen_result.error,
+                        "options": {
+                            "previews": engine_settings.get("generate_previews", True),
+                            "image_previews": engine_settings.get(
+                                "generate_image_previews", True
+                            ),
+                            "phashes": engine_settings.get("generate_phashes", True),
+                        },
+                        "reversible": False,
+                    }
+                    _progress(0.45)
+                    _log(f"generate complete: {gen_result.status}")
+                except _JobError as exc:
+                    result["generate"] = {
+                        "ran": True,
+                        "job_id": exc.result.job_id,
+                        "status": exc.result.status,
+                        "timed_out": False,
+                        "error": exc.result.error,
+                        "reversible": False,
+                    }
+                    run_error = f"generate failed: {exc}"
+                    raise
+            else:
+                _log("curate_library: generate skipped (generate_before_curate=false)")
+                _progress(0.45)  # advance past the generate range
+
+            # -- Phases 3-6: scene processing (tags + metadata + entities)
+            # Progress ranges shifted to 0.45–0.92 to make room for the
+            # scan/generate front phases (plan §D1).
             phase_specs = (
-                ("never_processed", SCOPE_NEVER_PROCESSED, 0.00, 0.20),
-                ("stale_rules", SCOPE_STALE_RULES, 0.20, 0.40),
-                ("failed", SCOPE_FAILED, 0.40, 0.55),
-                ("performer_enrichment", SCOPE_ENRICH_ONLY, 0.55, 0.92),
+                ("never_processed", SCOPE_NEVER_PROCESSED, 0.45, 0.60),
+                ("stale_rules", SCOPE_STALE_RULES, 0.60, 0.70),
+                ("failed", SCOPE_FAILED, 0.70, 0.78),
+                ("performer_enrichment", SCOPE_ENRICH_ONLY, 0.78, 0.92),
             )
             for phase_name, scope_name, floor, cap in phase_specs:
                 span = cap - floor
