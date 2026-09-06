@@ -240,35 +240,20 @@ class TestModeNormalization:
     @pytest.mark.parametrize(
         "token, expected",
         [
-            ("Rebuild", "rebuild"),
-            ("DryRebuild", "dry_rebuild"),
-            ("ProcessNew", "process_new"),
-            ("ReprocessStale", "reprocess_stale"),
-            ("ReprocessFailed", "reprocess_failed"),
-            ("ReprocessAffected", "reprocess_affected"),
-            ("Enrich", "enrich"),
             ("CurateLibrary", "curate_library"),
-            ("CleanupSafe", "cleanup_safe"),
-            ("CleanupPlugin", "cleanup_plugin"),
-            ("Rollback", "rollback"),
             ("ValidateRules", "validate_rules"),
             ("SaveMapping", "save_mapping"),
             ("Preflight", "preflight"),
-            ("ResumeRun", "resume_run"),
-            ("AbandonRun", "abandon_run"),
-            ("ForceRelease", "force_release"),
-            ("UndoCleanup", "undo_cleanup"),
+            ("RefreshData", "refresh_data"),
+            ("RunDetail", "run_detail"),
             ("Dashboard", "dashboard"),
             ("UnmappedTags", "unmapped_tags"),
             ("RunHistory", "run_history"),
             ("RulesAudit", "rules_audit"),
-            # Already snake_case passes through.
-            ("dry_rebuild", "dry_rebuild"),
-            ("rebuild", "rebuild"),
-            ("rebuild", "rebuild"),
             # Uppercase normalises too.
             ("DASHBOARD", "dashboard"),
-            ("REBUILD", "rebuild"),
+            ("CurateLibrary", "curate_library"),
+            ("curate_library", "curate_library"),
         ],
     )
     def test_normalize(self, token: str, expected: str) -> None:
@@ -296,9 +281,11 @@ class TestModeNormalization:
         else:  # pragma: no cover -- should always exist
             pytest.fail("manifest not found")
 
-        # The manifest declares exactly 22 tasks.
-        assert len(manifest_tokens) == 22, (
-            f"expected 22 manifest task tokens, got {len(manifest_tokens)}: "
+        # 0.5.0 collapses the surface: 7 tasks (Update Library, Preview,
+        # Save Dictionary Edit, Validate Dictionary, Preflight, Refresh
+        # Data, Run Detail).
+        assert len(manifest_tokens) == 7, (
+            f"expected 7 manifest task tokens, got {len(manifest_tokens)}: "
             f"{manifest_tokens}"
         )
         for token in manifest_tokens:
@@ -308,8 +295,10 @@ class TestModeNormalization:
                 f"which is not in _ALL_MODES"
             )
 
-    def test_mode_count_is_22(self) -> None:
-        assert len(_ALL_MODES) == 22, (
+    def test_mode_count_is_11(self) -> None:
+        # curate_library + save_mapping + preflight + validate_rules
+        # + 5 legacy report modes + refresh_data + run_detail.
+        assert len(_ALL_MODES) == 11, (
             f"_ALL_MODES has {len(_ALL_MODES)} entries: {sorted(_ALL_MODES)}"
         )
 
@@ -602,8 +591,9 @@ class TestLockRelease:
         with pytest.raises(RuntimeError, match="forced failure"):
             _dispatch(
                 _envelope(
-                    "rebuild",
+                    "curate_library",
                     server_connection={"Dir": str(tmp_path)},
+                    args={"confirmed": "true"},
                 ),
                 client=client,
             )
@@ -643,83 +633,31 @@ class TestLockRelease:
         with pytest.raises(RuntimeError, match="could not acquire run lock"):
             _dispatch(
                 _envelope(
-                    "rebuild",
+                    "curate_library",
                     server_connection={"Dir": str(tmp_path)},
+                    args={"confirmed": "true"},
                 ),
                 client=client,
             )
 
 
-class TestCleanupRouting:
-    """Cleanup dry-run routing (in-process with mock client)."""
+class TestRetiredModes:
+    """The 0.5.0 simplification removed the rebuild family, standalone
+    cleanup, rollback, and the recovery modes.  Dispatching one of those
+    tokens must fail loudly rather than silently succeed."""
 
-    def test_cleanup_safe_dry_run_returns_proposal(self, tmp_path: Path) -> None:
-        """cleanup_safe without a proposal_token runs dry_run and returns a token."""
-        client = _StubClient(
-            responses={
-                "GetAppVersion": {"version": {"version": "0.31.1"}},
-                "GetConfigurationStashBoxes": {
-                    "configuration": {"general": {"stashBoxes": []}},
-                },
-                "FindTagsWithCounts": {"findTags": {"tags": [], "count": 0}},
-            }
-        )
-        result = _dispatch(
-            _envelope(
-                "cleanup_safe",
-                server_connection={"Dir": str(tmp_path)},
-            ),
-            client=client,
-        )
-        assert result["mode"] == "cleanup_safe"
-        assert "dry_run" in result
-        proposal = result["dry_run"]
-        assert "token" in proposal
-        assert proposal["scope"] == "safe_global"
-        assert proposal["candidate_count"] == 0
-
-
-class TestRollbackRouting:
-    """Rollback mode validation."""
-
-    def test_missing_run_id_raises(self, tmp_path: Path) -> None:
-        client = _StubClient(
-            responses={
-                "GetAppVersion": {"version": {"version": "0.31.1"}},
-            }
-        )
-        with pytest.raises(ValueError, match="run_id"):
-            _dispatch(
-                _envelope(
-                    "rollback",
-                    server_connection={"Dir": str(tmp_path)},
-                ),
-                client=client,
-            )
-
-    def test_rollback_accepts_target_run_id_alias(self, tmp_path: Path) -> None:
-        """``target_run_id`` is accepted as an alias for ``run_id``."""
-        client = _StubClient(
-            responses={
-                "GetAppVersion": {"version": {"version": "0.31.1"}},
-                "FindSceneById": {"findScene": None},
-                "FindTagsWithCounts": {"findTags": {"tags": [], "count": 0}},
-            }
-        )
-        # A non-existent run_id yields an empty rollback (0 mutations).
-        result = _dispatch(
-            _envelope(
-                "rollback",
-                server_connection={"Dir": str(tmp_path)},
-                args={"target_run_id": "nonexistent-run"},
-            ),
-            client=client,
-        )
-        assert result["mode"] == "rollback"
-        assert result["target_run_id"] == "nonexistent-run"
-        rb = result["rollback"]
-        assert rb["parent_run_id"] == "nonexistent-run"
-        assert rb["scenes_inspected"] == 0
+    @pytest.mark.parametrize(
+        "mode",
+        [
+            "rebuild", "dry_rebuild", "process_new", "reprocess_stale",
+            "reprocess_failed", "reprocess_affected", "enrich",
+            "cleanup_safe", "cleanup_plugin", "rollback", "undo_cleanup",
+            "resume_run", "abandon_run", "force_release",
+        ],
+    )
+    def test_retired_mode_raises_unknown_mode(self, mode: str) -> None:
+        with pytest.raises(ValueError, match="unknown mode"):
+            _dispatch(_envelope(mode), client=_StubClient())
 
 
 class TestSaveMappingRoute:
@@ -1014,6 +952,7 @@ class TestCurateLibraryRoute:
         self, tmp_path: Path,
     ) -> None:
         seen_scopes: list[str] = []
+        seen_run_ids: list[str] = []
 
         class FakeProviders:
             def __init__(self, client: Any, settings: Any) -> None:
@@ -1036,31 +975,28 @@ class TestCurateLibraryRoute:
 
             def run_dry(self, scope: Any, **kwargs: Any) -> FakeReport:
                 seen_scopes.append(scope.name)
+                seen_run_ids.append(kwargs["run_id"])
                 self.progress_fn(1.0)
                 return FakeReport(proposed_run_id="proposal-" + scope.name)
 
             def run_execute(self, proposed_run_id: str, **kwargs: Any) -> FakeReport:
+                seen_run_ids.append(kwargs["run_id"])
                 return FakeReport(proposed_run_id=proposed_run_id, mutations_applied=0)
 
         class FakeCleanupEngine:
             def __init__(self, *args: Any, **kwargs: Any) -> None:
-                pass
+                self.seen_scopes: list[str] = []
 
-            def dry_run(self, scope: str) -> Any:
-                assert scope == "safe_global"
-                return SimpleNamespace(
-                    token="cleanup-token",
-                    to_dict=lambda: {"candidate_count": 0},
-                )
-
-            def execute_cleanup(self, token: str) -> Any:
-                assert token == "cleanup-token"
+            def run(self, scope: str, exclude: Any = None,
+                    exclude_names: Any = None) -> Any:
+                self.seen_scopes.append(scope)
                 return SimpleNamespace(to_dict=lambda: {"destroyed_count": 0})
 
         ctx = TaskContext(
             {"Dir": str(tmp_path)},
             {},
-            {"task": "CurateLibrary", "confirmed": "true"},
+            {"task": "CurateLibrary", "confirmed": "true",
+             "cleanup_global": "true"},
             client=_StubClient(),
         )
         with (
@@ -1075,11 +1011,24 @@ class TestCurateLibraryRoute:
         assert seen_scopes == [
             "never_processed", "stale_rules", "failed", "enrich_only"
         ]
-        # Scan + generate are skipped by default (synchronous fire-and-poll
-        # from inside a Stash task self-deadlocks; see InTaskPollingError).
-        assert result["scan"] is None
-        assert result["generate"] is None
-        assert result["orphan_cleanup"]["execute"]["destroyed_count"] == 0
+        # T11 invariant, carried forward: every phase EXECUTES under its own
+        # child run_id -- the mutations history's PRIMARY KEY
+        # (run_id, scene_id) makes a shared run_id crash the moment the
+        # enrichment phase re-mutates a scene an earlier phase processed.
+        # (The dry half of each phase runs under the parent run id; the
+        # execute half under the unique child id.)
+        assert len(seen_run_ids) == 8  # 4 phases x (dry + execute)
+        child_ids = {r for r in seen_run_ids if "-p" in r}
+        assert len(child_ids) == 4, "each phase needs its own execute run_id"
+        for phase_name in ("never_processed", "stale_rules", "failed", "performer_enrichment"):
+            assert any(r.endswith(phase_name) for r in child_ids)
+        # Scan/Generate are orchestrated by the dashboard, never in-task.
+        assert "scan" not in result and "generate" not in result
+        # Plugin-owned cleanup always runs; safe-global ran because the
+        # invocation opted in via cleanup_global=true.
+        cleanup = FakeCleanupEngine  # sanity: replaced class accepted run()
+        assert result["orphan_cleanup"]["plugin_owned"]["destroyed_count"] == 0
+        assert "safe_global" in result["orphan_cleanup"]
         state = StateDB(str(ctx.state_path))
         try:
             assert state.current_lock() is None
@@ -1087,106 +1036,71 @@ class TestCurateLibraryRoute:
                 "SELECT status FROM runs WHERE run_id = ?", (result["run_id"],)
             ).fetchone()
             assert row["status"] == "completed"
+            # Each phase leaves a completed child row linked to the parent.
+            children = state.connection.execute(
+                "SELECT run_id, status, parent_run_id, scope_json "
+                "FROM runs WHERE parent_run_id = ? ORDER BY run_id",
+                (result["run_id"],),
+            ).fetchall()
+            assert len(children) == 4
+            assert all(c["status"] == "completed" for c in children)
+            assert all(c["parent_run_id"] == result["run_id"] for c in children)
         finally:
             state.close()
 
-    def test_scan_before_curate_rejects_in_task_polling(self, tmp_path: Path) -> None:
-        """Deadlock guard: scan_before_curate=true inside a Stash plugin task
-        must fail fast instead of self-deadlocking.
-
-        Regression for the live incident on 2026-07-13: the plugin (a RUNNING
-        task) submitted metadataScan, which sat at READY behind it forever;
-        the poll loop blocked until the scan timeout.  Stash v0.31.1 uses a
-        single serial job queue, so a plugin task CANNOT synchronously poll a
-        metadata job it queued behind itself.  The guard rejects this up front.
-        """
-        from curator.main import InTaskPollingError
-
-        ctx = TaskContext(
-            {"Dir": str(tmp_path)},
-            {"scan_before_curate": True},  # opted in -> must be rejected
-            {"task": "CurateLibrary", "confirmed": "true"},
-            client=_StubClient(),
-        )
-        with (
-            patch("curator.main.ProviderLookup", type("FP", (), {
-                "__init__": lambda s, c, st: None,
-                "discover_endpoints": lambda s: [SimpleNamespace(endpoint="https://x")],
-            })),
-            patch("curator.main._resolve_finite_tags", return_value={}),
-        ):
-            # The guard fires before any scene phase or cleanup runs.
-            with pytest.raises(InTaskPollingError, match="scan_before_curate"):
-                _run_curate_library(ctx)
-
-        # The run was recorded as failed.
-        state = StateDB(str(ctx.state_path))
-        try:
-            row = state.connection.execute(
-                "SELECT status FROM runs ORDER BY started_at DESC LIMIT 1"
-            ).fetchone()
-            assert row["status"] == "failed"
-        finally:
-            state.close()
-
-    def test_generate_before_curate_rejects_in_task_polling(
-        self, tmp_path: Path,
-    ) -> None:
-        """Same deadlock guard as scan, for the generate phase."""
-        from curator.main import InTaskPollingError
-
-        ctx = TaskContext(
-            {"Dir": str(tmp_path)},
-            {"generate_before_curate": True},  # opted in -> must be rejected
-            {"task": "CurateLibrary", "confirmed": "true"},
-            client=_StubClient(),
-        )
-        with (
-            patch("curator.main.ProviderLookup", type("FP", (), {
-                "__init__": lambda s, c, st: None,
-                "discover_endpoints": lambda s: [SimpleNamespace(endpoint="https://x")],
-            })),
-            patch("curator.main._resolve_finite_tags", return_value={}),
-        ):
-            with pytest.raises(InTaskPollingError, match="generate_before_curate"):
-                _run_curate_library(ctx)
-
-    def test_scan_disabled_skips_scan_phase(self, tmp_path: Path) -> None:
-        """When scan_before_curate=false, scan phase is skipped."""
+    def test_retired_scan_generate_settings_are_inert(self, tmp_path: Path) -> None:
+        """The scan_before_curate / generate_before_curate settings are gone
+        from the manifest and from engine_settings.  Supplying them must NOT
+        change behaviour: no deadlock guard fires, no scan phase appears --
+        the dashboard orchestrates Scan/Generate itself."""
         seen_scopes: list[str] = []
 
+        class FakeProviders:
+            def __init__(self, client: Any, settings: Any) -> None:
+                pass
+
+            def discover_endpoints(self) -> list[Any]:
+                return [SimpleNamespace(endpoint="https://stashdb.org/graphql")]
+
         class FakeReport:
-            def __init__(self, **kw):
-                self.proposed_run_id = kw.get("proposed_run_id", "p")
-            def to_dict(self):
-                return {}
+            def __init__(self, **payload: Any) -> None:
+                self.payload = payload
+                self.proposed_run_id = payload.get("proposed_run_id", "p")
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self.payload)
 
         class FakeRebuildEngine:
-            def __init__(self, *a, **kw):
-                self.progress_fn = kw["progress_fn"]
-            def run_dry(self, scope, **kw):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.progress_fn = kwargs["progress_fn"]
+
+            def run_dry(self, scope: Any, **kwargs: Any) -> FakeReport:
                 seen_scopes.append(scope.name)
                 self.progress_fn(1.0)
-                return FakeReport(proposed_run_id="p-" + scope.name)
-            def run_execute(self, proposed_run_id, **kw):
-                return FakeReport()
+                return FakeReport(proposed_run_id="prop-" + scope.name)
+
+            def run_execute(self, proposed_run_id: str, **kwargs: Any) -> FakeReport:
+                return FakeReport(
+                    proposed_run_id=proposed_run_id, mutations_applied=0
+                )
 
         class FakeCleanupEngine:
-            def __init__(self, *a, **kw): pass
-            def dry_run(self, scope): return SimpleNamespace(token="t", to_dict=lambda: {})
-            def execute_cleanup(self, token): return SimpleNamespace(to_dict=lambda: {})
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            def run(self, scope: str, exclude: Any = None,
+                    exclude_names: Any = None) -> Any:
+                return SimpleNamespace(to_dict=lambda: {"destroyed_count": 0})
 
         ctx = TaskContext(
             {"Dir": str(tmp_path)},
-            {"scan_before_curate": False},  # scan disabled (also the default)
+            # The retired settings, supplied by an old config: inert.
+            {"scan_before_curate": True, "generate_before_curate": True},
             {"task": "CurateLibrary", "confirmed": "true"},
             client=_StubClient(),
         )
         with (
-            patch("curator.main.ProviderLookup", type("FP", (), {
-                "__init__": lambda s, c, st: None,
-                "discover_endpoints": lambda s: [SimpleNamespace(endpoint="https://x")],
-            })),
+            patch("curator.main.ProviderLookup", FakeProviders),
             patch("curator.main.RebuildEngine", FakeRebuildEngine),
             patch("curator.main.CleanupEngine", FakeCleanupEngine),
             patch("curator.main._resolve_finite_tags", return_value={}),
@@ -1194,10 +1108,143 @@ class TestCurateLibraryRoute:
         ):
             result = _run_curate_library(ctx)
 
-        # Scan + generate both skipped (defaults); scene phases still ran.
-        assert result["scan"] is None
-        assert result["generate"] is None
-        assert len(seen_scopes) == 4  # all scene phases still ran
+        # All four scene phases ran; no scan/generate phases exist at all.
+        assert seen_scopes == [
+            "never_processed", "stale_rules", "failed", "enrich_only"
+        ]
+        assert "scan" not in result and "generate" not in result
+
+    def test_preview_runs_dry_only(self, tmp_path: Path) -> None:
+        """preview=true computes proposals for every phase, executes
+        nothing, and skips cleanup."""
+        seen: dict[str, list[str]] = {"dry": [], "exec": [], "cleanup": []}
+
+        class FakeProviders:
+            def __init__(self, client: Any, settings: Any) -> None:
+                pass
+
+            def discover_endpoints(self) -> list[Any]:
+                return [SimpleNamespace(endpoint="https://stashdb.org/graphql")]
+
+        class FakeReport:
+            def __init__(self, **payload: Any) -> None:
+                self.payload = payload
+                self.proposed_run_id = payload.get("proposed_run_id", "p")
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self.payload)
+
+        class FakeRebuildEngine:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.progress_fn = kwargs["progress_fn"]
+
+            def run_dry(self, scope: Any, **kwargs: Any) -> FakeReport:
+                seen["dry"].append(scope.name)
+                self.progress_fn(1.0)
+                return FakeReport(proposed_run_id="prop-" + scope.name)
+
+            def run_execute(self, proposed_run_id: str, **kwargs: Any) -> FakeReport:
+                seen["exec"].append(proposed_run_id)
+                return FakeReport(mutations_applied=1)
+
+        class FakeCleanupEngine:
+            def run(self, scope: str, exclude: Any = None,
+                    exclude_names: Any = None) -> Any:
+                seen["cleanup"].append(scope)
+                return SimpleNamespace(to_dict=lambda: {"destroyed_count": 0})
+
+        ctx = TaskContext(
+            {"Dir": str(tmp_path)},
+            {},
+            {"task": "CurateLibrary", "preview": "true"},
+            client=_StubClient(),
+        )
+        with (
+            patch("curator.main.ProviderLookup", FakeProviders),
+            patch("curator.main.RebuildEngine", FakeRebuildEngine),
+            patch("curator.main.CleanupEngine", FakeCleanupEngine),
+            patch("curator.main._resolve_finite_tags", return_value={}),
+            patch("curator.main._regenerate_snapshots"),
+        ):
+            result = _run_curate_library(ctx)
+
+        assert result["preview"] is True
+        assert sorted(seen["dry"]) == [
+            "enrich_only", "failed", "never_processed", "stale_rules"
+        ]
+        assert seen["exec"] == []
+        assert seen["cleanup"] == []
+        state = StateDB(str(ctx.state_path))
+        try:
+            # Every phase stayed dry: no child run rows, no mutations.
+            children = state.connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE parent_run_id = ?",
+                (result["run_id"],),
+            ).fetchone()
+            assert children[0] == 0
+        finally:
+            state.close()
+
+    def test_affected_tags_add_fifth_phase(self, tmp_path: Path) -> None:
+        """affected_raw_tags inserts the affected phase after failures."""
+        seen_scopes: list[str] = []
+
+        class FakeProviders:
+            def __init__(self, client: Any, settings: Any) -> None:
+                pass
+
+            def discover_endpoints(self) -> list[Any]:
+                return [SimpleNamespace(endpoint="https://stashdb.org/graphql")]
+
+        class FakeReport:
+            def __init__(self, **payload: Any) -> None:
+                self.payload = payload
+                self.proposed_run_id = payload.get("proposed_run_id", "p")
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self.payload)
+
+        class FakeRebuildEngine:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.progress_fn = kwargs["progress_fn"]
+                self.scope_seen: list[str] = []
+
+            def run_dry(self, scope: Any, **kwargs: Any) -> FakeReport:
+                seen_scopes.append(scope.name)
+                self.progress_fn(1.0)
+                return FakeReport(proposed_run_id="prop-" + scope.name)
+
+            def run_execute(self, proposed_run_id: str, **kwargs: Any) -> FakeReport:
+                return FakeReport(mutations_applied=0)
+
+        class FakeCleanupEngine:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            def run(self, scope: str, exclude: Any = None,
+                    exclude_names: Any = None) -> Any:
+                return SimpleNamespace(to_dict=lambda: {"destroyed_count": 0})
+
+        ctx = TaskContext(
+            {"Dir": str(tmp_path)},
+            {},
+            {"task": "CurateLibrary", "confirmed": "true",
+             "affected_raw_tags": '["blowjob", "orgy"]'},
+            client=_StubClient(),
+        )
+        with (
+            patch("curator.main.ProviderLookup", FakeProviders),
+            patch("curator.main.RebuildEngine", FakeRebuildEngine),
+            patch("curator.main.CleanupEngine", FakeCleanupEngine),
+            patch("curator.main._resolve_finite_tags", return_value={}),
+            patch("curator.main._regenerate_snapshots"),
+        ):
+            _run_curate_library(ctx)
+
+        assert seen_scopes == [
+            "never_processed", "stale_rules", "failed",
+            "affected_by_mapping", "enrich_only",
+        ]
 
 
 class TestNoCancelPolling:
@@ -1224,11 +1271,7 @@ _SECRET_API_KEY = "SECRET_STASH_API_KEY_VALUE_99"
 
 
 _MODE_ARGS: dict[str, dict[str, Any]] = {
-    "rollback": {"run_id": "contract-test-run"},
-    "resume_run": {"run_id": "contract-test-run"},
-    "abandon_run": {"run_id": "contract-test-run"},
-    "force_release": {"run_id": "contract-test-run"},
-    "undo_cleanup": {"cleanup_run_id": "contract-cleanup-run"},
+    "run_detail": {"run_id": "contract-test-run"},
 }
 
 
@@ -1242,27 +1285,16 @@ class TestSubprocessPerMode:
     """
 
     _MODES = [
-        "rebuild",
-        "dry_rebuild",
-        "process_new",
-        "reprocess_stale",
-        "reprocess_failed",
-        "reprocess_affected",
-        "enrich",
-        "cleanup_safe",
-        "cleanup_plugin",
-        "rollback",
         "validate_rules",
         "save_mapping",
         "preflight",
-        "resume_run",
-        "abandon_run",
-        "force_release",
-        "undo_cleanup",
         "dashboard",
         "unmapped_tags",
         "run_history",
         "rules_audit",
+        "dictionary",
+        "refresh_data",
+        "run_detail",
     ]
 
     @pytest.mark.parametrize("mode", _MODES)
@@ -1405,131 +1437,3 @@ class TestStderrProgressBytes:
 # ---------------------------------------------------------------------------
 # Recovery-mode contract tests (F1)
 # ---------------------------------------------------------------------------
-
-
-class TestRecoveryModes:
-    """Subprocess contract tests for the four recovery modes (F1 B1).
-
-    These modes rely on state/run rows that do not exist in a cold contract
-    test, so the immediate result is ``{"error": ...}`` -- the contract
-    requirement is that stdout carries exactly one parseable JSON object with
-    an expected error shape, and that the mode token routes at all.
-    """
-
-    @pytest.mark.parametrize(
-        "task,extra_args,expected_error",
-        [
-            ("ResumeRun", {"run_id": "test-resume"}, "no run row"),
-            ("AbandonRun", {"run_id": "test-abandon"}, ""),
-            ("ForceRelease", {"run_id": "test-release"}, ""),  # returns released=False
-            ("UndoCleanup", {"cleanup_run_id": "test-cleanup"}, ""),
-        ],
-    )
-    def test_recovery_task_routes_with_single_json(
-        self,
-        task: str,
-        extra_args: dict[str, Any],
-        expected_error: str,
-        tmp_path: Path,
-    ) -> None:
-        envelope = {
-            "args": {"task": task, **extra_args},
-            "server_connection": {
-                "Scheme": "http",
-                "Host": "127.0.0.1",
-                "Port": 1,
-                "Dir": str(tmp_path / task),
-            },
-            "settings": {},
-        }
-        code, stdout, stderr = _run_main(json.dumps(envelope))
-        lines = [l for l in stdout.splitlines() if l.strip()]
-        assert len(lines) == 1, (
-            f"task={task}: expected 1 stdout line, got {len(lines)}: {lines!r}"
-        )
-        payload = json.loads(lines[0])
-        assert "output" in payload or "error" in payload, (
-            f"task={task}: stdout payload missing output/error: {payload!r}"
-        )
-        assert "\x01p\x02" not in stdout, f"task={task}: progress leaked to stdout"
-        assert stderr and "curator:" in stderr, (
-            f"task={task}: diagnostic stderr missing"
-        )
-        if expected_error:
-            assert payload.get("error", "").lower().startswith(
-                expected_error.lower(),
-            ), (
-                f"task={task}: expected error starting with "
-                f"{expected_error!r}, got {payload.get('error')!r}"
-            )
-
-    def test_force_release_returns_release_result(self) -> None:
-        """ForceRelease with no held lock must return ``released: False``."""
-        envelope = {
-            "args": {"task": "ForceRelease", "run_id": "not-held"},
-            "server_connection": {
-                "Scheme": "http",
-                "Host": "127.0.0.1",
-                "Port": 1,
-            },
-            "settings": {},
-        }
-        code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 0, f"ForceRelease expected exit 0, got {code}"
-        payload = json.loads(stdout.strip().splitlines()[0])
-        assert "output" in payload, payload
-        assert payload["output"]["released"] is False, payload
-        assert payload["output"]["run_id"] == "not-held", payload
-
-    def test_undo_cleanup_requires_cleanup_run_id(self) -> None:
-        """``UndoCleanup`` without cleanup_run_id raises a clear error."""
-        envelope = {
-            "args": {"task": "UndoCleanup"},
-            "server_connection": {
-                "Scheme": "http",
-                "Host": "127.0.0.1",
-                "Port": 1,
-            },
-            "settings": {},
-        }
-        code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 1, f"expected exit 1, got {code}"
-        payload = json.loads(stdout.strip().splitlines()[0])
-        assert "error" in payload, payload
-        assert "cleanup_run_id" in payload["error"].lower(), payload[
-            "error"
-        ]
-
-    def test_resume_run_without_lock_is_a_safe_noop(self, tmp_path: Path) -> None:
-        """Resume auto-detects a held lock; a cold state is a safe no-op."""
-        envelope = {
-            "args": {"task": "ResumeRun"},
-            "server_connection": {
-                "Scheme": "http",
-                "Host": "127.0.0.1",
-                "Port": 1,
-                "Dir": str(tmp_path / "resume"),
-            },
-            "settings": {},
-        }
-        code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 0, f"expected exit 0, got {code}"
-        payload = json.loads(stdout.strip().splitlines()[0])
-        assert payload["output"]["status"] == "no-op", payload
-
-    def test_abandon_run_without_lock_is_a_safe_noop(self, tmp_path: Path) -> None:
-        """Abandon auto-detects a held lock; a cold state is a safe no-op."""
-        envelope = {
-            "args": {"task": "AbandonRun"},
-            "server_connection": {
-                "Scheme": "http",
-                "Host": "127.0.0.1",
-                "Port": 1,
-                "Dir": str(tmp_path / "abandon"),
-            },
-            "settings": {},
-        }
-        code, stdout, _ = _run_main(json.dumps(envelope))
-        assert code == 0, f"expected exit 0, got {code}"
-        payload = json.loads(stdout.strip().splitlines()[0])
-        assert payload["output"]["status"] == "no-op", payload

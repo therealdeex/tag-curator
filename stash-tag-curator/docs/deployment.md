@@ -126,79 +126,62 @@ There is no graceful in-run cancel in this version. Cancellation goes through
 Stash's `stopJob`, which sends `SIGKILL` to the plugin process. The curator
 treats that as an interrupted run, not a clean stop.
 
-Because every mutation is journaled before it fires, a kill at any boundary is
-recoverable. On the next curator interaction, the lock is stale and the
-dashboard offers three recovery paths (see below). There is no `CancelRun`
-task, because Stash's sequential job dispatcher would never let a second plugin
-task run mid-run to set a cancel flag.
+A kill at any boundary is safe without any reconciliation step: scene writes
+are idempotent full replacements, `scene_state` checkpoints what actually
+completed, and the stale lock auto-releases when the next run starts. There
+is no CancelRun task (Stash's sequential job dispatcher would never let a
+second plugin task run mid-run to set a cancel flag) and no resume/abandon/
+force-release vocabulary — the next Update Library simply continues.
 
-> **Curate Library Scan/Generate caveat:** when the plugin process is killed
-> during the Scan or Generate phase, the Stash metadata job (scan/generate)
-> may still be running — Stash does not automatically cancel it. On the next
-> run, the plugin does not automatically join or check the orphaned job; the
-> operator should verify the Stash Jobs queue is idle before re-running
-> Curate Library to avoid duplicate work.
+The dashboard dispatches Stash's **Scan** and **Generate** jobs itself
+before the curator task and waits in the browser. Waiting from inside the
+plugin process would self-deadlock on Stash v0.31.1's single serial job
+queue; waiting from the UI is safe. If the browser closes mid-flow, the
+Stash jobs keep running harmlessly — re-run Update Library when they finish.
 
-## Curate Library pipeline
+## Update Library pipeline
 
-The **Curate Library** task runs the complete one-button workflow. Each phase
+The **Update Library** task runs the complete one-button workflow. Each phase
 is sequential and the whole pipeline holds the singleton run lock:
 
-| Phase | Progress | Reversible? | Description |
-|---|---|---|---|
-| Scan | 0.00–0.15 | **No** | Full-library `metadataScan` (real Stash job). Gated by `scan_before_curate`. |
-| Generate | 0.15–0.45 | **No** | `metadataGenerate` with previews/image previews/phashes (real Stash job). Gated by `generate_before_curate`. |
-| Process scenes | 0.45–0.92 | Yes | Identify via stash-box → apply tags → fill-empty metadata → create missing entities → enrich. Four sub-phases: never-processed, stale, failed, enrichment. |
-| Cleanup | 0.92–1.00 | Yes | Delete tags with zero associations everywhere. |
+| Phase | Description |
+|---|---|
+| Never-processed | Identify new scenes via stash-box, apply tags + metadata + entities. |
+| Stale | Re-check scenes out of date against the active dictionary. |
+| Failed | Retry scenes that failed on a previous run. |
+| Affected | Apply dictionary edits to exactly the scenes they touch (after a save). |
+| Enrichment | Refresh performer-derived tags additively across all scenes. |
+| Cleanup | Delete orphaned plugin tags; optionally (opt-in) any tag with zero associations everywhere. |
 
-**Fail-closed:** if Scan or Generate fails (or times out), the pipeline aborts
-before the scene-processing phases. The run is recorded as `failed`.
+`preview=true` (the dashboard's **Preview** button) runs every scene phase as
+a dry-run and skips cleanup — nothing is written to Stash.
 
 **Metadata fill-empty policy:** scene metadata fields (title, date, code,
 details, director, urls, studio, performers) are only written when the scene's
 current value is **empty**. Existing values are never overwritten, even if the
-scrape is more complete or the provider has higher priority.
+scrape is more complete or the provider has higher priority. The one
+non-re-derivable consequence: a wrong fill must be corrected by hand in Stash
+(it is listed in the run result, so it is findable).
 
 **Entity creation caps:** `max_performer_creates_per_run` (default 50) and
 `max_studio_creates_per_run` (default 20) limit how many new entities a single
 run may create. If the planned creation count exceeds either cap, the entire
 entity-creation phase aborts before the first create (no partial batch).
-
-**Entity rollback:** created performers/studios default to **preserve** on
-rollback (not auto-destroyed), because Stash does not guard entity deletion by
-references and auto-destroying a referenced entity would silently corrupt
-scene data. The operator can manually delete created entities after verifying
-they are unreferenced.
+Created entities are never auto-deleted; remove a wrong one manually in Stash.
 
 ## Interrupted runs
 
 A run that was killed or whose process vanished leaves a stale lock in
-`state/curator.db`. The dashboard detects this and shows three operations,
-each a distinct task that dispatches only when no mutation run is active.
+`state/curator.db`. Nothing needs manual recovery: the stale lock
+auto-releases (audited) when the next mutation task starts, and the orphaned
+`running` row is marked `interrupted` in run history. Scene-level progress is
+checkpointed in `scene_state`, so the next Update Library re-derives only
+what never completed — scenes whose writes may have landed are simply
+reprocessed and converge as no-ops.
 
-**Resume Interrupted Run** re-acquires the lock for the same run id. It checks
-that the rules fingerprint, provider fingerprint, and scope still match the
-interrupted run. Pending mutations are reconciled against the live scene state:
-if the scene already matches the proposed set, the row is marked
-`reconciled_applied`; if it still matches the pre-run set, the mutation is
-retried; if it matches neither, the row is marked `conflicted` and skipped. Use
-resume when the kill was external (power loss, OOM, manual `stopJob`) and the
-rules have not changed.
-
-**Abandon Interrupted Run** marks the run `abandoned`, reconciles pending
-mutations so the database is consistent, and force-releases the lock. The run
-stays in history for audit. Use abandon when you want to start fresh with
-different rules or providers.
-
-**Force Release Stale Run** is the operator override. It takes a confirmation
-token (the run id) to prevent accidental release, writes an audit row, and
-deletes the lock without reconciling. Use it only when resume and abandon both
-refuse (for example, a corrupted runs row). The dashboard shows a prominent
-warning that data may be inconsistent afterward.
-
-While any lock exists, active or stale, `Save Mapping Edit` refuses with
-`{error: 'run_lock_active'}`. Rules editing is blocked until the interrupted
-run is resolved.
+While any live lock exists, `Save Mapping Edit` refuses with
+`{error: 'run_lock_active'}`. Rules editing is blocked until the active run
+finishes (a stale lock does not block — it is reclaimed).
 
 ## Live dashboard during a run
 

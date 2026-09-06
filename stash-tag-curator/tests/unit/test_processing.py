@@ -66,7 +66,7 @@ from curator.processing import (
 )
 from curator.rules import Rules
 from curator.state import StateDB
-from tests.harness import MockClient, MockStash
+from tests.harness import GraphQLResponseError, MockClient, MockStash
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +117,12 @@ class StatefulScenesClient:
 
     ``calls`` records every ``submit`` invocation so tests can assert on
     batching, sceneUpdate tag_ids, and operation ordering.
+
+    Missing-id semantics mirror live Stash v0.31.1 (T12 evidence): a batched
+    ``findScenes(ids: [...])`` that references a deleted id fails the WHOLE
+    call with ``"scene with id N not found"``, while ``findScene(id:)``
+    returns a clean null.  Tests that want ghost-scene tolerance exercise
+    the engine's per-scene fallback against exactly this behavior.
     """
 
     def __init__(
@@ -185,6 +191,9 @@ class StatefulScenesClient:
             return {"sceneUpdate": {"id": sid}}
         if sig == "FindScenesPage":
             return self._find_scenes_page(variables)
+        if sig == "FindSceneById":
+            # Live Stash returns a clean null (not an error) for deleted ids.
+            return {"findScene": self._scenes.get(str(variables.get("id")))}
         raise AssertionError(
             f"StatefulScenesClient: no handler for signature={sig!r} "
             f"(variables={variables!r})"
@@ -198,8 +207,22 @@ class StatefulScenesClient:
         page_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Mirror ``GraphQLClient.find_scenes`` for the in-memory scenes."""
+        """Mirror ``GraphQLClient.find_scenes`` for the in-memory scenes.
+
+        Faithful to live Stash v0.31.1: when ``ids`` references a scene the
+        store does not hold, the whole call raises the not-found GraphQL
+        error (no partial results) -- the failure mode behind T12.
+        """
         ids_set = {str(i) for i in ids} if ids else None
+        if ids_set is not None:
+            missing = sorted(ids_set - self._scenes.keys(), key=int)
+            if missing:
+                raise GraphQLResponseError(
+                    f"scene with id {missing[0]} not found",
+                    errors=[{"message": (
+                        f"scene with id {missing[0]} not found"
+                    ), "path": ["findScenes"]}],
+                )
         page = 1
         all_scenes = list(self._scenes.values())
         if ids_set is not None:
@@ -1358,6 +1381,161 @@ class TestScopeSelectors:
 
 
 # ---------------------------------------------------------------------------
+# T12: scenes deleted from Stash skip, never kill, the run
+# ---------------------------------------------------------------------------
+
+
+class TestSceneMissing:
+    """Ghost scenes (referenced by curator state, absent from Stash).
+
+    Live evidence (2026-08-15, run ``curate-library-d7af493aea7203af``):
+    phase ``p2-stale_rules`` died with Stash's own ``scene with id 18433
+    not found`` because ``findScenes(ids: [...])`` fails the WHOLE batch
+    when any id is deleted.  The engine must fall back to per-scene
+    ``FindSceneById`` probes, skip the ghosts as ``scene_missing``, and
+    purge their local state so state-driven scopes stop re-selecting them.
+    """
+
+    def test_stale_rules_scope_survives_ghost_scene(self, state: StateDB) -> None:
+        # Ghost 18433: scene_state says processed under old rules, but the
+        # scene no longer exists in Stash (media churn).  Scene 18434 is a
+        # healthy stale target that must still be processed.
+        state.upsert_scene_state(
+            18433, status="success", last_successful_run_id="run-old",
+            rules_sha="sha-old",
+        )
+        state.upsert_scene_state(
+            18434, status="success", last_successful_run_id="run-old",
+            rules_sha="sha-old",
+        )
+        rules = _build_rules()
+        scene = _minimal_scene(18434, performers=[_performer("p001")])
+        client = StatefulScenesClient([scene])
+        engine, _ = _engine(client, state, rules=rules, settings={
+            "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS},
+        })
+        assert rules.rules_sha != "sha-old"
+
+        dry = engine.run_dry(
+            SCOPE_STALE_RULES, proposed_run_id="prop-t12", run_id="run-t12",
+        )
+
+        # The run completed: the ghost was counted, the real scene proposed.
+        assert dry.skipped.get("scene_missing") == 1
+        assert dry.proposals_written == 1
+        rows = state.connection.execute(
+            "SELECT scene_id FROM dry_run_proposals ORDER BY scene_id",
+        ).fetchall()
+        assert [int(r["scene_id"]) for r in rows] == [18434]
+        # Ghost's scene_state row purged -> future stale/failed scopes stop
+        # selecting it.
+        assert state.connection.execute(
+            "SELECT 1 FROM scene_state WHERE scene_id = 18433",
+        ).fetchone() is None
+        # The disappearance is audited, not silent.
+        attempts = state.connection.execute(
+            "SELECT status FROM processing_attempts WHERE scene_id = 18433",
+        ).fetchall()
+        assert [r["status"] for r in attempts] == ["scene_missing"]
+
+    def test_execute_skips_scene_deleted_after_dry_run(
+        self, state: StateDB,
+    ) -> None:
+        client = StatefulScenesClient(
+            [_minimal_scene(50), _minimal_scene(51)],
+        )
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS},
+        })
+        dry = engine.run_dry(
+            SCOPE_ALL, proposed_run_id="prop-t12b", run_id="run-t12b",
+        )
+        assert dry.proposals_written == 2
+
+        # Media churn between the phases: scene 51 vanishes from Stash.
+        client.scenes.pop("51")
+
+        report = engine.run_execute("prop-t12b", run_id="run-t12b-exec")
+
+        assert report.aborted is False
+        assert report.scenes_skipped.get("scene_missing") == 1
+        assert report.scenes_processed == 1
+        # The ghost's proposal row is terminally skipped, not left proposed.
+        row = state.connection.execute(
+            "SELECT status, skip_reason FROM dry_run_proposals "
+            "WHERE proposed_run_id='prop-t12b' AND scene_id=51",
+        ).fetchone()
+        assert (row["status"], row["skip_reason"]) == ("skipped", "scene_missing")
+
+    def test_purge_expires_other_pending_proposals_for_ghost(
+        self, state: StateDB,
+    ) -> None:
+        # A ghost may be referenced by MORE than one outstanding proposal
+        # set (e.g. an older dry run never executed).  Purging expires every
+        # still-proposed row for the scene, not just the current set's.
+        state.upsert_scene_state(
+            70, status="success", last_successful_run_id="run-old",
+            rules_sha="sha-old",
+        )
+        for prop_id in ("prop-a", "prop-b"):
+            with state._txn():
+                state.connection.execute(
+                    "INSERT INTO dry_run_proposals "
+                    "(proposed_run_id, scene_id, status) VALUES (?, 70, 'proposed')",
+                    (prop_id,),
+                )
+        state.replace_scene_raw_tags_current(
+            70, "run-old", "https://stashdb.example/graphql", ["Blowjob"],
+        )
+
+        client = StatefulScenesClient([])  # scene 70 does not exist in Stash
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS},
+        })
+        dry = engine.run_dry(
+            SCOPE_STALE_RULES, proposed_run_id="prop-t12c", run_id="run-t12c",
+        )
+
+        assert dry.skipped.get("scene_missing") == 1
+        assert dry.proposals_written == 0
+        statuses = state.connection.execute(
+            "SELECT proposed_run_id, status, skip_reason FROM dry_run_proposals "
+            "ORDER BY proposed_run_id",
+        ).fetchall()
+        assert [(r["proposed_run_id"], r["status"], r["skip_reason"])
+                for r in statuses] == [
+            ("prop-a", "skipped", "scene_missing"),
+            ("prop-b", "skipped", "scene_missing"),
+        ]
+        # affected_by_mapping selector no longer picks the ghost up either.
+        assert state.scenes_affected_by_raw_tags(["Blowjob"]) == []
+
+    def test_fetch_error_other_than_not_found_still_raises(
+        self, state: StateDB,
+    ) -> None:
+        state.upsert_scene_state(
+            60, status="success", last_successful_run_id="run-old",
+            rules_sha="sha-old",
+        )
+        client = StatefulScenesClient([_minimal_scene(60)])
+
+        def _boom(**_: Any) -> "Iterator[dict]":
+            raise GraphQLResponseError("internal stash error")
+
+        client.find_scenes = _boom  # type: ignore[assignment,method-assign]
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS},
+        })
+        # Only the not-found error is treated as a ghost; anything else is a
+        # real failure and must propagate.
+        with pytest.raises(GraphQLResponseError, match="internal stash error"):
+            engine.run_dry(
+                SCOPE_STALE_RULES, proposed_run_id="prop-t12d",
+                run_id="run-t12d",
+            )
+
+
+# ---------------------------------------------------------------------------
 # Mutation failure -> pending row preserved (D16)
 # ---------------------------------------------------------------------------
 
@@ -1365,7 +1543,7 @@ class TestScopeSelectors:
 class TestMutationFailure:
     """A failed sceneUpdate leaves the mutation row ``pending`` (D16)."""
 
-    def test_scene_update_failure_records_pending_and_failure(
+    def test_scene_update_failure_writes_no_history_row(
         self, state: StateDB,
     ) -> None:
         scene = _minimal_scene(
@@ -1387,13 +1565,14 @@ class TestMutationFailure:
         report = engine.run_execute("prop-1", run_id="run-1")
         assert report.mutations_applied == 0
         assert report.scenes_skipped.get("mutation_failure") == 1
-        # Mutation row stayed pending (D16 ambiguous-transport contract).
+        # No history row is written for a failed mutation (history records
+        # successes only); the scene is not marked successful, so the next
+        # run re-selects and re-derives it (idempotent convergence).
         row = state.connection.execute(
             "SELECT status FROM mutations WHERE run_id = ? AND scene_id = ?",
             ("run-1", 1),
         ).fetchone()
-        assert row is not None
-        assert row["status"] == "pending"
+        assert row is None
         # scene_state marked failed.
         ss = state.connection.execute(
             "SELECT status FROM scene_state WHERE scene_id = 1",

@@ -10,13 +10,15 @@ Design contracts enforced here:
 
 * **Optimistic safety** (D10/Issue 7): there is NO separate snapshot phase.
   For every scene the engine fetches the *current* tags immediately before
-  mutation, journals the actual current state as ``old_tag_ids``, then either
-  mutates (``sceneUpdate`` full replacement) or skips on conflict / idempotency.
-  A SIGKILL is therefore recoverable at every boundary (D16 pending row +
-  resume-time reconciliation).
-* **No unjournaled mutations** (D16/Issue 8): even marker-only additions on a
-  PRESERVE-status scene go through ``sceneUpdate`` full-replacement of
-  ``current_tags ∪ marker_ids``.  Every tag change is recoverable.
+  mutation, then either mutates (``sceneUpdate`` full replacement) or skips
+  on conflict / idempotency.  A SIGKILL is recoverable at every boundary
+  WITHOUT journal reconciliation: an ambiguous scene's ``scene_state`` was
+  never marked successful, so the next run re-selects and re-derives it.
+* **Every change converges** (D16 successor): all mutations go through
+  ``sceneUpdate`` full-replacement of the desired final set; the successful
+  set is recorded to ``scene_state`` and the pre/post tag sets to the
+  ``mutations`` history table (diff view only -- crash safety does not
+  depend on it).
 * **Idempotent** (D3): markers are presence-only (no timestamps in names); the
   final tag-id set is compared to current and ``sceneUpdate`` is skipped when
   they are equal.  Re-running a completed run therefore mutates nothing.
@@ -45,8 +47,9 @@ The module targets Stash v0.31.1 and is import-safe without a live Stash.
 from __future__ import annotations
 
 import json
+import re
 import sys
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -57,11 +60,13 @@ from .enrichment import (
     derive_country_tags,
     derive_ethnicity_tags,
     derive_height_tags,
+    derive_jav_tag,
     derive_married_irl,
     derive_weight_tags,
 )
 from .graphql_queries import (
     FIND_SCENES_PAGE,
+    FIND_SCENE_BY_ID,
     SCENE_UPDATE,
 )
 from .journal import Journal
@@ -190,7 +195,8 @@ class DryRunReport:
         scope: the scope selector name.
         scenes_inspected: count of scenes streamed from Stash.
         proposals_written: count of rows written to ``dry_run_proposals``.
-        skipped: per-skip-reason counts (e.g. ``{"transient": 3}``).
+        skipped: per-skip-reason counts (e.g. ``{"transient": 3,
+            "scene_missing": 1}``).
         unmapped_tags: de-duplicated raw tags that did not resolve.
     """
 
@@ -236,7 +242,8 @@ class ExecuteReport:
         proposed_run_id: the proposal set being executed.
         scenes_processed: count of scenes that completed the full pipeline.
         scenes_skipped: per-skip-reason counts (``conflict``, ``expired``,
-            ``missing_tags``, ``idempotent_noop``).
+            ``missing_tags``, ``idempotent_noop``, ``mutation_failure``,
+            ``scene_missing``).
         mutations_applied: count of ``sceneUpdate`` calls that succeeded.
         conflicts: list of ``{"scene_id": ..., "reason": ...}`` entries.
         aborted: True if the entire execute aborted (global revalidation fail).
@@ -394,6 +401,23 @@ def _fingerprint_tag_ids(ids: Iterable[str]) -> str:
     return json.dumps(sorted({str(i) for i in ids}), separators=(",", ":"))
 
 
+# Stash v0.31.1 fails the WHOLE findScenes(ids: [...]) call with this GraphQL
+# error when any requested id no longer exists (verified live 2026-08-15,
+# T12).  findScene(id:) on the same id returns a clean null, which is the
+# per-scene probe used to separate ghosts from real scenes.
+_SCENE_NOT_FOUND_RE = re.compile(r"scene with id \d+ not found", re.IGNORECASE)
+
+
+def _is_scene_not_found_error(exc: BaseException) -> bool:
+    """True for Stash's not-found GraphQL error from ``findScenes(ids:)``.
+
+    Message matching is acceptable here because the plugin targets exactly
+    Stash v0.31.1 (standing constraint); any other error re-raises so real
+    failures still fail loud.
+    """
+    return bool(_SCENE_NOT_FOUND_RE.search(str(exc)))
+
+
 # ---------------------------------------------------------------------------
 # RebuildEngine
 # ---------------------------------------------------------------------------
@@ -412,8 +436,8 @@ class RebuildEngine:
     * :meth:`run_dry` -- writes ``dry_run_proposals`` rows; performs NO
       mutations.
     * :meth:`run_execute` -- revalidates a proposal set globally then
-      per-scene, journals pending mutations, calls ``sceneUpdate`` (full
-      replacement), marks applied, records ``scene_state``.
+      per-scene, calls ``sceneUpdate`` (full replacement), records
+      ``scene_state`` and the mutation history row.
 
     Both run sequentially (no intra-run parallelism; D6).
     """
@@ -596,21 +620,89 @@ class RebuildEngine:
     # Scene streaming
     # ------------------------------------------------------------------
 
-    def _iter_scenes(self, scope: Scope) -> Iterator[dict[str, Any]]:
+    def _find_scene_by_id(self, scene_id: "int | str") -> "dict[str, Any] | None":
+        """Fetch one scene via ``FindSceneById``; ``None`` when it is gone.
+
+        Stash returns ``{"findScene": null}`` (not an error) for a deleted
+        scene, which is what makes this a reliable ghost probe.  Transport and
+        GraphQL errors propagate -- only true absence maps to ``None``.
+        """
+        data = self._client.submit(FIND_SCENE_BY_ID, {"id": str(scene_id)})
+        scene = (data or {}).get("findScene") if isinstance(data, Mapping) else None
+        return dict(scene) if isinstance(scene, Mapping) else None
+
+    def _fetch_scenes_by_ids(
+        self,
+        ids: Sequence[int | str],
+        *,
+        on_scene_missing: "Callable[[int], None] | None" = None,
+        after_chunk: "Callable[[], None] | None" = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch scenes for an explicit id list, tolerating ghosts (T12).
+
+        The fast path is one batched ``findScenes(ids: [...])`` call per
+        ``batch_size`` chunk.  When Stash rejects a chunk because an id was
+        deleted from the library ("scene with id N not found"), the chunk is
+        re-fetched per-scene via ``FindSceneById``; scenes that return null
+        are ghosts -- ``on_scene_missing(scene_id)`` fires for each and the
+        rest of the chunk is returned normally.  Any other error propagates
+        (a batch failure that is not a not-found is a real failure).
+        """
+        id_list = [str(i) for i in ids]
+        out: list[dict[str, Any]] = []
+        for start in range(0, len(id_list), self._batch_size):
+            chunk = id_list[start : start + self._batch_size]
+            try:
+                scenes = list(
+                    self._client.find_scenes(
+                        ids=chunk, page_size=self._batch_size
+                    )
+                )
+            except Exception as exc:
+                if not _is_scene_not_found_error(exc):
+                    raise
+                scenes = []
+                for sid in chunk:
+                    scene = self._find_scene_by_id(sid)
+                    if scene is None:
+                        if on_scene_missing is not None:
+                            on_scene_missing(int(sid))
+                        continue
+                    scenes.append(scene)
+            out.extend(
+                dict(s)
+                for s in scenes
+                if isinstance(s, Mapping) and s.get("id") is not None
+            )
+            if after_chunk is not None:
+                after_chunk()
+        return out
+
+    def _iter_scenes(
+        self,
+        scope: Scope,
+        *,
+        on_scene_missing: "Callable[[int], None] | None" = None,
+    ) -> Iterator[dict[str, Any]]:
         """Yield scene dicts from Stash according to the scope selector.
 
         For state-driven scopes (``affected_by_mapping`` / ``stale_rules`` /
         ``failed``) the engine has already populated ``scope.target_scene_ids``
-        and we pass them via ``find_scenes(ids=...)``.  For ``all`` /
-        ``never_processed`` / ``enrich_only`` we stream every scene and filter
-        against ``scene_state`` in Python (Stash's ``scene_filter`` cannot
-        express the "no CURATOR: Core Processed tag" predicate cleanly).
+        and we pass them via :meth:`_fetch_scenes_by_ids` -- the fetch layer
+        that detects scenes deleted from Stash (ghosts) and reports them
+        through ``on_scene_missing`` instead of letting Stash's not-found
+        error kill the run (T12).  For ``all`` / ``never_processed`` /
+        ``enrich_only`` we stream every scene and filter against
+        ``scene_state`` in Python (Stash's ``scene_filter`` cannot express
+        the "no CURATOR: Core Processed tag" predicate cleanly).
         """
         ids = scope.target_scene_ids
         if ids is not None:
             if not ids:
                 return
-            yield from self._client.find_scenes(ids=ids, page_size=self._batch_size)
+            yield from self._fetch_scenes_by_ids(
+                ids, on_scene_missing=on_scene_missing
+            )
             return
         # Whole-library stream.  ``never_processed`` filtering happens in the
         # caller (:meth:`_should_process_scene`) so we can emit progress.
@@ -827,6 +919,18 @@ class RebuildEngine:
 
         # Tattoo / piercing presence
         tags.extend(derive_body_presence_tags(perf_list))
+
+        # JAV identification (scene-level signals: studio list, URLs, code,
+        # file basename). Absent config -> subsystem disabled.
+        jav_cfg = derived.get("jav_detection") or {}
+        if isinstance(jav_cfg, Mapping) and jav_cfg:
+            try:
+                jav_tag = derive_jav_tag(scene, jav_cfg)
+            except (TypeError, ValueError) as exc:
+                failures.append({"subsystem": "jav", "reason": str(exc)})
+            else:
+                if jav_tag:
+                    tags.append(jav_tag)
 
         # De-duplicate while preserving first-seen order.
         seen: set[str] = set()
@@ -1180,6 +1284,34 @@ class RebuildEngine:
             scene_id, run_id, "failed", provider_match_status, error_message
         )
 
+    def _record_scene_missing(
+        self, scene_id: int, run_id: str, skips: dict[str, int]
+    ) -> None:
+        """T12: a scene absent from Stash is a skip, never a crash.
+
+        Counts the ghost under the ``scene_missing`` skip reason, appends a
+        ``processing_attempts`` audit row (so the disappearance is visible in
+        history) and purges the scene's local CURRENT state so future
+        state-driven scopes stop re-selecting it.
+        """
+        skips["scene_missing"] = skips.get("scene_missing", 0) + 1
+        self._record_processing_attempt(
+            scene_id, run_id, "scene_missing", "scene_missing",
+            error_message="scene not found in Stash; skipped (deleted from library)",
+        )
+        self._purge_missing_scene_state(scene_id)
+
+    def _purge_missing_scene_state(self, scene_id: int) -> None:
+        """Drop local current-state rows for a confirmed ghost scene (T12).
+
+        Defensive: a purge failure must not kill the run -- the ghost would
+        simply be re-skipped on the next run (the simpler fallback semantic).
+        """
+        try:
+            self._state.purge_missing_scene(scene_id)
+        except Exception:
+            pass
+
     def _replace_scene_raw_tags(
         self,
         scene_id: int,
@@ -1216,45 +1348,40 @@ class RebuildEngine:
     # Mutation primitives (D16)
     # ------------------------------------------------------------------
 
-    def _journal_pending(
+    def _record_mutation_history(
         self,
         run_id: str,
         scene_id: int,
         old_tag_ids: Sequence[str],
         new_tag_ids: Sequence[str],
-        provider_status: str,
+        old_tag_names: Sequence[str],
+        new_tag_names: Sequence[str],
         raw_tags_payload: Sequence[Mapping[str, Any]],
         *,
         old_metadata: "dict[str, Any] | None" = None,
         new_metadata: "dict[str, Any] | None" = None,
     ) -> None:
-        """D16 PENDING: write a ``mutations`` row BEFORE the GraphQL call."""
+        """Record a SUCCESSFUL mutation as history (post-write).
+
+        One row per (run_id, scene_id), written after the ``sceneUpdate``
+        confirms success.  There is no pre-write pending state: an ambiguous
+        scene after a crash is simply reprocessed on the next run (the
+        pipeline is idempotent), so the journal is pure history -- it powers
+        the run-detail diff view and audits.
+        """
         self._journal.record_mutation(
             run_id=run_id,
             scene_id=scene_id,
             old_tag_ids=list(old_tag_ids),
             new_tag_ids=list(new_tag_ids),
-            status="pending",
+            status="applied",
             raw_tags=[dict(r) for r in raw_tags_payload],
             rules_sha=self._rules_sha,
+            old_tag_names=list(old_tag_names),
+            new_tag_names=list(new_tag_names),
             old_metadata=old_metadata,
             new_metadata=new_metadata,
         )
-
-    def _mark_mutation_applied(self, run_id: str, scene_id: int) -> None:
-        """D16 APPLIED: UPDATE the pending row after a confirmed mutation.
-
-        ``Journal.record_mutation`` INSERTs only; the applied transition is an
-        UPDATE so we issue it directly via the state connection (the journal
-        does not yet expose ``mark_applied`` -- see T19 for the rollback-aware
-        wrapper).  Idempotent: re-applying is a no-op.
-        """
-        with self._state._txn():
-            self._state.connection.execute(
-                "UPDATE mutations SET status = 'applied', applied_at = ? "
-                "WHERE run_id = ? AND scene_id = ? AND status = 'pending'",
-                (_now_iso(), run_id, scene_id),
-            )
 
     def _scene_update(
         self,
@@ -1344,7 +1471,12 @@ class RebuildEngine:
         self._emit_progress_scaled(0, denom, floor=0.0, cap=progress_cap)
 
         batch: list[dict[str, Any]] = []
-        for scene in self._iter_scenes(scope_obj):
+        for scene in self._iter_scenes(
+            scope_obj,
+            on_scene_missing=lambda sid: self._record_scene_missing(
+                sid, tracking_run_id, report.skipped
+            ),
+        ):
             if not isinstance(scene, Mapping):
                 continue
             seen_count += 1
@@ -1414,6 +1546,24 @@ class RebuildEngine:
                  "provider_scene_id": getattr(t, "provider_scene_id", "")}
                 for t in result.raw_tags
             ]
+            # Record the observed raw tags so the Dictionary/review queue
+            # works from the FIRST dry run (previously they were only written
+            # on execute success, which dead-ended the unmapped-tags workflow
+            # on a fresh install).  This writes internal state only -- the
+            # dry-run contract of "no Stash mutations" is unaffected.  Only
+            # non-empty observations are written: a transient/no-match result
+            # must not wipe the good rows a prior successful run recorded.
+            if raw_tags_payload:
+                dry_tags_by_provider: dict[str, list[str]] = {}
+                for entry in raw_tags_payload:
+                    provider = str(entry.get("provider") or "")
+                    value = str(entry.get("value") or "")
+                    if provider and value.strip():
+                        dry_tags_by_provider.setdefault(provider, []).append(value)
+                for provider, values in dry_tags_by_provider.items():
+                    self._state.replace_scene_raw_tags_current(
+                        sid, proposed_run_id, provider, values,
+                    )
             # Compute fill-empty metadata diff (Milestone 1 / Workstream A3).
             # Only UNIQUE_MATCH scenes carry metadata; for other statuses
             # ``result.metadata`` is None and the diff is empty.
@@ -1583,16 +1733,15 @@ class RebuildEngine:
         # Batch the findScenes lookups so we honour the per-scene fresh-fetch
         # requirement of D10 (execute-from-dryrun needs a fresh findScenes(ids)
         # per batch -- NOT the streaming page-fetched tags from the dry-run).
+        # The fetch tolerates scenes deleted between dry-run and execute
+        # (T12): ghosts simply stay out of the index and are skipped below.
         all_scene_ids = [str(p["scene_id"]) for p in proposals]
-        scene_index: dict[str, dict[str, Any]] = {}
-        for i in range(0, len(all_scene_ids), self._batch_size):
-            batch_ids = all_scene_ids[i : i + self._batch_size]
-            for scene in self._client.find_scenes(
-                ids=batch_ids, page_size=self._batch_size
-            ):
-                if isinstance(scene, Mapping) and scene.get("id") is not None:
-                    scene_index[str(scene["id"])] = dict(scene)
-            self._heartbeat(actual_run_id)
+        fetched = self._fetch_scenes_by_ids(
+            all_scene_ids, after_chunk=lambda: self._heartbeat(actual_run_id),
+        )
+        scene_index: dict[str, dict[str, Any]] = {
+            str(scene["id"]): scene for scene in fetched
+        }
 
         now_dt = datetime.now(timezone.utc)
         for proposal in proposals:
@@ -1602,9 +1751,11 @@ class RebuildEngine:
             sid = int(proposal["scene_id"])
             scene = scene_index.get(sid_str)
             if scene is None:
-                # Scene vanished between dry-run and execute -> skip.
-                report.scenes_skipped["scene_missing"] = (
-                    report.scenes_skipped.get("scene_missing", 0) + 1
+                # Scene vanished between dry-run and execute -> skip (T12):
+                # count it, audit it, and purge local state so state-driven
+                # scopes stop re-selecting the ghost.
+                self._record_scene_missing(
+                    sid, actual_run_id, report.scenes_skipped
                 )
                 self._mark_proposal_status(
                     proposed_run_id, sid, "skipped", skip_reason="scene_missing",
@@ -1756,10 +1907,16 @@ class RebuildEngine:
                 )
                 continue
 
-            # D16 PENDING: journal the intended mutation BEFORE the wire call.
-            # Include metadata old/new for rollback (Milestone 2).
+            # Capture pre-run tag names for the history diff (before any
+            # mutation); old ids = the scene's current tag ids.
+            id_to_old_name = {
+                tid: name for name, tid in scene_name_to_id.items()
+            }
+            old_tag_names = [
+                id_to_old_name.get(tid, tid) for tid in current_tag_ids
+            ]
             raw_tags_payload = json.loads(proposal.get("raw_tags_json") or "[]")
-            # Build journal payloads: old = current scene state for the fields
+            # Build history payloads: old = current scene state for the fields
             # being changed; new = the values being written.
             journal_old_meta = None
             journal_new_meta = None
@@ -1773,21 +1930,15 @@ class RebuildEngine:
                     for k in meta_update_fields
                 }
                 journal_new_meta = dict(meta_update_fields)
-            self._journal_pending(
-                run_id=actual_run_id,
-                scene_id=sid,
-                old_tag_ids=current_tag_ids,
-                new_tag_ids=proposed_ids,
-                provider_status=proposal.get("provider_match_status") or "",
-                raw_tags_payload=raw_tags_payload,
-                old_metadata=journal_old_meta,
-                new_metadata=journal_new_meta,
-            )
+            new_tag_names = [
+                name for name in proposed_names
+                if name  # proposed order preserved for the diff view
+            ]
 
-            # D16 MUTATE: sceneUpdate full-replacement + metadata fields.
+            # MUTATE: sceneUpdate full-replacement + metadata fields.
             # If tags are idempotent, we still send them (full-replacement =
             # same set = no-op for tags) alongside the metadata fields.  This
-            # avoids a separate mutation call and keeps the journal accurate.
+            # avoids a separate mutation call.
             try:
                 self._scene_update(
                     sid, proposed_ids,
@@ -1795,9 +1946,11 @@ class RebuildEngine:
                 )
                 mutation_ok = True
             except Exception as exc:
-                # D16 ambiguous transport failure -- mutation MAY have applied.
-                # We leave the row ``pending`` (resume reconciles per D16) and
-                # record the failure for the dashboard.  We do NOT roll back.
+                # Ambiguous transport failure -- the mutation MAY have applied.
+                # Nothing is reconciled here: the scene's state is not marked
+                # successful, so the next run re-selects and re-derives it
+                # (idempotent full-replacement converges).  No journal row is
+                # written for failures.
                 mutation_ok = False
                 report.scenes_skipped["mutation_failure"] = (
                     report.scenes_skipped.get("mutation_failure", 0) + 1
@@ -1835,8 +1988,18 @@ class RebuildEngine:
                 )
                 self._store_applied_metadata(proposed_run_id, sid, applied_meta_result)
 
-            # D16 APPLIED: confirm the mutation row.
-            self._mark_mutation_applied(actual_run_id, sid)
+            # History: record the successful mutation (post-write).
+            self._record_mutation_history(
+                run_id=actual_run_id,
+                scene_id=sid,
+                old_tag_ids=current_tag_ids,
+                new_tag_ids=proposed_ids,
+                old_tag_names=old_tag_names,
+                new_tag_names=new_tag_names,
+                raw_tags_payload=raw_tags_payload,
+                old_metadata=journal_old_meta,
+                new_metadata=journal_new_meta,
+            )
             if not tags_idempotent:
                 report.mutations_applied += 1
             report.scenes_processed += 1

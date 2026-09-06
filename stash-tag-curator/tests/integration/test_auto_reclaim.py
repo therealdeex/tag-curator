@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from curator.main import TaskContext, _run_rebuild_family
+from curator.main import TaskContext, _run_curate_library
 from curator.state import StateDB
 
 
@@ -67,28 +67,33 @@ def ctx_and_state(tmp_path: Path) -> "tuple[TaskContext, StateDB]":
     return ctx, state
 
 
-class TestAutoReclaimOnRebuild:
-    def test_dry_rebuild_reclaims_stale_lock_and_succeeds(self, ctx_and_state) -> None:
+def _seed_dead_run(state: StateDB, run_id: str) -> None:
+    """Seed a stale lock + orphaned 'running' row, as if a prior run was
+    SIGKILL'd mid-flight."""
+    state.acquire_lock(run_id, "curate_library", "sha-dead")
+    with state._txn():  # noqa: SLF001
+        state.connection.execute(
+            "INSERT INTO runs "
+            "(run_id, operation, status, rules_sha, started_at, ended_at, "
+            " scope_json, totals_json, error_message) "
+            "VALUES (?, 'curate_library', 'running', ?, ?, NULL, NULL, NULL, NULL)",
+            (run_id, "sha-dead", datetime.now(timezone.utc).isoformat()),
+        )
+
+
+class TestAutoReclaimOnCurate:
+    def test_curate_reclaims_stale_lock_and_succeeds(self, ctx_and_state) -> None:
         ctx, state = ctx_and_state
-        # Seed a stale lock + orphaned 'running' row, as if a prior run was
-        # SIGKILL'd mid-flight.
-        state.acquire_lock("dry_rebuild-killedprior", "dry_rebuild", "sha-dead")
-        with state._txn():  # noqa: SLF001
-            state.connection.execute(
-                "INSERT INTO runs "
-                "(run_id, operation, status, rules_sha, started_at, ended_at, "
-                " scope_json, totals_json, error_message) "
-                "VALUES (?, 'dry_rebuild', 'running', ?, ?, NULL, NULL, NULL, NULL)",
-                ("dry_rebuild-killedprior", "sha-dead",
-                 datetime.now(timezone.utc).isoformat()),
-            )
+        _seed_dead_run(state, "curate-killedprior")
         _backdate_heartbeat(state, 600)
 
-        # A DryRebuild now would have raised RuntimeError("could not acquire
-        # run lock ...") before the fix.  With auto-reclaim it must succeed.
-        ctx.args["task"] = "DryRebuild"
-        result = _run_rebuild_family(ctx, "dry_rebuild")
-        assert "dry_run" in result
+        # A curate run now would have raised RuntimeError("could not acquire
+        # run lock ...") without auto-reclaim.  With it, the stale lock is
+        # reclaimed and the run succeeds.
+        ctx.args["task"] = "CurateLibrary"
+        ctx.args["confirmed"] = "true"
+        result = _run_curate_library(ctx)
+        assert "scene_phases" in result
 
         # The new run completed and released the lock in its `finally`, so the
         # singleton is now free (the killed run's lock was reclaimed, not left).
@@ -97,23 +102,23 @@ class TestAutoReclaimOnRebuild:
         # The orphaned runs row was reconciled to 'interrupted'.
         row = state.connection.execute(
             "SELECT status, error_message FROM runs "
-            "WHERE run_id = ?", ("dry_rebuild-killedprior",)
+            "WHERE run_id = ?", ("curate-killedprior",)
         ).fetchone()
         assert row["status"] == "interrupted"
-        assert "auto-reclaimed" in (row["error_message"] or "")
 
         # The reclaim was audited.
         audit = state.connection.execute(
             "SELECT released_run_id FROM forced_release_audit"
         ).fetchone()
-        assert audit["released_run_id"] == "dry_rebuild-killedprior"
+        assert audit["released_run_id"] == "curate-killedprior"
 
-    def test_dry_rebuild_does_not_reclaim_live_lock(self, ctx_and_state) -> None:
+    def test_curate_does_not_reclaim_live_lock(self, ctx_and_state) -> None:
         ctx, state = ctx_and_state
         # A fresh (live) lock -- heartbeat is current, not back-dated.
-        state.acquire_lock("dry_rebuild-live", "dry_rebuild", "sha-live")
-        ctx.args["task"] = "DryRebuild"
+        state.acquire_lock("curate-live", "curate_library", "sha-live")
+        ctx.args["task"] = "CurateLibrary"
+        ctx.args["confirmed"] = "true"
         with pytest.raises(RuntimeError, match="could not acquire run lock"):
-            _run_rebuild_family(ctx, "dry_rebuild")
+            _run_curate_library(ctx)
         # The live lock is untouched.
-        assert state.current_lock()["run_id"] == "dry_rebuild-live"
+        assert state.current_lock()["run_id"] == "curate-live"

@@ -1,18 +1,18 @@
 # Stash Tag Curator
 
-A hybrid raw+UI StashApp plugin for **Stash v0.31.1** that curates scene tags
-and metadata from provider data using configurable mapping rules. It scans for
-new media, generates previews and perceptual hashes, identifies scenes via
-stash-box, applies tags, fills missing scene metadata (title, date, details,
-studio, performers), creates missing performers and studios, enriches from
-performer metadata, cleans up orphan tags, and records enough history to roll
-any run back. Operations are exposed as Stash tasks and through a dashboard UI
-route.
+A hybrid raw+UI StashApp plugin for **Stash v0.31.1** that keeps your scene
+tags standardized: it identifies scenes via stash-box, translates provider
+tags into your taxonomy through an editable dictionary, fills missing scene
+metadata, creates missing performers and studios, and removes orphaned
+plugin tags. One button does it all — **Update Library** — and running it
+again is always safe.
 
-Every destructive dashboard operation requires explicit confirmation. Scene
-workflows calculate and journal a proposal before execution, and cleanup
-deletions are journaled for undo. Active state, rules, and rollback history
-live outside the plugin package so a plugin upgrade never overwrites your data.
+The library's tag state is *derived data*: it is recomputed from scene
+content, provider data, and your dictionary on every run. A wrong run is
+fixed by correcting the dictionary and re-running — there is no rollback,
+no recovery vocabulary, and nothing to configure after a crash. Runs are
+resumable: if a run is killed, the next Update Library continues where it
+left off.
 
 - **Interface:** raw Python task + UI route
 - **Target:** Stash v0.31.1
@@ -20,10 +20,9 @@ live outside the plugin package so a plugin upgrade never overwrites your data.
 - **Data directory:** `<server_connection.Dir>/stash-tag-curator-data/`
 - **Default rules:** `config/default-tag-rules.yaml` (immutable, v3 schema)
 - **Active rules:** `<data-dir>/tag-rules.yml`
-- **Rule schema:** `config/tag-rules.schema.json`
 
-> Companion docs: [deployment](docs/deployment.md), [v2 to v3 migration](docs/migration.md),
-> [security posture](docs/security.md).
+> Companion docs: [plan](docs/plan.md) (design rationale),
+> [deployment](docs/deployment.md), [security posture](docs/security.md).
 
 
 ## How it works
@@ -33,17 +32,40 @@ The curator reads provider metadata for your scenes through Stash's
 each one through the active v3 rules file into a canonical tag set. It then
 writes that set back with Stash's full-replacement `sceneUpdate`, preserving
 any tag whose name carries a protected prefix (default `MANUAL:`) or that
-already belongs to the canonical taxonomy.
+already belongs to the canonical taxonomy. Empty metadata fields (title,
+date, code, details, director, urls) are filled but **never overwritten**.
 
-Each scene is mutated optimistically through a crash-safe state machine. A
-`mutations` row is written to SQLite before every GraphQL call, then reconciled
-on resume if the task was killed mid-run. If you stop a run, the dashboard
-offers three recovery paths: resume from the last checkpoint, abandon the run
-(keeping its history), or force-release a stale lock.
+Because every scene write is a full replacement of the desired final set,
+re-running a scene is idempotent: unchanged scenes are detected and skipped
+with zero API calls. This is what makes "just re-run it" the repair tool for
+everything.
 
-Cancellation is SIGKILL-based through Stash's `stopJob`. There is no graceful
-in-run cancel in this version; see [deployment](docs/deployment.md#cancellation)
-for the full model.
+Protected prefixes are the exception: tags like `MANUAL: Foo` are yours and
+are never touched by any phase.
+
+### JAV identification
+
+Scenes identified as JAV are tagged `JAV` (configurable via
+`derived.jav_detection.tag_name`) on every run, so the tag survives the
+full-replacement writes. Identification is any-signal-wins over four
+deterministic signals, evaluated in the enrichment phase:
+
+1. the scene's studio is in the curated `studio_names` list
+   (case-insensitive);
+2. a scene URL contains one of the `url_substrings` (JAV databases such as
+   `r18.dev` or `javdatabase.com`);
+3. the scene `code` matches `code_pattern` (the canonical `ABP-987`
+   notation) — suppressed for studios in `code_exempt_studios`, whose
+   western catalog codes share the same notation (e.g. Evil Angel's
+   `OO-0087`);
+4. when the code is absent or non-matching, the file's basename starts
+   with a code matching `path_code_pattern` (covers unscraped scenes whose
+   code lives only in the filename, e.g. `VKO-209 ....mp4`).
+
+The block lives in the active rules file under `derived:`; removing it
+disables the subsystem. To override a decision you disagree with, rename
+the tag on the scene to a protected name (e.g. `MANUAL: JAV`) — protected
+tags are never removed or re-derived.
 
 
 ## Install
@@ -76,235 +98,132 @@ GitHub Pages (or equivalent) source index:
 3. Reload plugins. The runtime dependency install from Option A step 2 still
    applies if your Stash host does not already have PyYAML.
 
-The release archive is produced by `scripts/package_plugin.py`. It contains the
-manifest and all referenced files at the archive root (no parent folder), with
-a SHA-256 recorded in `dist/index.fragment.yml`. See
+The release archive is produced by `scripts/package_plugin.py`. See
 [deployment](docs/deployment.md#packaging-a-release) for the build command.
 
-After either install path, run the **Preflight** task (or the standalone
-`scripts/host_preflight.py` runbook) before trusting the plugin with mutations.
-The preflight is dry-run only and verifies version, stash-box config, scrape
-connectivity, UI route registration, and a zero-mutation rebuild. See
-[deployment](docs/deployment.md#host-preflight) for the runbook.
+After installing, run the **Preflight** task once (read-only) to verify
+version, stash-box config, and connectivity.
 
 
-## Configuration
+## Use
 
-Most curator behavior is driven by the active rules file. The plugin settings
-below live in **Settings > Plugins > stash-tag-curator** and tune runtime
-behavior. Newer settings use native BOOLEAN and NUMBER types; the original
-six remain STRING for backward compatibility.
+Open the dashboard from the **Tag Curator** nav tile. Two tabs:
+
+- **Home** — status, the **Update Library** button (plus a **Preview** that
+  reports what would change without writing anything), an attention list
+  (interrupted runs, dictionary decisions, failures), recent runs with
+  per-run change summaries, and a collapsed details section.
+- **Dictionary** — every provider tag and its translation. This is where you
+  teach the curator: each undecided tag gets three plain choices
+  (**Translate** / **Keep as-is** / **Hide**), with fuzzy suggestions, batch
+  multi-select, and keyboard triage (`j/k` move, `t` translate, `s` keep,
+  `h` hide, `x` select). Decisions are staged locally and saved in one batch;
+  afterwards the dashboard reports how many scenes the edit touches and
+  offers a scoped **Update those scenes now** pass.
+
+**Update Library** runs the full pass after one explicit confirmation:
+
+1. *(optional, on by default)* Stash **Scan** and **Generate** so new files
+   have fingerprints and previews — the dashboard dispatches these itself
+   and waits, because a plugin task that waits on a job queued behind itself
+   deadlocks on Stash's serial queue;
+2. identifies never-processed scenes via stash-box;
+3. re-checks scenes that are out of date against your dictionary;
+4. retries scenes that failed previously;
+5. applies dictionary edits to the scenes they affect (after a save);
+6. refreshes performer-derived tags (cast size, demographics, era, body);
+7. removes orphaned plugin tags — and, if you opt in on the confirmation,
+   any other tag whose usage count is zero everywhere.
+
+When the run finishes, the result card shows exactly what changed — scenes
+updated, scenes already correct, failures, tags removed — and a
+**Review changes** list with per-scene tag diffs.
+
+If a run is interrupted (Stash restart, SIGKILL), the stale lock
+auto-releases and the next Update Library resumes from its checkpoints.
+There is nothing to recover manually.
+
+### Tasks
+
+The manifest exposes seven tasks: **Update Library**, **Preview Update
+Library**, **Save Dictionary Edit**, **Validate Dictionary**, **Preflight**,
+**Refresh Data**, and **Run Detail**. Clicking Update Library from Stash's
+generic Tasks page (which cannot pass arguments) is a safe no-op that points
+at the dashboard — only the dashboard, after its confirmation modal,
+dispatches destructive work.
+
+### Configuration
+
+Plugin settings live in **Settings > Plugins > stash-tag-curator**:
 
 | Setting | Type | Default | Purpose |
 |---|---|---|---|
 | `stash_api_key` | STRING | blank | API key for authenticated local GraphQL calls. Leave blank for unauthenticated localhost. |
 | `enabled_providers` | STRING | `stashdb,tpdb` | Comma-separated provider keys used during enrichment. |
 | `default_provider_batch_size` | STRING | `50` | Scenes sent to each provider lookup per request. |
-| `dry_run_default` | STRING | `true` | When `true`, destructive tasks default to dry-run unless overridden. |
-| `strict_version` | STRING | `true` | When `true`, refuses to run against mismatched rule-schema versions. |
-| `preserve_protected` | STRING | `true` | When `true`, tags with protected prefixes (e.g. `MANUAL:`) are never removed. |
-| `provider_priority` | STRING | blank | Comma-separated provider tokens in priority order (highest first), e.g. `stashdb,tpdb`. Controls metadata-field merge tie-breaking. When empty, discovery order is used. |
-| `max_performer_creates_per_run` | NUMBER | `50` | Max new performers created per run. Creation aborts before the first create if exceeded. |
+| `strict_version` | STRING | `true` | Refuses to run against mismatched rule-schema versions. |
+| `preserve_protected` | STRING | `true` | Tags with protected prefixes (e.g. `MANUAL:`) are never removed. |
+| `provider_priority` | STRING | blank | Provider tokens in priority order for metadata-field merge tie-breaking. |
+| `max_performer_creates_per_run` | NUMBER | `50` | Max new performers created per run. |
 | `max_studio_creates_per_run` | NUMBER | `20` | Max new studios created per run. |
-| `scan_before_curate` | BOOLEAN | `true` | When `true`, Curate Library triggers a full-library metadata scan before processing. **Not reversible** through plugin rollback. |
-| `generate_before_curate` | BOOLEAN | `true` | When `true`, Curate Library generates previews/image previews/phashes before processing. **Not reversible.** |
-| `generate_previews` | BOOLEAN | `true` | Generate video previews during the Generate phase. |
-| `generate_image_previews` | BOOLEAN | `true` | Generate animated image previews during the Generate phase. |
-| `generate_phashes` | BOOLEAN | `true` | Generate perceptual hashes during the Generate phase. |
-| `stash_job_poll_interval_seconds` | NUMBER | `5` | How often to poll findJob while waiting for Scan/Generate. |
-| `scan_timeout_minutes` | NUMBER | `60` | Max minutes to wait for a Scan job before the run is marked incomplete. |
-| `generate_timeout_minutes` | NUMBER | `120` | Max minutes to wait for a Generate job. |
-
-### stash-box must be configured in Stash
-
-The curator does not store or read stash-box credentials. It calls Stash's
-stash-box scrape through the configured endpoints, and Stash applies the API
-keys server-side. Before the first rebuild:
-
-1. Add at least one endpoint under **Settings > Metadata Providers >
-   Stash-box endpoints** with its name, endpoint URL, and API key.
-2. Run **Preflight** to confirm the endpoints resolve and a single-scene
-   scrape succeeds.
+| `generate_previews` | BOOLEAN | `true` | Video previews during the dashboard's Generate step. |
+| `generate_image_previews` | BOOLEAN | `true` | Animated image previews during the Generate step. |
+| `generate_phashes` | BOOLEAN | `true` | Perceptual hashes during the Generate step. |
 
 ### Active rules
 
 On the first run, the curator copies the bundled `config/default-tag-rules.yaml`
 into `<data-dir>/tag-rules.yml` and uses that copy as the source of truth from
-then on. The bundled default is never touched again. To change mappings, edit
-`<data-dir>/tag-rules.yml` or use the dashboard's rules editor, then run
-**Validate Rules** before the next rebuild. The `config/tag-rules.schema.json`
-file documents the full v3 schema.
-
-If you are migrating from a v2 rules file, use the migrator described in
-[migration](docs/migration.md) rather than editing by hand.
-
-
-## Use
-
-Run **Preflight** first. For routine maintenance, open the dashboard and use
-**Curate Library** — the single recommended button. After one explicit
-confirmation it runs the complete pipeline:
-
-1. **Scan** — triggers a full-library metadata scan (real Stash job).
-2. **Generate** — generates previews, image previews, and perceptual hashes
-   (real Stash job).
-3. **Identify + tag** — identifies scenes via stash-box `scrapeMultiScenes`,
-   applies mapped canonical tags.
-4. **Fill metadata** — fills empty scene fields (title, date, code, details,
-   director, urls) from the highest-priority provider match. **Never
-   overwrites** existing values (fill-empty-only policy).
-5. **Create entities** — creates missing performers and studios when a safe
-   match isn't found (capped per run), attaching stash-box UUIDs for future
-   auto-matching.
-6. **Enrich** — adds performer-derived tags additively.
-7. **Cleanup** — removes only tags whose association counts are zero everywhere.
-
-> **Scan and Generate are real Stash jobs and are NOT reversible through
-> plugin rollback.** All tag, metadata, and entity changes are journaled and
-> rollback-eligible. Newly-created performers/studios default to
-> **preserve** on rollback (not auto-destroyed) for safety.
-
-For a deliberate taxonomy reset, run **Dry-Run Full Library Rebuild** and read
-the proposal before starting **Full Library Rebuild**. Routine maintenance
-should use **Curate Library**, whose dashboard confirmation summarizes the
-scope before its internally journaled phases begin.
-
-Recommended first-run sequence against a copy of your library, not your only
-production database:
-
-1. **Preflight** to verify environment and connectivity.
-2. **Dry-Run Full Library Rebuild** to review the planned tag changes.
-3. **Full Library Rebuild** once the dry-run proposal looks right.
-4. **Dashboard** to review counts, unmapped tags, and run history.
-5. **Rollback a Run** if a specific run's changes need to be undone.
-
-### Operations
-
-Tasks are grouped by purpose. The full set lives in `stash-tag-curator.yml`.
-
-**Rebuild and reprocess.** `Full Library Rebuild` re-derives every scene's tags
-from provider metadata. `Dry-Run Full Library Rebuild` simulates the same and
-writes nothing. `Process Never-Processed`, `Reprocess Stale`, `Reprocess
-Failed`, and `Reprocess Affected-by-Mapping` target subsets of the library.
-`Enrich from Performer Metadata` additively derives cast, demographic, body,
-era, and married-IRL tags without a full provider re-scrape. It preserves the
-complete existing scene tag set; enrichment never treats its partial derived
-set as a replacement.
-
-**Cleanup.** `Cleanup Safe-Global Orphans` removes non-curator tags that are
-orphaned across scenes, markers, images, galleries, performers, studios,
-groups, and parent/child relationships. `Cleanup Plugin-Owned Orphans` removes
-leftover `CURATOR:` tags. Both produce a proposal first. `Undo Cleanup`
-restores tags removed by a prior cleanup using the recorded deletion journal.
-
-**Recovery.** `Resume Interrupted Run`, `Abandon Interrupted Run`, and `Force
-Release Stale Run` handle runs that were killed or left a stale lock. See
-[deployment](docs/deployment.md#interrupted-runs) for when to use each.
-`Rollback a Run` reverts a prior run's mutations from the recorded history.
-
-**Rules and inspection.** `Validate Rules`, `Save Mapping Edit`, `Preflight`,
-and `Rules Audit` manage the rules lifecycle. `Dashboard`, `Unmapped Tags`,
-`Run History`, and `Rules Audit` are read-only reports. The dashboard also
-updates live during a run through generated asset snapshots fetched from
-`/plugin/stash-tag-curator/assets/`.
-
-Each task's `description` field in the manifest documents its exact scope. The
-dry-run variant always exists alongside its destructive counterpart.
+then on. To change mappings, use the dashboard's dictionary editor. The
+`config/tag-rules.schema.json` file documents the full v3 schema.
 
 
 ## Update
 
-Plugin upgrades replace the package directory. Your active rules, SQLite state,
-journal, backups, and rollback history live in `<data-dir>` outside the
-package, so they survive an upgrade untouched.
+Plugin upgrades replace the package directory. Your active rules, SQLite
+state, and run history live in `<data-dir>` outside the package, so they
+survive an upgrade untouched.
 
-To update:
-
-1. Back up `<data-dir>/` (see [Backup](#backup)).
-2. Replace the `plugins/stash-tag-curator/` directory with the new release.
-   For a source-index install, use Stash's plugin update flow.
-3. Re-run `pip install -r requirements.txt` if the runtime dependency set
-   changed.
+1. Back up `<data-dir>/` (see below).
+2. Replace `plugins/stash-tag-curator/` with the new release.
+3. Re-run `pip install -r requirements.txt` if the dependency set changed.
 4. Reload plugins and run **Preflight**.
-5. Run **Dry-Run Full Library Rebuild** before any destructive work against the
-   updated rules.
 
-If the bundled `config/default-tag-rules.yaml` shipped rule changes you want,
-copy the deltas into `<data-dir>/tag-rules.yml` by hand. The curator never
-overwrites your active rules on upgrade. The rules file carries a `version`
-field; with `strict_version=true`, a schema mismatch halts the run with a clear
-error rather than silently mishandling new fields.
+The curator never overwrites your active rules on upgrade.
 
 
 ## Backup
 
-Before any destructive run, back up two things:
-
-1. **The active rules file:** `<data-dir>/tag-rules.yml`.
-2. **The state database and history:** `<data-dir>/state/curator.db` plus the
-   `backups/`, `snapshots/`, and `reports/` subdirectories.
-
-A safe full backup is a recursive copy of `<data-dir>/` taken while no curator
-task is running:
+A safe full backup is a recursive copy of `<data-dir>/` taken while no
+curator run is active:
 
 ```bash
-# From the Stash host, with the data dir resolved from server_connection.Dir.
 rsync -a "$STASH_CONFIG_DIR/stash-tag-curator-data/" \
   /backup/stash-tag-curator-data-$(date -u +%Y%m%dT%H%M%SZ)/
 ```
 
-The curator also writes timestamped copies of the rules file into
-`<data-dir>/backups/` before rule migrations. Those are convenience copies, not
-a substitute for your own backup of `curator.db`, which holds the rollback
-journal.
-
-Stash's own database backup (the **Settings > System > Backup** path) is a
-separate concern. A Stash DB backup protects every tag the curator writes.
-Keep both: the Stash backup for the library, and the `<data-dir>` backup for
-the rollback journal that lets the curator undo its own work.
-
-
-## Rollback
-
-Two rollback mechanisms cover different scopes.
-
-**Rollback a Run** reverts a specific curator run. It reads the `mutations`
-table for that run and restores each scene's tag set to its pre-run state. Use
-this when a single run produced wrong results. Run it from the dashboard's run
-history view, which shows which runs are rollback-eligible (only runs with
-applied mutations are).
-
-**Undo Cleanup** re-creates tags removed by a prior cleanup operation. It reads
-the `tag_deletions` journal and calls `tagCreate` with the stored name, axis,
-parent, child, and alias metadata. Tag IDs will differ after restoration, so
-this is best-effort. The cleanup proposal token is single-use, which prevents
-an accidental double-restore.
-
-Neither mechanism rewrites Stash's own database beyond the tag fields the
-curator manages. For broader recovery, restore from your Stash database backup.
+Keep Stash's own database backup (**Settings > System > Backup**) as well:
+it protects every tag the curator writes, while `<data-dir>` holds the
+dictionary and run history.
 
 
 ## Uninstall
 
-1. Stop any running curator task and wait for the job queue to drain.
+1. Wait for any running curator task to finish.
 2. In Stash, disable **Stash Tag Curator** under **Settings > Plugins**, then
-   remove it.
-3. Delete `plugins/stash-tag-curator/` from disk.
+   remove it and delete `plugins/stash-tag-curator/` from disk.
 
-The data directory at `<data-dir>/stash-tag-curator-data/` is intentionally
-left in place. It holds your rollback history. Remove it manually once you are
-sure you will not roll back a prior run:
+The data directory is intentionally left in place (it holds your dictionary
+and run history). Remove it manually once you are sure:
 
 ```bash
 rm -rf "$STASH_CONFIG_DIR/stash-tag-curator-data"
 ```
 
-Curator-owned tags (those prefixed with `CURATOR:` or an axis prefix like
-`CAST:` or `DEMO:`) remain on your scenes after uninstall. To remove them, run
-**Cleanup Plugin-Owned Orphans** before step 2, or delete them from Stash's tag
-manager.
+Curator-owned tags (prefixed `CURATOR:` or an axis prefix like `CAST:`)
+remain on your scenes after uninstall. Remove them via Stash's tag manager.
 
 
 ## Version
 
-0.2.0
+0.5.0

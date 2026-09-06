@@ -1,21 +1,11 @@
-"""Orphan-tag cleanup engine (T18 / D19 / D20 / Issue 9).
+"""Orphan-tag cleanup engine (Issue 9).
 
-This module implements the *safe* and *plugin-owned* orphan-tag cleanup
-operations plus their best-effort undo.  The design obeys three binding
-constraints from the stash-tag-curator plan:
+Implements the *safe-global* and *plugin-owned* orphan-tag cleanup as one
+conservative, single-step operation run as the final phase of a curator
+run.  Binding constraints:
 
-* **D19 (proposal required)** -- no tag is ever destroyed without a prior
-  dry-run proposal the user reviewed.  ``dry_run`` produces a
-  :class:`CleanupProposal` carrying an opaque token; ``execute_cleanup``
-  refuses to act unless that exact token is presented.
-
-* **D20 (tag-deletion journal)** -- before every ``tagsDestroy`` call the
-  engine records the tag's metadata (id, name, axis, parents, children,
-  aliases, proposal token) in the ``tag_deletions`` SQLite table.  That row
-  is what :func:`undo_cleanup` reads to recreate a deleted tag.
-
-* **Issue 9 (canonical/markers never orphaned)** -- a tag whose name appears
-  in ``rules.canonical_tag_names()``, in the fixed ``CURATOR:`` marker
+* **Conservative candidates (Issue 9)** -- a tag whose name appears in
+  ``rules.canonical_tag_names()``, in the fixed ``CURATOR:`` marker
   enumeration (D3/D6), or matches ``protected.prefixes`` /
   ``protected.tag_names`` is **never** a candidate regardless of its
   association counts.  The same applies to any tag with non-zero direct
@@ -23,20 +13,20 @@ constraints from the stash-tag-curator plan:
   ``gallery_count``, ``performer_count``, ``studio_count``, ``group_count``,
   ``parent_count`` or ``child_count``.
 
-The module is deliberately free of any cancellation-flag wiring: cleanup is
-a short, bounded operation (one find + one bulk destroy) and Stash
-cancellation flows through ``stopJob -> SIGKILL`` (D5) which leaves a stale
-lock the operator force-releases.
+* **Deletion audit** -- before every ``tagsDestroy`` call the engine
+  records the tag's id, name, axis, and aliases in the ``tag_deletions``
+  SQLite table.  The table is an audit record (what was removed, listed in
+  the run result); there is no undo -- a wrong cleanup self-heals because
+  the pipeline re-derives tags from provider data on the next run.
 
 The public surface is:
 
-* :class:`CleanupEngine`        -- proposal/execute orchestrator.
-* :class:`CleanupProposal`      -- dry-run result + confirmation token.
-* :class:`CleanupReport`        -- execute result.
-* :class:`UndoReport`           -- undo result.
+* :class:`CleanupEngine`        -- compute -> journal -> destroy.
+* :class:`CleanupReport`        -- execution result.
+* :class:`TagCandidate`         -- one candidate tag + its counts snapshot.
 * :func:`safe_global_orphans`   -- candidate selector for globally-orphan tags.
 * :func:`plugin_owned_orphans`  -- candidate selector for plugin-owned tags.
-* :func:`undo_cleanup`          -- best-effort tag re-creation (D20).
+* :func:`is_protected_name`     -- protected-prefix/name predicate.
 """
 
 from __future__ import annotations
@@ -51,7 +41,6 @@ from typing import Any
 
 from curator.graphql_queries import (
     FIND_TAGS_WITH_COUNTS,
-    TAG_CREATE,
     TAG_DESTROY_BULK,
 )
 from curator.processing import CURATOR_MARKERS
@@ -60,15 +49,12 @@ from curator.state import StateDB
 
 __all__ = [
     "CleanupEngine",
-    "CleanupProposal",
     "CleanupReport",
-    "UndoReport",
     "TagCandidate",
     "SCOPE_SAFE_GLOBAL",
     "SCOPE_PLUGIN_OWNED",
     "safe_global_orphans",
     "plugin_owned_orphans",
-    "undo_cleanup",
     "is_protected_name",
 ]
 
@@ -255,50 +241,11 @@ class TagCandidate:
 
 
 @dataclass
-class CleanupProposal:
-    """Dry-run result + confirmation token (D19).
-
-    The token is an opaque 256-bit hex value; ``execute_cleanup`` requires
-    the exact token produced by the dry-run the user reviewed.  The engine
-    retains proposals in-memory keyed by token, so a token issued by one
-    :class:`CleanupEngine` instance cannot be executed by another.
-    """
-
-    token: str
-    scope: str
-    candidates: list[TagCandidate]
-    created_at: str = field(default_factory=_now_iso)
-    rules_sha: "str | None" = None
-
-    @property
-    def candidate_ids(self) -> list[str]:
-        return [c.tag_id for c in self.candidates]
-
-    def to_dict(self) -> dict[str, Any]:
-        """JSON-serialisable view (for reporting / asset snapshots)."""
-        return {
-            "token": self.token,
-            "scope": self.scope,
-            "created_at": self.created_at,
-            "rules_sha": self.rules_sha,
-            "candidate_count": len(self.candidates),
-            "candidates": [
-                {
-                    **asdict(c),
-                    "tag_id": c.tag_id,
-                }
-                for c in self.candidates
-            ],
-        }
-
-
-@dataclass
 class CleanupReport:
     """Result of an executed cleanup run."""
 
     run_id: str
     scope: str
-    proposal_token: str
     destroyed_count: int
     destroyed_tag_ids: list[str]
     deletion_row_ids: list[int]
@@ -309,7 +256,6 @@ class CleanupReport:
         return {
             "run_id": self.run_id,
             "scope": self.scope,
-            "proposal_token": self.proposal_token,
             "destroyed_count": self.destroyed_count,
             "destroyed_tag_ids": list(self.destroyed_tag_ids),
             "deletion_row_ids": list(self.deletion_row_ids),
@@ -542,19 +488,20 @@ def plugin_owned_orphans(
 
 
 class CleanupEngine:
-    """Orchestrates dry-run + execute for orphan-tag cleanup.
+    """Removes orphaned tags in one step: compute -> journal -> destroy.
 
-    The engine is the only public entry point that mutates state.  It holds:
+    There is no dry-run/execute split and no confirmation token: cleanup
+    runs as the final phase of a curator run, and its candidate predicates
+    are conservative by construction (every association count must be zero
+    everywhere; canonical and protected tags are never candidates).  What
+    was deleted is recorded in the ``tag_deletions`` audit table and listed
+    in the run result; a wrong cleanup is repaired by re-deriving (the tags
+    reappear on the next run if the provider data still calls for them).
 
     * ``client``  -- duck-typed GraphQL client (``submit`` returns ``data``);
-    * ``state``   -- :class:`~curator.state.StateDB` for the D20 journal;
+    * ``state``   -- :class:`~curator.state.StateDB` for the deletion audit;
     * ``rules``   -- :class:`~curator.rules.Rules` for canonical/protected
       exclusion.
-
-    A confirmation token (256-bit hex) is generated per dry-run and stored
-    in ``self._proposals``; ``execute_cleanup`` looks the token up there.
-    Tokens are single-use: once executed the proposal is removed so a
-    replay cannot destroy a second batch.
     """
 
     def __init__(
@@ -569,27 +516,29 @@ class CleanupEngine:
         self.state = state
         self.rules = rules
         self.run_id = run_id or f"cleanup-{secrets.token_hex(8)}"
-        self._proposals: dict[str, CleanupProposal] = {}
 
-    # ------------------------------------------------------------------
-    # Dry-run
-    # ------------------------------------------------------------------
-
-    def dry_run(
+    def run(
         self,
         scope: str,
         *,
         exclude: "Sequence[str] | None" = None,
-    ) -> CleanupProposal:
-        """Compute the candidate list for ``scope`` and return a proposal.
+        exclude_names: "Sequence[str] | None" = None,
+    ) -> CleanupReport:
+        """Find, journal, and destroy orphaned tags for ``scope``.
 
         ``scope`` is one of :data:`SCOPE_SAFE_GLOBAL` or
         :data:`SCOPE_PLUGIN_OWNED`.  ``exclude`` is an optional iterable of
-        tag *ids* to remove from the proposal (the user's per-tag veto).
-        The returned :class:`CleanupProposal` carries a fresh single-use
-        token that must be passed to :meth:`execute_cleanup`.
+        tag *ids* to spare.  ``exclude_names`` is an optional iterable of
+        tag *names* to spare -- the caller passes the engine's finite
+        tag-candidate set here so the D6 pre-pass and cleanup never fight
+        (the pre-pass re-creates every tag the engine may emit; destroying
+        the unused ones would churn hundreds of tags every run).  An empty
+        candidate list short-circuits: no ``tag_deletions`` rows, no
+        ``tagsDestroy`` call.
 
-        Raises :class:`ValueError` on an unknown scope.
+        If the bulk destroy call fails, the audit rows remain (a faithful
+        record of intent) and the failure is surfaced in the report's
+        ``skipped`` list -- the next run retries the same candidates.
         """
         if scope == SCOPE_SAFE_GLOBAL:
             candidates = safe_global_orphans(self.client, self.rules)
@@ -602,297 +551,90 @@ class CleanupEngine:
             )
 
         excluded_ids = {str(t) for t in (exclude or ())}
-        if excluded_ids:
-            candidates = [c for c in candidates if c.tag_id not in excluded_ids]
-
-        token = secrets.token_hex(16)
-        proposal = CleanupProposal(
-            token=token,
-            scope=scope,
-            candidates=candidates,
-            rules_sha=getattr(self.rules, "rules_sha", None),
-        )
-        self._proposals[token] = proposal
-        return proposal
-
-    #: Alias for the spec-required method name.
-    def propose(
-        self,
-        scope: str,
-        *,
-        exclude: "Sequence[str] | None" = None,
-    ) -> CleanupProposal:
-        """Alias for :meth:`dry_run` (spec mentions both names)."""
-        return self.dry_run(scope, exclude=exclude)
-
-    # ------------------------------------------------------------------
-    # Execute
-    # ------------------------------------------------------------------
-
-    def execute_cleanup(
-        self,
-        proposal_token: str,
-        *,
-        exclude: "Sequence[str] | None" = None,
-    ) -> CleanupReport:
-        """Execute the proposal identified by ``proposal_token``.
-
-        Steps (D20 + D19):
-
-        1. Resolve the token -> :class:`CleanupProposal`.  Unknown or
-           already-consumed tokens raise :class:`LookupError`.
-        2. Apply any additional ``exclude`` ids (last-minute veto).
-        3. Write one ``tag_deletions`` row PER candidate BEFORE the destroy
-           call.  Each row captures the metadata :func:`undo_cleanup` needs.
-        4. Call ``tagsDestroy`` ONCE with the full id list (bulk).
-        5. Mark the proposal consumed (removed from ``self._proposals``) and
-           return a :class:`CleanupReport`.
-
-        If the candidate list is empty the engine short-circuits: no
-        ``tag_deletions`` rows, no ``tagsDestroy`` call, empty report.
-        """
-        proposal = self._proposals.get(proposal_token)
-        if proposal is None:
-            raise LookupError(
-                f"unknown or already-consumed cleanup proposal token: "
-                f"{proposal_token!r}"
-            )
-
-        excluded_ids = {str(t) for t in (exclude or ())}
+        protected_names = {str(n) for n in (exclude_names or ())}
         candidates = [
-            c for c in proposal.candidates if c.tag_id not in excluded_ids
+            c for c in candidates
+            if c.tag_id not in excluded_ids and c.name not in protected_names
         ]
 
         ids_to_destroy = [c.tag_id for c in candidates]
-        deletion_row_ids: list[int] = []
-        skipped: list[dict[str, Any]] = []
-
         if not ids_to_destroy:
-            # Nothing to do -- consume the token so it cannot be replayed.
-            self._proposals.pop(proposal_token, None)
             return CleanupReport(
                 run_id=self.run_id,
-                scope=proposal.scope,
-                proposal_token=proposal_token,
+                scope=scope,
                 destroyed_count=0,
                 destroyed_tag_ids=[],
                 deletion_row_ids=[],
-                skipped=skipped,
             )
 
-        # --- D20: write tag_deletions rows BEFORE the destroy call. ---
-        deletion_row_ids = self._record_deletions(
-            candidates,
-            proposal_token=proposal_token,
-        )
+        # Audit rows BEFORE the destroy call (name/axis survive the destroy;
+        # the row records what was removed even if the call fails).
+        deletion_row_ids = self._record_deletions(candidates)
 
-        # --- Bulk destroy (single call, full id list). ---
         try:
             self.client.submit(
                 TAG_DESTROY_BULK,
                 {"ids": ids_to_destroy},
             )
         except Exception as exc:
-            # The destroy failed.  Leave the tag_deletions rows in place --
-            # they are still a faithful audit of the INTENT and the caller
-            # can retry.  Mark them with a NULL restored_at (already NULL)
-            # and surface the failure in the report.
-            skipped.append(
-                {
-                    "phase": "tagsDestroy",
-                    "error": str(exc),
-                    "tag_ids": list(ids_to_destroy),
-                }
-            )
-            self._proposals.pop(proposal_token, None)
             return CleanupReport(
                 run_id=self.run_id,
-                scope=proposal.scope,
-                proposal_token=proposal_token,
+                scope=scope,
                 destroyed_count=0,
                 destroyed_tag_ids=[],
                 deletion_row_ids=deletion_row_ids,
-                skipped=skipped,
+                skipped=[
+                    {
+                        "phase": "tagsDestroy",
+                        "error": str(exc),
+                        "tag_ids": list(ids_to_destroy),
+                    }
+                ],
             )
-
-        # --- Success: consume the token. ---
-        self._proposals.pop(proposal_token, None)
 
         return CleanupReport(
             run_id=self.run_id,
-            scope=proposal.scope,
-            proposal_token=proposal_token,
+            scope=scope,
             destroyed_count=len(ids_to_destroy),
             destroyed_tag_ids=ids_to_destroy,
             deletion_row_ids=deletion_row_ids,
-            skipped=skipped,
         )
 
     # ------------------------------------------------------------------
-    # D20 journal helpers
+    # Deletion audit
     # ------------------------------------------------------------------
 
     def _record_deletions(
         self,
         candidates: Sequence[TagCandidate],
-        *,
-        proposal_token: str,
     ) -> list[int]:
-        """Write one ``tag_deletions`` row per candidate; return their row ids.
+        """Write one ``tag_deletions`` audit row per candidate; return row ids.
 
         Each row stores: ``run_id, tag_id, tag_name, axis, parent_ids_json,
-        child_ids_json, aliases_json, deletion_proposal_token, deleted_at``.
-        ``restored_at`` is left NULL -- :func:`undo_cleanup` populates it on
-        successful re-creation.
-
-        Parents/children ids are NOT requested in the default
-        :data:`FIND_TAGS_WITH_COUNTS` selection (we only need counts for the
-        orphan predicate); the candidate therefore carries empty lists and
-        the row stores ``"[]"``.  Callers that need richer undo metadata can
-        extend the candidate via :meth:`TagCandidate.from_row` with a row
-        that includes parents/children.
+        child_ids_json, aliases_json, deleted_at`` (the proposal-token column
+        stays NULL -- it is a legacy of the retired two-phase flow).
         """
         now = _now_iso()
         row_ids: list[int] = []
         with self.state._txn():
             for c in candidates:
-                parent_ids: list[str] = []
-                child_ids: list[str] = []
-                aliases = list(c.aliases)
                 cur = self.state.connection.execute(
                     "INSERT INTO tag_deletions "
                     "(run_id, tag_id, tag_name, axis, parent_ids_json, "
                     " child_ids_json, aliases_json, deletion_proposal_token, "
                     " deleted_at, restored_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)",
                     (
                         self.run_id,
                         int(c.tag_id) if str(c.tag_id).isdigit() else None,
                         c.name,
                         c.axis,
-                        json.dumps(parent_ids),
-                        json.dumps(child_ids),
-                        json.dumps(aliases),
-                        proposal_token,
+                        json.dumps([]),
+                        json.dumps([]),
+                        json.dumps(list(c.aliases)),
                         now,
                     ),
                 )
                 if cur.lastrowid is not None:
                     row_ids.append(int(cur.lastrowid))
         return row_ids
-
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
-
-    def pending_proposal(self, token: str) -> "CleanupProposal | None":
-        """Return the in-memory proposal for ``token`` (or ``None``)."""
-        return self._proposals.get(token)
-
-
-# ---------------------------------------------------------------------------
-# UndoCleanup (D20 restoration)
-# ---------------------------------------------------------------------------
-
-
-def undo_cleanup(
-    client: Any,
-    state: StateDB,
-    cleanup_run_id: str,
-    *,
-    run_id: "str | None" = None,
-) -> UndoReport:
-    """Best-effort restoration of every tag destroyed by ``cleanup_run_id``.
-
-    Reads the ``tag_deletions`` rows for ``cleanup_run_id`` where
-    ``restored_at IS NULL`` (so a repeat call is a no-op for already
-    restored tags), then re-creates each tag via ``tagCreate``.  **Tag IDs
-    will differ** -- Stash assigns a fresh primary key on creation -- so the
-    report carries both the old id (from the journal) and the new id
-    returned by ``tagCreate``.
-
-    Failures (network errors, validation errors, etc.) are recorded per-tag
-    in ``UndoReport.failed`` without aborting the loop.  Successfully
-    restored rows have their ``restored_at`` timestamp written so a repeat
-    invocation skips them.
-    """
-    restoring_run_id = run_id or f"undo-cleanup-{secrets.token_hex(8)}"
-    report = UndoReport(cleanup_run_id=cleanup_run_id)
-
-    rows = state.connection.execute(
-        "SELECT * FROM tag_deletions "
-        "WHERE run_id = ? AND restored_at IS NULL "
-        "ORDER BY id",
-        (cleanup_run_id,),
-    ).fetchall()
-
-    for row in rows:
-        row_id = int(row["id"])
-        old_tag_id = row["tag_id"]
-        name = row["tag_name"]
-        if not name:
-            report.failed.append(
-                {
-                    "row_id": row_id,
-                    "old_tag_id": old_tag_id,
-                    "error": "missing tag_name in tag_deletions row",
-                }
-            )
-            continue
-
-        aliases_raw = row["aliases_json"]
-        try:
-            aliases = json.loads(aliases_raw) if aliases_raw else []
-        except (ValueError, TypeError):
-            aliases = []
-
-        # Build the TagCreateInput.  Stash accepts name + optional aliases
-        # + parent/child id lists.  Since the original ids are stale we
-        # cannot re-link hierarchy; undo restores the name + aliases only.
-        create_input: dict[str, Any] = {"name": name}
-        if aliases:
-            create_input["aliases"] = list(aliases)
-
-        try:
-            data = client.submit(TAG_CREATE, {"input": create_input})
-        except Exception as exc:
-            report.failed.append(
-                {
-                    "row_id": row_id,
-                    "old_tag_id": old_tag_id,
-                    "name": name,
-                    "error": str(exc),
-                }
-            )
-            continue
-
-        created = (data or {}).get("tagCreate") or {}
-        new_id = created.get("id")
-        if new_id is None:
-            report.failed.append(
-                {
-                    "row_id": row_id,
-                    "old_tag_id": old_tag_id,
-                    "name": name,
-                    "error": "tagCreate returned no id",
-                }
-            )
-            continue
-
-        # Mark restored -- single-statement UPDATE autocommits under
-        # isolation_level=None; safe for a one-row write.
-        state.connection.execute(
-            "UPDATE tag_deletions SET restored_at = ? WHERE id = ?",
-            (_now_iso(), row_id),
-        )
-        report.restored.append(
-            {
-                "row_id": row_id,
-                "old_tag_id": old_tag_id,
-                "new_tag_id": str(new_id),
-                "name": name,
-                "aliases": aliases,
-            }
-        )
-
-    return report

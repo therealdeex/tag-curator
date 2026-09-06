@@ -793,10 +793,13 @@ class StateDB:
                     "SET status = 'interrupted', "
                     "    ended_at = COALESCE(ended_at, ?), "
                     "    error_message = COALESCE(error_message, ?) "
-                    "WHERE run_id = ? AND status NOT IN "
+                    # Child phase rows (curate_library per-phase runs linked
+                    # via parent_run_id) close with the parent on reclaim.
+                    "WHERE (run_id = ? OR parent_run_id = ?) AND status NOT IN "
                     "    ('completed', 'failed', 'abandoned', 'interrupted')",
                     (_now_iso(),
-                     "auto-reclaimed (run was killed / stale)", old_run_id),
+                     "auto-reclaimed (run was killed / stale)",
+                     old_run_id, old_run_id),
                 )
         # Acquire the lock for the new run.
         try:
@@ -946,22 +949,85 @@ class StateDB:
         Queries :meth:`scene_raw_tags_current` -- i.e. the most recent
         SUCCESSFUL provider associations -- NOT the append-only history.  This
         is what powers the ``Reprocess Affected-by-Mapping`` scope (T17): a
-        mapping edit only needs to reprocess scenes whose current tags would be
-        reshaped by the change.
+        mapping edit only needs to reprocess scenes whose current tags would
+        be reshaped by the change.
 
-        SQL-injection-safe: the ``IN`` clause is built from literal ``?``
-        placeholders only; user-supplied tags flow through bound parameters.
+        Matching is on the NORMALIZED form of the stored tag
+        (``lower(rtrim(trim(raw_tag), ','))``) because callers pass mapping
+        keys, which are normalized, while the table stores the provider's
+        original casing.  SQL-injection-safe: the ``IN`` clause is built from
+        literal ``?`` placeholders only; user-supplied tags flow through
+        bound parameters.
         """
-        tags = list(raw_tags)
+        tags = [str(t).strip().lower().rstrip(",") for t in raw_tags]
+        tags = [t for t in tags if t]
         if not tags:
             return []
         placeholders = ",".join("?" for _ in tags)
         rows = self._conn.execute(
             "SELECT DISTINCT scene_id FROM scene_raw_tags_current "
-            f"WHERE raw_tag IN ({placeholders}) ORDER BY scene_id",
+            "WHERE lower(rtrim(trim(raw_tag), ',')) "
+            f"IN ({placeholders}) ORDER BY scene_id",
             tags,
         ).fetchall()
         return [int(r["scene_id"]) for r in rows]
+
+    def scene_counts_by_raw_tags(self, raw_tags: Iterable[str]) -> dict[str, int]:
+        """Return ``{normalized_tag: distinct_scene_count}`` for the given tags.
+
+        Companion to :meth:`scenes_affected_by_raw_tags`: after a mapping edit
+        the editor reports how many scenes each edited tag touches so the UI
+        can offer a scoped "update affected scenes" pass.  Keys are returned
+        in the caller's (normalized) form; tags absent from the library are
+        omitted.  Matching is normalized, like its sibling selector.
+        """
+        tags = [str(t).strip().lower().rstrip(",") for t in raw_tags]
+        tags = [t for t in tags if t]
+        if not tags:
+            return {}
+        placeholders = ",".join("?" for _ in tags)
+        rows = self._conn.execute(
+            "SELECT lower(rtrim(trim(raw_tag), ',')) AS norm_tag, "
+            "COUNT(DISTINCT scene_id) AS cnt "
+            "FROM scene_raw_tags_current "
+            f"WHERE lower(rtrim(trim(raw_tag), ',')) IN ({placeholders}) "
+            "GROUP BY norm_tag",
+            tags,
+        ).fetchall()
+        return {str(r["norm_tag"]): int(r["cnt"]) for r in rows}
+
+    def purge_missing_scene(self, scene_id: int) -> None:
+        """Drop local CURRENT state for a scene confirmed absent from Stash (T12).
+
+        The library is fed by automation (whisparr/tdarr), so scenes can be
+        deleted between runs while curator state still references them.  Such
+        ghost rows keep the ``stale_rules`` / ``failed`` /
+        ``affected_by_mapping`` selectors re-selecting a scene that can never
+        be fetched.  This removes every CURRENT reference:
+
+        * ``scene_state`` row (drives ``stale_rules`` / ``failed``);
+        * ``scene_raw_tags_current`` rows (drive ``affected_by_mapping``);
+        * still-``proposed`` ``dry_run_proposals`` rows are expired as
+          ``skipped(scene_missing)`` instead of deleted (they are audit
+          history once terminal).
+
+        Append-only audit tables (``scene_raw_tags_history``,
+        ``processing_attempts``, ``mutations``) are deliberately preserved.
+        """
+        with self._txn():
+            self._conn.execute(
+                "DELETE FROM scene_state WHERE scene_id = ?", (scene_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM scene_raw_tags_current WHERE scene_id = ?",
+                (scene_id,),
+            )
+            self._conn.execute(
+                "UPDATE dry_run_proposals SET status = 'skipped', "
+                "skip_reason = 'scene_missing' "
+                "WHERE scene_id = ? AND status = 'proposed'",
+                (scene_id,),
+            )
 
     # ------------------------------------------------------------------
     # Write helpers enforcing the current-vs-history discipline (D10/D16)

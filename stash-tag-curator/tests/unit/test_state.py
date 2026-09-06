@@ -262,6 +262,68 @@ class TestSceneStateUpsert:
         assert "last_run_id" in cols
 
 
+class TestPurgeMissingScene:
+    """T12: local-state cleanup for scenes deleted from Stash."""
+
+    def _seed_ghost(self, db: StateDB) -> None:
+        db.upsert_scene_state(
+            99, status="success", last_successful_run_id="run-old",
+            rules_sha="sha-old",
+        )
+        db.replace_scene_raw_tags_current(
+            99, "run-old", "stashbox", ["Blowjob"],
+        )
+        db.append_scene_raw_tags_history(
+            99, "run-old", "stashbox", ["Blowjob"],
+        )
+        with db._txn():
+            for prop in ("prop-1", "prop-2"):
+                db.connection.execute(
+                    "INSERT INTO dry_run_proposals "
+                    "(proposed_run_id, scene_id, status) "
+                    "VALUES (?, 99, 'proposed')",
+                    (prop,),
+                )
+            # A terminal proposal row from an earlier executed set.
+            db.connection.execute(
+                "INSERT INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, status, skip_reason) "
+                "VALUES ('prop-done', 99, 'applied', NULL)",
+            )
+
+    def test_purge_removes_current_state_only(self, db: StateDB) -> None:
+        self._seed_ghost(db)
+
+        db.purge_missing_scene(99)
+
+        # Current-state selectors no longer see the ghost.
+        assert db.connection.execute(
+            "SELECT 1 FROM scene_state WHERE scene_id = 99",
+        ).fetchone() is None
+        assert db.scenes_affected_by_raw_tags(["Blowjob"]) == []
+        # Still-proposed rows are expired as skipped(scene_missing)...
+        rows = db.connection.execute(
+            "SELECT status, skip_reason FROM dry_run_proposals "
+            "WHERE scene_id = 99 ORDER BY proposed_run_id",
+        ).fetchall()
+        assert [(r["status"], r["skip_reason"]) for r in rows] == [
+            ("skipped", "scene_missing"),
+            ("skipped", "scene_missing"),
+            ("applied", None),  # terminal rows are untouched
+        ]
+        # Append-only audit tables survive the purge.
+        assert db.connection.execute(
+            "SELECT COUNT(*) FROM scene_raw_tags_history WHERE scene_id = 99",
+        ).fetchone()[0] == 1
+
+    def test_purge_is_idempotent(self, db: StateDB) -> None:
+        db.purge_missing_scene(123)  # never existed -- no error, no rows
+        db.purge_missing_scene(123)
+        assert db.connection.execute(
+            "SELECT COUNT(*) FROM scene_state",
+        ).fetchone()[0] == 0
+
+
 # ---------------------------------------------------------------------------
 # raw_tag_catalog + raw_tag_current_counts VIEW
 # ---------------------------------------------------------------------------
@@ -684,15 +746,17 @@ def _backdate_heartbeat(db: StateDB, seconds: float) -> None:
 
 def _insert_run_row(
     db: StateDB, run_id: str, status: str = "running", operation: str = "rebuild",
+    parent_run_id: "str | None" = None,
 ) -> None:
     """Insert a minimal ``runs`` row (for orphan-reconciliation tests)."""
     with db._txn():  # noqa: SLF001 -- test-only same-package access
         db.connection.execute(
             "INSERT INTO runs "
             "(run_id, operation, status, rules_sha, started_at, ended_at, "
-            " scope_json, totals_json, error_message) "
-            "VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)",
-            (run_id, operation, status, "sha", datetime.now(timezone.utc).isoformat()),
+            " scope_json, totals_json, error_message, parent_run_id) "
+            "VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)",
+            (run_id, operation, status, "sha",
+             datetime.now(timezone.utc).isoformat(), parent_run_id),
         )
 
 
@@ -749,6 +813,38 @@ class TestAcquireOrReclaim:
         ).fetchone()
         # A terminal row must not be clobbered.
         assert row["status"] == "completed"
+
+    def test_reclaim_interrupts_child_phase_rows(self, db: StateDB) -> None:
+        """T11: a killed curate_library parent closes its still-running
+        per-phase child rows (linked via parent_run_id) on reclaim."""
+        assert db.acquire_lock("curate-abc", "curate_library", "sha")
+        _insert_run_row(db, "curate-abc", status="running", operation="curate_library")
+        _insert_run_row(
+            db, "curate-abc-p1-never_processed", operation="curate_phase",
+            parent_run_id="curate-abc",
+        )
+        _insert_run_row(
+            db, "curate-abc-p4-performer_enrichment", operation="curate_phase",
+            parent_run_id="curate-abc",
+        )
+        # A completed child keeps its terminal status.
+        _insert_run_row(
+            db, "curate-abc-p2-stale_rules", status="completed",
+            operation="curate_phase", parent_run_id="curate-abc",
+        )
+        _backdate_heartbeat(db, 600)
+        db.acquire_lock_or_reclaim("r-fresh", "rebuild", "sha")
+        statuses = dict(
+            db.connection.execute(
+                "SELECT run_id, status FROM runs WHERE run_id LIKE 'curate-abc%'"
+            ).fetchall()
+        )
+        assert statuses == {
+            "curate-abc": "interrupted",
+            "curate-abc-p1-never_processed": "interrupted",
+            "curate-abc-p4-performer_enrichment": "interrupted",
+            "curate-abc-p2-stale_rules": "completed",
+        }
 
     def test_reclaim_when_no_runs_row(self, db: StateDB) -> None:
         # A run killed before _record_run_start has a lock but no runs row.

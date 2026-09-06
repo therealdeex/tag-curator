@@ -29,6 +29,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sys
 import sqlite3
 import threading
@@ -50,7 +51,6 @@ from curator.cleanup import (  # noqa: E402
     SCOPE_PLUGIN_OWNED,
     SCOPE_SAFE_GLOBAL,
     CleanupEngine,
-    undo_cleanup,
 )
 from curator.graphql_client import GraphQLAuthError, GraphQLClient  # noqa: E402
 from curator.graphql_queries import (  # noqa: E402
@@ -63,23 +63,17 @@ from curator.journal import Journal  # noqa: E402
 from curator.processing import (  # noqa: E402
     CURATOR_MARKERS,
     SCOPE_AFFECTED_BY_MAPPING,
-    SCOPE_ALL,
     SCOPE_ENRICH_ONLY,
     SCOPE_FAILED,
-    SCOPE_LOCAL_AUDIT,
     SCOPE_NEVER_PROCESSED,
     SCOPE_STALE_RULES,
     RebuildEngine,
     Scope,
 )
 from curator.providers import ProviderLookup  # noqa: E402
-from curator.reporting import ReportEngine, _atomic_write  # noqa: E402, SLF001
-from curator.rollback import (  # noqa: E402
-    POLICY_SKIP_WITH_WARNING,
-    RollbackEngine,
-)
+from curator.reporting import ReportEngine, _atomic_write, sanitize_payload  # noqa: E402, SLF001
 from curator.rules import Rules, RulesValidationError  # noqa: E402
-from curator.state import AcquireResult, StateDB  # noqa: E402
+from curator.state import StateDB  # noqa: E402
 from curator.enrichment import CAST_EMIT_ORDER  # noqa: E402
 from curator.enrichment import _GENDER_DISPLAY_WORDS  # noqa: E402, SLF001
 
@@ -90,56 +84,33 @@ __all__ = ["main", "Preflight", "TaskContext"]
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Rebuild-family modes and their default :class:`Scope` name.
-_REBUILD_SCOPES: dict[str, str] = {
-    "dry_rebuild": SCOPE_ALL,
-    "rebuild": SCOPE_ALL,
-    "process_new": SCOPE_NEVER_PROCESSED,
-    "reprocess_stale": SCOPE_STALE_RULES,
-    "reprocess_failed": SCOPE_FAILED,
-    "reprocess_affected": SCOPE_AFFECTED_BY_MAPPING,
-    "enrich": SCOPE_ENRICH_ONLY,
-}
-
 #: Modes that require the singleton run lock (D5) for their state-mutating
-#: work.  Rollback manages its own lock inside :meth:`RollbackEngine.run`
-#: and is therefore excluded.  Recovery modes (``resume_run``,
-#: ``abandon_run``, ``force_release``, ``undo_cleanup``) manage their own
-#: locks inside their handlers and are excluded from this set so that cold
-#: contract tests can perform local argument validation before any network
-#: preflight runs.
+#: work.  ``save_mapping`` manages its own lock inside the handler (the
+#: editor is told which lock it owns), so only ``curate_library`` is
+#: preflight-gated here.
 _LOCK_MODES: frozenset[str] = frozenset({
-    "dry_rebuild",
-    "rebuild",
-    "process_new",
-    "reprocess_stale",
-    "reprocess_failed",
-    "reprocess_affected",
-    "enrich",
-    "cleanup_safe",
-    "cleanup_plugin",
-    "save_mapping",
     "curate_library",
+    "save_mapping",
 })
 
 #: Read-only report modes (no lock, no mutation, read-only SQLite).
+#: ``refresh_data`` regenerates every snapshot in one pass; ``run_detail``
+#: returns the recorded changes of one run.
 _REPORT_MODES: frozenset[str] = frozenset({
     "dashboard",
     "unmapped_tags",
     "run_history",
     "rules_audit",
+    "dictionary",
+    "refresh_data",
+    "run_detail",
 })
 
 #: Every recognised mode token.
 _ALL_MODES: frozenset[str] = (
-    frozenset({
-        "preflight", "validate_rules", "rollback",
-        "resume_run", "abandon_run", "force_release", "undo_cleanup",
-        "curate_library",
-    })
+    frozenset({"preflight", "validate_rules", "curate_library"})
     | _LOCK_MODES
     | _REPORT_MODES
-    | frozenset(_REBUILD_SCOPES.keys())
 )
 
 #: Stash version compatibility floor (inclusive).  Versions below this are
@@ -198,16 +169,14 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
-def _as_float(value: Any, default: float) -> float:
-    """Parse ``value`` as float; return ``default`` on failure."""
-    try:
-        return float(str(value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
 def _as_list(value: Any) -> list[str]:
-    """Coerce ``value`` (string, list, or None) to a list of non-empty strings."""
+    """Coerce ``value`` (string, list, JSON-array string, or None) to strings.
+
+    A JSON-array string (``"[\"a\",\"b\"]"``) is parsed as a list -- Stash's
+    ``args_map`` carries string values only, so the UI passes tag lists for
+    ``affected_raw_tags`` this way.  Plain strings remain comma-separated
+    (back-compat).
+    """
     if value is None:
         return []
     if isinstance(value, (list, tuple)):
@@ -215,6 +184,13 @@ def _as_list(value: Any) -> list[str]:
     text = str(value).strip()
     if not text:
         return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(v).strip() for v in parsed if str(v).strip()]
+        except json.JSONDecodeError:
+            pass  # fall through: treat as a literal comma-separated string
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
@@ -283,7 +259,7 @@ class Preflight:
     * **stash_version** -- Stash app version >= the compatibility floor
       (queried via ``GET_APP_VERSION``).
     * **stashboxes** -- at least one stash-box endpoint configured (only when
-      ``require_providers=True``; skipped for cleanup / rollback / reports).
+      ``require_providers=True``; skipped for cleanup / reports).
 
     Two modes:
 
@@ -602,7 +578,25 @@ class TaskContext:
         return StateDB(str(self.state_path))
 
     def load_rules(self) -> Rules:
-        """Load + validate the active rules, falling back to the bundled default."""
+        """Load + validate the active rules, seeding the active file on first run.
+
+        On a pristine install ``<data-dir>/tag-rules.yml`` does not exist and
+        :meth:`Rules.load` silently falls back to the bundled default.  That
+        fallback surprises operators who follow the docs and look for the
+        active file, so the first load materialises it: the bundled default
+        is copied (byte-for-byte) to the active path and loaded from there.
+        Seeding is best-effort -- a read-only data dir degrades to the old
+        fallback behaviour.
+        """
+        if not self.rules_path.exists():
+            try:
+                from curator.rules import DEFAULT_RULES_PATH
+
+                self.rules_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(str(DEFAULT_RULES_PATH), str(self.rules_path))
+                _log(f"seeded active rules from bundled default -> {self.rules_path}")
+            except Exception as exc:  # best-effort; fall back below
+                _log(f"rules seeding skipped ({exc}); using bundled default")
         return Rules.load(str(self.rules_path))
 
     def engine_settings(self, rules: Rules) -> dict[str, Any]:
@@ -634,21 +628,12 @@ class TaskContext:
             "max_studio_creates_per_run": _as_int(
                 self.settings.get("max_studio_creates_per_run"), 20
             ),
-            # Milestone 3/4: provider priority + scan/generate settings.
+            # Milestone 3/4: provider priority.  Scan/Generate are NOT run
+            # here: a plugin task cannot poll a job queued behind itself on
+            # Stash v0.31.1's serial queue (self-deadlock).  The dashboard
+            # orchestrates Scan -> Generate -> Update Library from the UI
+            # side, where waiting is safe.
             "provider_priority": str(self.settings.get("provider_priority") or ""),
-            # Defaults: False.  Synchronous fire-and-poll from inside a Stash
-            # plugin task DEADLOCKS on Stash v0.31.1 (one serial job queue:
-            # the metadata job sits at READY behind this task forever).
-            # The guard in _run_curate_library rejects any True value.  These
-            # settings exist for the planned staged-continuation architecture
-            # (bootstrap → after_scan → after_generate) which re-enables them
-            # via asynchronous self-enqueue without in-process polling.
-            "scan_before_curate": _as_bool(
-                self.settings.get("scan_before_curate"), False
-            ),
-            "generate_before_curate": _as_bool(
-                self.settings.get("generate_before_curate"), False
-            ),
             "generate_previews": _as_bool(
                 self.settings.get("generate_previews"), True
             ),
@@ -657,15 +642,6 @@ class TaskContext:
             ),
             "generate_phashes": _as_bool(
                 self.settings.get("generate_phashes"), True
-            ),
-            "stash_job_poll_interval_seconds": _as_float(
-                self.settings.get("stash_job_poll_interval_seconds"), 5.0
-            ),
-            "scan_timeout_minutes": _as_float(
-                self.settings.get("scan_timeout_minutes"), 60.0
-            ),
-            "generate_timeout_minutes": _as_float(
-                self.settings.get("generate_timeout_minutes"), 120.0
             ),
         }
 
@@ -917,6 +893,13 @@ def _finite_tag_candidates(rules: Rules) -> list[str]:
             add(married.strip())
         else:
             add("THEME: Married IRL")
+        jav_cfg = derived.get("jav_detection")
+        if isinstance(jav_cfg, Mapping):
+            jav_tag = jav_cfg.get("tag_name")
+            if isinstance(jav_tag, str) and jav_tag.strip():
+                add(jav_tag.strip())
+            else:
+                add("JAV")
 
     # Static presence tags emitted by derive_body_presence_tags.
     add("BODY: Tattooed")
@@ -1039,6 +1022,7 @@ def _record_run_start(
     operation: str,
     rules_sha: str,
     scope: "str | None" = None,
+    parent_run_id: "str | None" = None,
 ) -> None:
     """Insert a ``runs`` row as ``status='running'`` up-front (fail-safe).
 
@@ -1047,16 +1031,37 @@ def _record_run_start(
     (previously the row was only written inside the ``try`` after the call
     that raises, so every failure left an empty ``runs`` table and a
     dashboard with ``last_successful_run: null``).
+
+    ``parent_run_id`` links a child phase row to its multi-phase parent
+    (curate_library).
+
+    Because the caller holds the singleton lock when this runs, any OTHER
+    row still in ``status='running'`` is an orphan from a killed run (its
+    process never reached its ``finally``).  Those rows are marked
+    ``interrupted`` here, so run history never shows a phantom in-flight
+    run and no manual force-release step exists.
     """
     now = _now_iso()
     scope_json = json.dumps({"name": scope}) if scope else None
     with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
+        # Never touch this run or its parent (phase-child rows start while
+        # the parent row is legitimately still 'running').
+        state.connection.execute(
+            "UPDATE runs SET status = 'interrupted', "
+            "    ended_at = COALESCE(ended_at, ?), "
+            "    error_message = COALESCE(error_message, "
+            "      'interrupted (run was killed or the process exited)') "
+            "WHERE run_id != ? AND run_id != COALESCE(?, '') "
+            "  AND status NOT IN "
+            "  ('completed', 'failed', 'abandoned', 'interrupted')",
+            (now, run_id, parent_run_id),
+        )
         state.connection.execute(
             "INSERT INTO runs "
             "(run_id, operation, status, rules_sha, started_at, ended_at, "
-            " scope_json, totals_json, error_message) "
-            "VALUES (?, ?, 'running', ?, ?, NULL, ?, NULL, NULL)",
-            (run_id, operation, rules_sha, now, scope_json),
+            " scope_json, totals_json, error_message, parent_run_id) "
+            "VALUES (?, ?, 'running', ?, ?, NULL, ?, NULL, NULL, ?)",
+            (run_id, operation, rules_sha, now, scope_json, parent_run_id),
         )
 
 
@@ -1107,18 +1112,19 @@ def _acquire_run_lock(
         )
 
 
-def _regenerate_snapshots(ctx: TaskContext, rules: Rules, state: StateDB) -> None:
-    """Write the dashboard snapshot after a mutation task (D14 dual-write).
+def _regenerate_snapshots(
+    ctx: TaskContext, rules: Rules, state: StateDB,
+    *, run_id: "str | None" = None,
+) -> None:
+    """Write the dashboard snapshots after a mutation task (D14 dual-write).
 
-    Also refreshes ``run_history`` and ``unmapped_tags`` so the Operations and
-    Unmapped panels reflect the just-completed run immediately -- without this,
-    a dry run leaves those panels stale (the dashboard's ``dry_run_inspected``
-    counter updates, but the Operations list stays empty until someone manually
-    runs the Run History task).  Mirrors the all-snapshot refresh in
-    ``rules_editor.py`` (post rules-edit).  Each snapshot is written in its own
-    try/except so a failure in one does not block the others; the whole step is
-    best-effort and never propagates -- the mutation already succeeded and the
-    operator can refresh snapshots from the UI Dashboard task.
+    Also refreshes ``run_history``, ``unmapped_tags``, and ``dictionary`` so
+    every panel reflects the just-completed run immediately.  When
+    ``run_id`` is supplied, the run's recorded changes are written to
+    ``run_detail.json`` so the dashboard can show exactly what the run
+    changed.  Each snapshot is written in its own try/except so a failure
+    in one does not block the others; the whole step is best-effort and
+    never propagates -- the mutation already succeeded.
     """
     try:
         reporter = ReportEngine(state, rules, ctx.plugin_dir, ctx.data_dir)
@@ -1132,16 +1138,23 @@ def _regenerate_snapshots(ctx: TaskContext, rules: Rules, state: StateDB) -> Non
     except Exception as exc:  # pragma: no cover -- best-effort
         _log(f"dashboard snapshot regeneration skipped: {exc}")
         return
-    for name in ("run_history", "unmapped_tags"):
+    for name in ("run_history", "unmapped_tags", "dictionary"):
         try:
-            payload = (
-                reporter.generate_run_history()
-                if name == "run_history"
-                else reporter.generate_unmapped_tags()
-            )
+            if name == "run_history":
+                payload = reporter.generate_run_history()
+            elif name == "dictionary":
+                payload = reporter.generate_dictionary()
+            else:
+                payload = reporter.generate_unmapped_tags()
             reporter.write_snapshot(name, payload)
         except Exception as exc:  # pragma: no cover -- best-effort
             _log(f"{name} snapshot regeneration skipped: {exc}")
+    if run_id:
+        try:
+            detail = reporter.generate_run_detail(run_id)
+            reporter.write_snapshot("run_detail", detail)
+        except Exception as exc:  # pragma: no cover -- best-effort
+            _log(f"run_detail snapshot regeneration skipped: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1208,13 +1221,26 @@ def _write_save_result(ctx: TaskContext, result: Mapping[str, Any]) -> None:
         "error": result.get("error"),
         "message": result.get("message"),
         "errors": list(result["errors"]) if isinstance(result.get("errors"), list) else None,
+        "rules_sha": result.get("rules_sha"),
         "new_rules_sha": result.get("new_rules_sha"),
         "held_by_run_id": result.get("held_by_run_id"),
+        "affected_raw_tags": (
+            list(result["affected_raw_tags"])
+            if isinstance(result.get("affected_raw_tags"), list) else None
+        ),
+        "affected_scene_count": result.get("affected_scene_count"),
+        "affected_scene_counts": (
+            result["affected_scene_counts"]
+            if isinstance(result.get("affected_scene_counts"), dict) else None
+        ),
         "written_at": _now_iso(),
     }
     # Drop None values so the payload stays compact; the UI treats absent keys
-    # as null.
+    # as null.  sanitize_payload strips error strings that embed absolute
+    # filesystem paths (validation messages quote the rules file) -- this file
+    # is served from /plugin/.../assets/ like every other snapshot.
     payload = {k: v for k, v in payload.items() if v is not None}
+    payload = sanitize_payload(payload)
     serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2)
     try:
         snapshots_dir = ctx.snapshots_dir
@@ -1291,6 +1317,18 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
     changes = list(changes_raw) if isinstance(changes_raw, list) else []
     additions = list(additions_raw) if isinstance(additions_raw, list) else None
 
+    # A save that carries a checksum but no change entries would rewrite the
+    # file byte-identically and report success -- which the UI would then
+    # treat as "edits saved" and clear its staged draft.  Reject it instead.
+    if not changes and not additions:
+        result = {
+            "save_request_id": save_request_id,
+            "saved": False,
+            "message": "no changes to save",
+        }
+        _write_save_result(ctx, result)
+        return result
+
     state = ctx.open_state()
     lock_run_id = f"save-mapping-{secrets.token_hex(8)}"
     try:
@@ -1326,121 +1364,35 @@ def _run_save_mapping(ctx: TaskContext) -> dict[str, Any]:
         result = editor.save_mapping(expected_sha, changes, additions)
         result["save_request_id"] = save_request_id
         result["saved"] = "new_rules_sha" in result
+        if result["saved"]:
+            # Close-the-loop data: how many scenes each edited tag currently
+            # touches, so the UI can offer a scoped "update affected scenes"
+            # pass instead of a full rebuild.  scene_raw_tags_current holds
+            # the most recent provider observation per scene and is NOT
+            # changed by a rules edit, so counting after the write is safe.
+            try:
+                edited_keys = [
+                    str(c.get("normalized_key") or "").strip().lower().rstrip(",")
+                    for c in changes
+                    if isinstance(c, Mapping) and c.get("normalized_key")
+                ]
+                counts = state.scene_counts_by_raw_tags(edited_keys)
+                affected_ids = state.scenes_affected_by_raw_tags(edited_keys)
+                result["affected_raw_tags"] = [
+                    k for k in edited_keys if k in counts
+                ]
+                # Union count (a scene carrying several edited tags counts
+                # once); per-tag counts stay available for the UI breakdown.
+                result["affected_scene_count"] = len(affected_ids)
+                result["affected_scene_counts"] = counts
+                result["rules_sha"] = result["new_rules_sha"]
+            except Exception as exc:  # best-effort; never fail the save
+                _log(f"affected-scene count failed (save succeeded): {exc}")
         _write_save_result(ctx, result)
         result.pop("save_request_id", None)
         return result
     finally:
         state.release_lock(lock_run_id)
-        state.close()
-
-
-def _run_rebuild_family(ctx: TaskContext, mode: str) -> dict[str, Any]:
-    """Dispatch a rebuild-family mode to :class:`RebuildEngine`.
-
-    * ``dry_rebuild`` and ``dryRun=true`` invocations stop after
-      :meth:`RebuildEngine.run_dry` (proposals written, NO mutations).
-    * Every other rebuild mode runs the full two-phase pipeline
-      (``run_dry`` -> ``run_execute``) under the singleton lock.
-    """
-    scope_name = _REBUILD_SCOPES[mode]
-    dry_run = _as_bool(ctx.args.get("dryRun"), default=(mode == "dry_rebuild"))
-    # ``dry_rebuild`` defaults to a local audit (re-map existing tags through
-    # the rules, no stash-box network calls) so the inner loop is seconds,
-    # not hours.  Pass ``args["enrich"]=true`` to opt into the slow live
-    # stash-box enrichment path (SCOPE_ALL).
-    if mode == "dry_rebuild" and not _as_bool(ctx.args.get("enrich"), False):
-        scope_name = SCOPE_LOCAL_AUDIT
-
-    rules = ctx.load_rules()
-    state = ctx.open_state()
-    try:
-        providers = ProviderLookup(ctx.client, ctx.settings)
-        engine_settings = ctx.engine_settings(rules)
-
-        # Discover endpoints once (also used for the provider fingerprint).
-        try:
-            endpoints = providers.discover_endpoints()
-            engine_settings["provider_fingerprint"] = ",".join(
-                sorted(e.endpoint for e in endpoints)
-            )
-        except Exception as exc:
-            _log(f"provider discovery failed (continuing): {exc}")
-
-        if scope_name == SCOPE_AFFECTED_BY_MAPPING:
-            affected = _as_list(ctx.args.get("affected_raw_tags"))
-            if affected:
-                engine_settings["affected_raw_tags"] = affected
-
-        # Acquire the singleton run-lock (D5) BEFORE any GraphQL mutation.
-        # The D6 tagCreate pre-pass below calls tagCreate, which is a
-        # state-mutating GraphQL call; running it before lock acquisition
-        # would let two concurrent rebuilds race on tag creation (F3 M-2).
-        # Provider discovery, engine_settings, and the affected-raw-tags
-        # injection above are read-only / argument setup and stay here.
-        run_id = f"{mode}-{secrets.token_hex(8)}"
-        _log(f"acquiring lock run_id={run_id}")
-        _acquire_run_lock(state, run_id, mode, rules.rules_sha)
-        heartbeat = _HeartbeatThread(state, run_id)
-        heartbeat.start()
-        # Record the run START up-front so a mid-run error or kill still
-        # leaves a visible ``runs`` row (previously the row was written only
-        # on success, leaving an empty table + null dashboard on every failure).
-        _record_run_start(state, run_id, mode, rules.rules_sha, scope=scope_name)
-        result: dict[str, Any] = {}
-        run_error: "str | None" = None
-        try:
-            # D6 tagCreate pre-pass (F3 R-1, F3 M-2): resolve every finite tag
-            # the engine may emit (CURATOR markers, canonical tags, derived
-            # bucket labels, gender-qualified metric variants, cast notation,
-            # married-IRL, ethnicity, presence tags) to ids, creating missing
-            # ones via tagCreate so production runs do not skip scenes as
-            # ``missing_tags``. Runs INSIDE the lock so tagCreate mutations
-            # are serialized with the singleton run-lock held. The args seed
-            # is merged on top so test-injected ids always win.
-            engine_settings["tag_name_to_id"] = _resolve_finite_tags(
-                ctx.client, rules, engine_settings["tag_name_to_id"]
-            )
-            engine = RebuildEngine(
-                ctx.client, state, Journal(state), rules, providers,
-                settings=engine_settings,
-            )
-
-            scope = Scope(scope_name)
-            # When a full dry+execute run follows, split the progress bar:
-            # dry phase spans 0.0–0.5, execute phase spans 0.5–1.0.  This
-            # prevents the bar from sitting at 100% during the (slow) execute
-            # phase after the dry phase completes.
-            dry_cap = 0.5 if not dry_run else 1.0
-            dry_report = engine.run_dry(scope, run_id=run_id, progress_cap=dry_cap)
-            result = {
-                "mode": mode,
-                "scope": scope_name,
-                "dry_run": dry_report.to_dict(),
-            }
-            if not dry_run:
-                exec_report = engine.run_execute(
-                    dry_report.proposed_run_id, run_id=run_id,
-                    progress_floor=0.5, progress_cap=1.0,
-                )
-                result["execute"] = exec_report.to_dict()
-        except Exception as exc:
-            run_error = str(exc)
-            raise
-        finally:
-            # Terminal status recorded for BOTH success and failure paths.
-            _record_run_end(
-                state, run_id,
-                status="failed" if run_error else "completed",
-                totals=result or None, error=run_error,
-            )
-            heartbeat.stop()
-            state.release_lock(run_id)
-            _log(f"released lock run_id={run_id}")
-
-        # D14: regenerate the dashboard snapshot after the mutation.
-        _regenerate_snapshots(ctx, rules, state)
-        return result
-    finally:
         state.close()
 
 
@@ -1453,36 +1405,49 @@ from curator.stash_jobs import task_context  # noqa: E402
 
 
 def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
-    """Run the safe, user-facing end-to-end library maintenance workflow.
+    """Run the one user-facing maintenance workflow.
 
-    One confirmed invocation performs four idempotent scene phases followed
-    by globally-safe orphan cleanup:
+    One invocation performs idempotent scene phases followed by orphan
+    cleanup:
 
     1. never-processed scenes;
     2. scenes stale against the active rules;
     3. prior failures;
-    4. additive performer enrichment across all scenes;
-    5. deletion of tags whose association counts are zero everywhere.
+    4. scenes affected by the supplied dictionary edits (when
+       ``affected_raw_tags`` is passed -- the dashboard does this
+       automatically after a dictionary save);
+    5. additive performer enrichment across all scenes;
+    6. plugin-owned orphan-tag cleanup, plus globally-safe orphan cleanup
+       when ``cleanup_global=true`` (opt-in: it may remove non-curators
+       tags whose associations are zero everywhere).
 
-    The whole workflow holds the singleton lock.  Every scene mutation and
-    tag deletion is journaled by the existing engines.  Direct execution from
-    Stash's generic Tasks page is safe by default because ``confirmed=true``
-    is required; the dashboard supplies it only after its confirmation modal.
+    ``preview=true`` runs every scene phase as a dry-run (proposals
+    computed, NOTHING written to Stash) and skips cleanup.
+
+    Every scene mutation is idempotent full-replacement; a killed or
+    interrupted run simply continues the next time this task runs (stale
+    locks auto-reclaim; ``scene_state`` checkpoints what is done).  Direct
+    execution from Stash's generic Tasks page is a safe no-op unless
+    ``confirmed=true`` (supplied by the dashboard after its confirmation).
     """
-    if not _as_bool(ctx.args.get("confirmed"), False):
+    preview = _as_bool(ctx.args.get("preview"), False)
+    confirmed = _as_bool(ctx.args.get("confirmed"), False)
+    if not preview and not confirmed:
         return {
             "mode": "curate_library",
             "confirmed": False,
             "confirmation_required": True,
             "message": (
-                "Open the Tag Curator dashboard and review the Curate Library "
-                "confirmation before running this maintenance workflow."
+                "Open the Tag Curator dashboard and review the Update "
+                "Library confirmation before running this workflow."
             ),
         }
+    affected_raw_tags = _as_list(ctx.args.get("affected_raw_tags"))
+    cleanup_global = _as_bool(ctx.args.get("cleanup_global"), False)
 
     rules = ctx.load_rules()
     state = ctx.open_state()
-    run_id = f"curate-library-{secrets.token_hex(8)}"
+    run_id = f"update-library-{secrets.token_hex(8)}"
     try:
         providers = ProviderLookup(ctx.client, ctx.settings)
         engine_settings = ctx.engine_settings(rules)
@@ -1493,6 +1458,8 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             )
         except Exception as exc:
             _log(f"provider discovery failed (continuing): {exc}")
+        if affected_raw_tags:
+            engine_settings["affected_raw_tags"] = affected_raw_tags
 
         _log(f"acquiring lock run_id={run_id}")
         _acquire_run_lock(state, run_id, "curate_library", rules.rules_sha)
@@ -1500,75 +1467,45 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
         heartbeat.start()
         _record_run_start(
             state, run_id, "curate_library", rules.rules_sha,
-            scope="maintenance",
+            scope="affected" if affected_raw_tags else "maintenance",
         )
         result: dict[str, Any] = {
             "mode": "curate_library",
             "run_id": run_id,
-            "confirmed": True,
-            "scan": None,
-            "generate": None,
+            "preview": preview,
             "scene_phases": {},
         }
         run_error: "str | None" = None
+
+        # Scene phases, in triage order.  Each real (non-preview) phase runs
+        # under its OWN child run row: the mutations history enforces
+        # PRIMARY KEY (run_id, scene_id), and the enrichment phase
+        # deliberately re-mutates scenes the scene phases already processed.
+        phase_specs: list[tuple[str, str]] = [
+            ("never_processed", SCOPE_NEVER_PROCESSED),
+            ("stale_rules", SCOPE_STALE_RULES),
+            ("failed", SCOPE_FAILED),
+        ]
+        if affected_raw_tags:
+            phase_specs.append(("affected_by_mapping", SCOPE_AFFECTED_BY_MAPPING))
+        phase_specs.append(("performer_enrichment", SCOPE_ENRICH_ONLY))
+
+        # Progress: scene phases share 0.00-0.88 equally; cleanup 0.88-1.00.
+        n = len(phase_specs)
+        span = 0.88 / n
         try:
             engine_settings["tag_name_to_id"] = _resolve_finite_tags(
                 ctx.client, rules, engine_settings["tag_name_to_id"]
             )
 
-            # -- Phase 1: metadata scan (full library) -----------------
-            # DEADLOCK GUARD: Stash v0.31.1 uses ONE serial job queue.
-            # This plugin is itself a RUNNING task, so any metadataScan it
-            # submits is queued behind itself (status=READY, never
-            # dispatched) and submit_scan's poll loop blocks until the scan
-            # timeout — a self-deadlock confirmed live on 2026-07-13.
-            # Synchronous fire-and-poll from inside a Stash task is
-            # prohibited; scan_before_curate defaults to false.  When a user
-            # opts in (the setting still exists for the planned staged
-            # continuation architecture), fail fast with the real cause
-            # rather than appearing to stall for ~1 hour.
-            if engine_settings.get("scan_before_curate"):
-                raise InTaskPollingError(
-                    "scan_before_curate cannot run synchronously inside a Stash "
-                    "plugin task: Stash v0.31.1 queues the metadataScan behind "
-                    "this task (READY), so it never starts and the poll loop "
-                    "self-deadlocks. Run Scan via Stash's native Tasks UI before "
-                    "Curate Library, or await the staged-continuation "
-                    "architecture. (settings.scan_before_curate=true is rejected.)"
-                )
-            _log("curate_library: scan skipped (scan_before_curate=false)")
-            _progress(0.15)  # advance past the scan range
-
-            # -- Phase 2: metadata generate -----------------------------
-            # Same deadlock guard as Phase 1: a plugin task cannot poll a
-            # metadataGenerate job it queued behind itself.
-            if engine_settings.get("generate_before_curate"):
-                raise InTaskPollingError(
-                    "generate_before_curate cannot run synchronously inside a "
-                    "Stash plugin task: Stash v0.31.1 queues the "
-                    "metadataGenerate behind this task (READY), so it never "
-                    "starts and the poll loop self-deadlocks. Run Generate via "
-                    "Stash's native Tasks UI before Curate Library, or await "
-                    "the staged-continuation architecture. "
-                    "(settings.generate_before_curate=true is rejected.)"
-                )
-            _log("curate_library: generate skipped (generate_before_curate=false)")
-            _progress(0.45)  # advance past the generate range
-
-            # -- Phases 3-6: scene processing (tags + metadata + entities)
-            # Progress ranges shifted to 0.45–0.92 to make room for the
-            # scan/generate front phases (plan §D1).
-            phase_specs = (
-                ("never_processed", SCOPE_NEVER_PROCESSED, 0.45, 0.60),
-                ("stale_rules", SCOPE_STALE_RULES, 0.60, 0.70),
-                ("failed", SCOPE_FAILED, 0.70, 0.78),
-                ("performer_enrichment", SCOPE_ENRICH_ONLY, 0.78, 0.92),
-            )
-            for phase_name, scope_name, floor, cap in phase_specs:
-                span = cap - floor
+            for phase_idx, (phase_name, scope_name) in enumerate(phase_specs):
+                floor = phase_idx * span
 
                 def phase_progress(
-                    fraction: float, *, _floor: float = floor, _span: float = span
+                    fraction: float,
+                    *,
+                    _floor: float = floor,
+                    _span: float = span,
                 ) -> None:
                     _progress(_floor + max(0.0, min(1.0, fraction)) * _span)
 
@@ -1584,28 +1521,63 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
                 dry = engine.run_dry(
                     Scope(scope_name), run_id=run_id, progress_cap=0.5,
                 )
-                execute = engine.run_execute(
-                    dry.proposed_run_id,
-                    run_id=run_id,
-                    progress_floor=0.5,
-                    progress_cap=1.0,
+                if preview:
+                    result["scene_phases"][phase_name] = {
+                        "dry_run": dry.to_dict(),
+                    }
+                    state.heartbeat(run_id)
+                    continue
+                phase_run_id = f"{run_id}-p{phase_idx}-{phase_name}"
+                _record_run_start(
+                    state, phase_run_id, "curate_phase", rules.rules_sha,
+                    scope=phase_name, parent_run_id=run_id,
+                )
+                try:
+                    execute = engine.run_execute(
+                        dry.proposed_run_id,
+                        run_id=phase_run_id,
+                        progress_floor=0.5,
+                        progress_cap=1.0,
+                    )
+                except Exception as exc:
+                    _record_run_end(
+                        state, phase_run_id, status="failed",
+                        totals=None, error=str(exc),
+                    )
+                    raise
+                _record_run_end(
+                    state, phase_run_id, status="completed",
+                    totals={
+                        "dry_run": dry.to_dict(),
+                        "execute": execute.to_dict(),
+                    },
                 )
                 result["scene_phases"][phase_name] = {
+                    "run_id": phase_run_id,
                     "dry_run": dry.to_dict(),
                     "execute": execute.to_dict(),
                 }
                 state.heartbeat(run_id)
 
-            _progress(0.94)
-            cleanup = CleanupEngine(
-                ctx.client, state, rules, run_id=run_id,
-            )
-            proposal = cleanup.dry_run(SCOPE_SAFE_GLOBAL)
-            cleanup_report = cleanup.execute_cleanup(proposal.token)
-            result["orphan_cleanup"] = {
-                "proposal": proposal.to_dict(),
-                "execute": cleanup_report.to_dict(),
-            }
+            if not preview:
+                _progress(0.88)
+                cleanup_result: dict[str, Any] = {}
+                cleanup = CleanupEngine(
+                    ctx.client, state, rules, run_id=run_id,
+                )
+                # The engine may emit any of these tags on a future run (the
+                # D6 pre-pass re-creates them each run), so cleanup must
+                # never destroy them.
+                engine_tag_names = set(_finite_tag_candidates(rules))
+                owned = cleanup.run(
+                    SCOPE_PLUGIN_OWNED, exclude_names=engine_tag_names,
+                )
+                cleanup_result["plugin_owned"] = owned.to_dict()
+                if cleanup_global:
+                    cleanup_result["safe_global"] = cleanup.run(
+                        SCOPE_SAFE_GLOBAL, exclude_names=engine_tag_names,
+                    ).to_dict()
+                result["orphan_cleanup"] = cleanup_result
             _progress(1.0)
         except Exception as exc:
             run_error = str(exc)
@@ -1622,498 +1594,7 @@ def _run_curate_library(ctx: TaskContext) -> dict[str, Any]:
             state.release_lock(run_id)
             _log(f"released lock run_id={run_id}")
 
-        _regenerate_snapshots(ctx, rules, state)
-        return result
-    finally:
-        state.close()
-
-
-def _run_cleanup(ctx: TaskContext, mode: str) -> dict[str, Any]:
-    """Dispatch ``cleanup_safe`` / ``cleanup_plugin`` to :class:`CleanupEngine`.
-
-    When ``args["proposal_token"]`` is present, the execute phase runs
-    (:meth:`CleanupEngine.execute_cleanup`); otherwise the dry-run phase runs
-    (:meth:`CleanupEngine.dry_run`) and the returned proposal carries the
-    single-use confirmation token.
-    """
-    scope = SCOPE_SAFE_GLOBAL if mode == "cleanup_safe" else SCOPE_PLUGIN_OWNED
-    rules = ctx.load_rules()
-    state = ctx.open_state()
-    try:
-        run_id = f"{mode}-{secrets.token_hex(8)}"
-        _log(f"acquiring lock run_id={run_id}")
-        _acquire_run_lock(state, run_id, mode, rules.rules_sha)
-        heartbeat = _HeartbeatThread(state, run_id)
-        heartbeat.start()
-        _record_run_start(state, run_id, mode, rules.rules_sha, scope=scope)
-        result: dict[str, Any] = {}
-        run_error: "str | None" = None
-        try:
-            engine = CleanupEngine(ctx.client, state, rules, run_id=run_id)
-            token = ctx.args.get("proposal_token")
-            if token:
-                report = engine.execute_cleanup(str(token))
-                result = {
-                    "mode": mode,
-                    "scope": scope,
-                    "execute": report.to_dict(),
-                }
-            else:
-                exclude = _as_list(ctx.args.get("exclude_tag_ids"))
-                proposal = engine.dry_run(scope, exclude=exclude)
-                result = {
-                    "mode": mode,
-                    "scope": scope,
-                    "dry_run": proposal.to_dict(),
-                }
-        except Exception as exc:
-            run_error = str(exc)
-            raise
-        finally:
-            _record_run_end(
-                state, run_id,
-                status="failed" if run_error else "completed",
-                totals=result or None, error=run_error,
-            )
-            heartbeat.stop()
-            state.release_lock(run_id)
-            _log(f"released lock run_id={run_id}")
-
-        _regenerate_snapshots(ctx, rules, state)
-        return result
-    finally:
-        state.close()
-
-
-def _run_rollback(ctx: TaskContext) -> dict[str, Any]:
-    """Dispatch ``rollback`` to :meth:`RollbackEngine.run`.
-
-    Note: :class:`RollbackEngine` acquires/releases its own singleton lock
-    internally (including the abort-if-held check).  The dispatcher therefore
-    does NOT acquire the lock for rollback -- doing so would deadlock the
-    engine's own acquisition.
-    """
-    target_run_id = str(
-        ctx.args.get("run_id")
-        or ctx.args.get("target_run_id")
-        or ""
-    ).strip()
-    if not target_run_id:
-        raise ValueError("rollback requires a 'run_id' (or 'target_run_id') arg")
-
-    rules = ctx.load_rules()
-    state = ctx.open_state()
-    try:
-        engine = RollbackEngine(
-            ctx.client, state, Journal(state), rules,
-            settings=ctx.engine_settings(rules),
-        )
-        policy = str(ctx.args.get("policy") or POLICY_SKIP_WITH_WARNING)
-        recreate = _as_bool(ctx.args.get("recreate_missing"), False)
-        report = engine.run(
-            target_run_id,
-            policy=policy,
-            recreate_missing=recreate,
-        )
-        return {
-            "mode": "rollback",
-            "target_run_id": target_run_id,
-            "rollback": report.to_dict(),
-        }
-    finally:
-        state.close()
-
-
-# ---------------------------------------------------------------------------
-# Recovery modes (D5/D16/D17/D20) -- resume / abandon / force-release / undo
-# ---------------------------------------------------------------------------
-
-
-def _verify_run_exists(state: StateDB, run_id: str) -> "sqlite3.Row | None":
-    """Return the ``runs`` row for ``run_id`` or ``None``."""
-    return state.connection.execute(
-        "SELECT * FROM runs WHERE run_id = ?", (run_id,)
-    ).fetchone()
-
-
-def _reconcile_run(state: StateDB, run_id: str, ctx: TaskContext) -> dict[str, int]:
-    """Run the D16 pending-mutation reconciliation for ``run_id``.
-
-    Best-effort: a reconciliation failure is logged and a zeroed summary is
-    returned so the caller can still proceed (or abandon) -- the pending
-    rows remain for a later pass.
-    """
-    try:
-        return Journal(state).reconcile_pending(run_id, ctx.client)
-    except Exception as exc:
-        _log(f"reconciliation for {run_id} failed (continuing): {exc}")
-        return {
-            "inspected": 0,
-            "reconciled_applied": 0,
-            "applied": 0,
-            "conflicted": 0,
-            "skipped": 0,
-        }
-
-
-def _run_resume_run(ctx: TaskContext) -> dict[str, Any]:
-    """Resume an interrupted run (D5/D16/D17).
-
-    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
-    run_id from the current lock row so the task works from Stash's Tasks
-    UI. Verifies the original run row exists and that its ``rules_sha``
-    matches the current rules (aborts on a rules change so a resume never
-    silently mutates against a different rule set). Reconciles pending
-    mutations (D16), force-releases the stale lock held by this ``run_id``
-    (it owns the token), re-acquires a fresh lock, and re-runs the rebuild
-    family for the original scope.
-    """
-    run_id = str(ctx.args.get("run_id") or "").strip()
-    rules = ctx.load_rules()
-    state = ctx.open_state()
-    try:
-        # Auto-detect run_id from the current lock when not provided.
-        # This makes the task usable from Stash's Tasks UI, which doesn't
-        # pass custom args. Mirror the _run_force_release pattern.
-        if not run_id:
-            lock = state.current_lock()
-            if lock is None:
-                return {
-                    "mode": "resume_run",
-                    "resumed_run_id": None,
-                    "status": "no-op",
-                    "message": "no lock held; nothing to resume",
-                }
-            run_id = str(lock["run_id"] or "").strip()
-            if not run_id:
-                return {
-                    "mode": "resume_run",
-                    "resumed_run_id": None,
-                    "status": "no-op",
-                    "message": "lock row has no run_id; nothing to resume",
-                }
-
-        run_row = _verify_run_exists(state, run_id)
-        if run_row is None:
-            raise ValueError(
-                f"no run row found for run_id={run_id!r}; nothing to resume"
-            )
-        original_sha = run_row["rules_sha"] if "rules_sha" in run_row.keys() else None
-        if original_sha and original_sha != rules.rules_sha:
-            raise RuntimeError(
-                f"rules changed since {run_id} was started "
-                f"(was {original_sha[:12]}, now {rules.rules_sha[:12]}); "
-                f"abandon the run and start a fresh rebuild instead"
-            )
-        operation = run_row["operation"] if "operation" in run_row.keys() else None
-        if operation not in _REBUILD_SCOPES:
-            raise RuntimeError(
-                f"run {run_id} (operation={operation!r}) is not a rebuild-family "
-                f"run and cannot be resumed"
-            )
-        scope_name = _REBUILD_SCOPES[operation]
-
-        # D16: reconcile pending mutations before re-running.
-        reconciliation = _reconcile_run(state, run_id, ctx)
-
-        # Force-release any stale lock held by THIS run_id (we own the token),
-        # then acquire a fresh lock for the resume.
-        if state.is_locked():
-            lock = state.current_lock()
-            if lock is not None and lock["run_id"] == run_id:
-                state.force_release(run_id)
-
-        resume_run_id = f"resume-{secrets.token_hex(8)}"
-        _log(f"acquiring lock run_id={resume_run_id} (resume of {run_id})")
-        _acquire_run_lock(state, resume_run_id, "resume_run", rules.rules_sha)
-        heartbeat = _HeartbeatThread(state, resume_run_id)
-        heartbeat.start()
-        _record_run_start(
-            state, resume_run_id, "resume_run", rules.rules_sha, scope=scope_name,
-        )
-        result: dict[str, Any] = {}
-        run_error: "str | None" = None
-        try:
-            strict = _as_bool(
-                ctx.args.get("strict"),
-                default=_as_bool(ctx.settings.get("strict_version"), True),
-            )
-            Preflight(
-                ctx.client, ctx.data_dir,
-                strict=strict, require_providers=True,
-            ).run()
-            providers = ProviderLookup(ctx.client, ctx.settings)
-            engine_settings = ctx.engine_settings(rules)
-            try:
-                endpoints = providers.discover_endpoints()
-                engine_settings["provider_fingerprint"] = ",".join(
-                    sorted(e.endpoint for e in endpoints)
-                )
-            except Exception as exc:
-                _log(f"provider discovery failed (continuing): {exc}")
-            engine_settings["tag_name_to_id"] = _resolve_finite_tags(
-                ctx.client, rules, engine_settings["tag_name_to_id"]
-            )
-            engine = RebuildEngine(
-                ctx.client, state, Journal(state), rules, providers,
-                settings=engine_settings,
-            )
-            scope = Scope(scope_name)
-            dry_report = engine.run_dry(scope, run_id=resume_run_id)
-            exec_report = engine.run_execute(
-                dry_report.proposed_run_id, run_id=resume_run_id,
-            )
-            result = {
-                "mode": "resume_run",
-                "resumed_run_id": run_id,
-                "resume_run_id": resume_run_id,
-                "scope": scope_name,
-                "reconciliation": reconciliation,
-                "dry_run": dry_report.to_dict(),
-                "execute": exec_report.to_dict(),
-            }
-        except Exception as exc:
-            run_error = str(exc)
-            raise
-        finally:
-            _record_run_end(
-                state, resume_run_id,
-                status="failed" if run_error else "completed",
-                totals=result or None, error=run_error,
-            )
-            heartbeat.stop()
-            state.release_lock(resume_run_id)
-            _log(f"released lock run_id={resume_run_id}")
-
-        _regenerate_snapshots(ctx, rules, state)
-        return result
-    finally:
-        state.close()
-
-
-def _run_abandon_run(ctx: TaskContext) -> dict[str, Any]:
-    """Abandon an interrupted run (D5/D16/D17).
-
-    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
-    run_id from the current lock row so the task works from Stash's Tasks
-    UI (which does not prompt for args). Reconciles pending mutations (so
-    the journal converges), marks the run ``abandoned`` if a ``runs`` row
-    exists (killed runs may have no row), and force-releases the singleton
-    lock ONLY if it is still held by this ``run_id`` (the audited,
-    token-gated release path -- D5).
-    """
-    run_id = str(ctx.args.get("run_id") or "").strip()
-    state = ctx.open_state()
-    try:
-        # Auto-detect run_id from the current lock when not provided.
-        # This makes the task usable from Stash's Tasks UI, which doesn't
-        # pass custom args. Mirror the _run_force_release pattern.
-        if not run_id:
-            lock = state.current_lock()
-            if lock is None:
-                return {
-                    "mode": "abandon_run",
-                    "run_id": None,
-                    "status": "no-op",
-                    "message": "no lock held; nothing to abandon",
-                    "reconciliation": {
-                        "inspected": 0, "reconciled_applied": 0,
-                        "applied": 0, "conflicted": 0, "skipped": 0,
-                    },
-                    "lock_released": False,
-                }
-            run_id = str(lock["run_id"] or "").strip()
-            if not run_id:
-                return {
-                    "mode": "abandon_run",
-                    "run_id": None,
-                    "status": "no-op",
-                    "message": "lock row has no run_id; nothing to abandon",
-                    "reconciliation": {
-                        "inspected": 0, "reconciled_applied": 0,
-                        "applied": 0, "conflicted": 0, "skipped": 0,
-                    },
-                    "lock_released": False,
-                }
-
-        rules = ctx.load_rules()
-        # Reconcile pending mutations even when no runs row exists.
-        # A killed DryRebuild/Rebuild never wrote a runs row (only successful
-        # completion does), but it may have left pending mutations and a
-        # stale lock -- both worth cleaning up.
-        reconciliation = _reconcile_run(state, run_id, ctx)
-
-        run_row = _verify_run_exists(state, run_id)
-        run_row_existed = run_row is not None
-        if run_row_existed:
-            with state._txn():  # noqa: SLF001 -- same-package access (Journal pattern)
-                state.connection.execute(
-                    "UPDATE runs SET status = 'abandoned', "
-                    "ended_at = COALESCE(ended_at, ?) WHERE run_id = ?",
-                    (_now_iso(), run_id),
-                )
-
-        lock_released = False
-        if state.is_locked():
-            lock = state.current_lock()
-            if lock is not None and lock["run_id"] == run_id:
-                lock_released = state.force_release(run_id)
-        return {
-            "mode": "abandon_run",
-            "run_id": run_id,
-            "status": "abandoned",
-            "run_row_existed": run_row_existed,
-            "reconciliation": reconciliation,
-            "lock_released": lock_released,
-        }
-    finally:
-        state.close()
-
-def _run_force_release(ctx: TaskContext) -> dict[str, Any]:
-    """Force-release the singleton run lock (D5/D17 escape hatch).
-
-    Accepts an optional ``run_id`` arg; when omitted, auto-detects the
-    run_id from the current lock row so the task works from Stash's Tasks
-    UI (which does not prompt for args).  Delegates to
-    :meth:`StateDB.force_release`, which writes the audit row BEFORE the
-    DELETE in the same ``BEGIN IMMEDIATE`` transaction.  This handler does
-    NOT acquire the lock -- it is the audited override for stale locks and
-    acquiring would deadlock against the very row it must clear.
-
-    D5 reconciliation: a SIGKILL'd run bypasses the ``finally`` block that
-    would normally call :meth:`StateDB.release_lock` *and*
-    :func:`_record_run_end`, so its ``runs`` row is stranded in
-    ``status='running'`` forever (the orphaned-row bug).  When
-    force-release clears such a lock, the held ``run_id`` is known, so we
-    also reconcile that orphaned row to ``status='interrupted'`` here --
-    mirroring :func:`_run_abandon_run` (which marks ``abandoned``) but
-    using the weaker ``interrupted`` status since force-release is the
-    operator escape hatch, not a deliberate abandon.  This keeps run
-    history / dashboard totals truthful instead of showing a phantom
-    in-flight run.
-    """
-    run_id = str(ctx.args.get("run_id") or "").strip()
-    token = str(ctx.args.get("confirmation_token") or run_id).strip()
-    state = ctx.open_state()
-    try:
-        # Auto-detect run_id from the current lock when not provided.
-        # This makes the task usable from Stash's Tasks UI, which doesn't
-        # pass custom args.
-        if not token:
-            lock = state.current_lock()
-            if lock is None:
-                return {
-                    "mode": "force_release",
-                    "run_id": None,
-                    "confirmation_token": None,
-                    "released": False,
-                    "message": "no lock to release",
-                }
-            token = str(lock["run_id"])
-            run_id = token
-        released = state.force_release(token)
-
-        # D5: reconcile the orphaned `runs` row left by a SIGKILL'd run.
-        # The killed process never reached its `finally` -> _record_run_end,
-        # so the row is stranded in status='running'.  Only non-terminal rows
-        # are touched (COALESCE guards an already-ended row) and only when a
-        # row exists at all (a killed pre-lock run may have none).
-        run_row_reconciled = False
-        if released and run_id:
-            cur = state.connection.execute(
-                "UPDATE runs "
-                "SET status = 'interrupted', "
-                "    ended_at = COALESCE(ended_at, ?), "
-                "    error_message = COALESCE(error_message, ?) "
-                "WHERE run_id = ? AND status NOT IN "
-                "    ('completed', 'failed', 'abandoned', 'interrupted')",
-                (_now_iso(),
-                 "force-released (run was killed / stale)", run_id),
-            )
-            run_row_reconciled = cur.rowcount > 0
-    finally:
-        state.close()
-
-    # Regenerate the dashboard snapshot so the UI immediately reflects that
-    # the lock has been released (no manual Dashboard task needed).
-    if released:
-        try:
-            rules = ctx.load_rules()
-            state2 = ctx.open_state()
-            try:
-                reporter = ReportEngine(
-                    state2, rules, ctx.plugin_dir, ctx.data_dir
-                )
-                reporter.configured_providers = _resolve_configured_providers(ctx)
-                dashboard = reporter.generate_dashboard(client=ctx.client)
-                reporter.write_snapshot("dashboard", dashboard)
-            finally:
-                state2.close()
-        except Exception as exc:  # pragma: no cover -- best-effort
-            _log(f"force_release dashboard refresh skipped: {exc}")
-
-    return {
-        "mode": "force_release",
-        "run_id": run_id,
-        "confirmation_token": token,
-        "released": released,
-        "run_row_reconciled": run_row_reconciled if released else False,
-    }
-
-def _run_undo_cleanup(ctx: TaskContext) -> dict[str, Any]:
-    """Restore tags destroyed by a prior cleanup run (D20).
-
-    Requires ``cleanup_run_id``.  Acquires the singleton lock, delegates to
-    :func:`curator.cleanup.undo_cleanup` (which re-creates each deleted tag
-    via ``tagCreate`` from the ``tag_deletions`` journal), and records the run.
-    """
-    cleanup_run_id = str(
-        ctx.args.get("cleanup_run_id") or ctx.args.get("run_id") or ""
-    ).strip()
-    if not cleanup_run_id:
-        raise ValueError("undo_cleanup requires a 'cleanup_run_id' arg")
-
-    rules = ctx.load_rules()
-    state = ctx.open_state()
-    try:
-        run_id = f"undo-cleanup-{secrets.token_hex(8)}"
-        _log(f"acquiring lock run_id={run_id}")
-        _acquire_run_lock(state, run_id, "undo_cleanup", rules.rules_sha)
-        _record_run_start(state, run_id, "undo_cleanup", rules.rules_sha)
-        result: dict[str, Any] = {}
-        run_error: "str | None" = None
-        try:
-            strict = _as_bool(
-                ctx.args.get("strict"),
-                default=_as_bool(ctx.settings.get("strict_version"), True),
-            )
-            Preflight(
-                ctx.client, ctx.data_dir,
-                strict=strict, require_providers=False,
-            ).run()
-            report = undo_cleanup(
-                ctx.client, state, cleanup_run_id, run_id=run_id,
-            )
-            result = {
-                "mode": "undo_cleanup",
-                "cleanup_run_id": cleanup_run_id,
-                "restored": list(report.restored),
-                "failed": list(report.failed),
-                "restored_count": int(report.restored_count),
-                "failed_count": int(report.failed_count),
-            }
-        except Exception as exc:
-            run_error = str(exc)
-            raise
-        finally:
-            _record_run_end(
-                state, run_id,
-                status="failed" if run_error else "completed",
-                totals=result or None, error=run_error,
-            )
-            state.release_lock(run_id)
-            _log(f"released lock run_id={run_id}")
-        _regenerate_snapshots(ctx, rules, state)
+        _regenerate_snapshots(ctx, rules, state, run_id=run_id)
         return result
     finally:
         state.close()
@@ -2132,6 +1613,31 @@ def _run_report(ctx: TaskContext, mode: str) -> dict[str, Any]:
     try:
         reporter = ReportEngine(state, rules, ctx.plugin_dir, ctx.data_dir)
         reporter.configured_providers = _resolve_configured_providers(ctx)
+
+        if mode == "refresh_data":
+            return _run_refresh_data(ctx, reporter)
+
+        if mode == "run_detail":
+            target = str(ctx.args.get("run_id") or "").strip()
+            if not target:
+                # No run id: fall back to the most recent run so the task
+                # also works from Stash's generic Tasks page (no args).
+                latest = state.connection.execute(
+                    "SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+                target = str(latest["run_id"]) if latest is not None else ""
+            if not target:
+                return {
+                    "mode": "run_detail",
+                    "run": None,
+                    "changes": [],
+                    "total_changes": 0,
+                    "changes_without_names": 0,
+                    "truncated": False,
+                }
+            limit = _as_int(ctx.args.get("limit"), 500)
+            return reporter.generate_run_detail(target, limit=limit)
+
         if mode == "dashboard":
             payload = reporter.generate_dashboard(client=ctx.client)
         elif mode == "unmapped_tags":
@@ -2142,6 +1648,9 @@ def _run_report(ctx: TaskContext, mode: str) -> dict[str, Any]:
             payload = reporter.generate_run_history(limit=limit)
         elif mode == "rules_audit":
             payload = reporter.generate_rules_audit()
+        elif mode == "dictionary":
+            limit = _as_int(ctx.args.get("limit"), 5000)
+            payload = reporter.generate_dictionary(limit=limit)
         else:  # pragma: no cover -- exhaustive routing above
             raise ValueError(f"unrouted report mode: {mode!r}")
 
@@ -2150,6 +1659,32 @@ def _run_report(ctx: TaskContext, mode: str) -> dict[str, Any]:
         return payload
     finally:
         state.close()
+
+
+def _run_refresh_data(ctx: TaskContext, reporter: ReportEngine) -> dict[str, Any]:
+    """Regenerate every dashboard snapshot in one read-only pass.
+
+    One task replaces the five per-snapshot report tasks: the dashboard's
+    Refresh button dispatches this and every panel gets fresh data.  Each
+    snapshot is generated in its own try/except so one failure does not
+    block the others.
+    """
+    generated: dict[str, bool] = {}
+    jobs: "list[tuple[str, Any]]" = [
+        ("dashboard", lambda: reporter.generate_dashboard(client=ctx.client)),
+        ("run_history", reporter.generate_run_history),
+        ("unmapped_tags", reporter.generate_unmapped_tags),
+        ("dictionary", reporter.generate_dictionary),
+        ("rules_audit", reporter.generate_rules_audit),
+    ]
+    for name, generate in jobs:
+        try:
+            reporter.write_snapshot(name, generate())
+            generated[name] = True
+        except Exception as exc:  # best-effort per snapshot
+            _log(f"{name} snapshot refresh skipped: {exc}")
+            generated[name] = False
+    return {"mode": "refresh_data", "generated": generated}
 
 
 # ---------------------------------------------------------------------------
@@ -2213,14 +1748,14 @@ def _dispatch(
             return _run_validate_rules(ctx)
 
         # -- Mutation-task preflight gate (D1) ----------------------
-        if mode in _LOCK_MODES or mode == "rollback":
+        if mode in _LOCK_MODES:
             strict = _as_bool(
                 args.get("strict"),
                 default=_as_bool(raw_settings.get("strict_version"), True),
             )
-            # Only the rebuild family calls providers; cleanup / rollback / save
-            # do not need stash-box endpoints.
-            require_providers = mode in _REBUILD_SCOPES or mode == "curate_library"
+            # Only the curate workflow calls providers; save_mapping does not
+            # need stash-box endpoints.
+            require_providers = mode == "curate_library"
             preflight = Preflight(
                 ctx.client, ctx.data_dir,
                 strict=strict, require_providers=require_providers,
@@ -2231,22 +1766,8 @@ def _dispatch(
         # -- Route --------------------------------------------------
         if mode == "curate_library":
             return _run_curate_library(ctx)
-        if mode in _REBUILD_SCOPES:
-            return _run_rebuild_family(ctx, mode)
-        if mode in ("cleanup_safe", "cleanup_plugin"):
-            return _run_cleanup(ctx, mode)
-        if mode == "rollback":
-            return _run_rollback(ctx)
         if mode == "save_mapping":
             return _run_save_mapping(ctx)
-        if mode == "resume_run":
-            return _run_resume_run(ctx)
-        if mode == "abandon_run":
-            return _run_abandon_run(ctx)
-        if mode == "force_release":
-            return _run_force_release(ctx)
-        if mode == "undo_cleanup":
-            return _run_undo_cleanup(ctx)
         if mode in _REPORT_MODES:
             return _run_report(ctx, mode)
         # Should be unreachable -- mode was validated against _ALL_MODES.

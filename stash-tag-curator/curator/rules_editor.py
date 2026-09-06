@@ -193,7 +193,10 @@ class RulesEditor:
                 notes?}`` mapping edits.  An entry with ``disposition='ignore'``
                 MUST omit ``outputs``; ``map``/``detail`` REQUIRE ``outputs``;
                 ``defer`` leaves ``outputs`` optional.  An existing key is
-                replaced; a new key is inserted.
+                replaced; a new key is inserted.  An entry with
+                ``remove: true`` DELETES the key from ``mappings`` entirely
+                (back to "needs decision"); it must then omit disposition,
+                outputs, and notes.
             canonical_additions: Optional list of ``{axis, name}`` entries to
                 append to ``canonical_tags[axis]``.  Duplicates (by exact
                 string match) are rejected.
@@ -354,6 +357,23 @@ class RulesEditor:
                     "error": "path_traversal_rejected",
                     "argument": f"changes[{idx}].normalized_key",
                 }
+            # remove: delete the mapping key entirely.  Mutually exclusive
+            # with the edit fields (a remove is not an edit).
+            if change.get("remove"):
+                conflicting = [
+                    field
+                    for field in ("disposition", "outputs", "notes")
+                    if change.get(field) is not None
+                ]
+                if conflicting:
+                    return {
+                        "error": "validation_failed",
+                        "errors": [
+                            f"changes[{idx}].remove is mutually exclusive with "
+                            f"{', '.join(conflicting)}"
+                        ],
+                    }
+                continue
             # disposition: required enum.
             disp = change.get("disposition")
             if disp not in _VALID_DISPOSITIONS:
@@ -506,6 +526,12 @@ class RulesEditor:
             raise ValueError("mappings must be a mapping")
         for change in changes:
             key = _normalize_source_key(change["normalized_key"])
+            # remove: drop the key entirely (validation guarantees the
+            # edit fields are absent).  A missing key is a no-op so a
+            # double-apply of the same change set stays idempotent.
+            if change.get("remove"):
+                mappings.pop(key, None)
+                continue
             disp = change["disposition"]
             outputs = change.get("outputs")
             notes = change.get("notes")
@@ -524,6 +550,16 @@ class RulesEditor:
 
             if notes is not None:
                 entry["notes"] = notes
+
+            # Preserve audit fields the edit did not touch (the UI edits
+            # disposition/outputs and typically sends no notes): silently
+            # dropping them would erase provenance on every change.
+            existing = mappings.get(key)
+            if isinstance(existing, dict):
+                if notes is None and "notes" in existing:
+                    entry["notes"] = existing["notes"]
+                if "provider" in existing and "provider" not in entry:
+                    entry["provider"] = existing["provider"]
 
             mappings[key] = entry
 
@@ -624,12 +660,14 @@ class RulesEditor:
                 engine.write_snapshot("dashboard", dashboard)
             except Exception:
                 pass
-            for name in ("unmapped_tags", "run_history", "rules_audit"):
+            for name in ("unmapped_tags", "run_history", "rules_audit", "dictionary"):
                 try:
                     if name == "unmapped_tags":
                         payload = engine.generate_unmapped_tags()
                     elif name == "run_history":
                         payload = engine.generate_run_history()
+                    elif name == "dictionary":
+                        payload = engine.generate_dictionary()
                     else:
                         payload = engine.generate_rules_audit()
                     engine.write_snapshot(name, payload)

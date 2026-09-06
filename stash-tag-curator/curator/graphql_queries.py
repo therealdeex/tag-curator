@@ -51,10 +51,10 @@ query GetConfigurationStashBoxes {
 # ---------------------------------------------------------------------------
 
 # Field selection required by the curator pipeline (handoff L1078-1096):
-# scene id/title/date/code, file fingerprints, scene tags, full performer
-# demographic + body decoration fields plus performer tags, studio, and stash
-# ids. The same selection is reused for the single-scene lookup so the engine
-# can share one row-to-model mapper.
+# scene id/title/date/code, file paths + fingerprints, scene tags, full
+# performer demographic + body decoration fields plus performer tags, studio,
+# and stash ids. The same selection is reused for the single-scene lookup so
+# the engine can share one row-to-model mapper.
 _SCENE_FIELDS = """
       id
       title
@@ -64,6 +64,7 @@ _SCENE_FIELDS = """
       director
       urls
       files {
+        path
         fingerprints {
           type
           value

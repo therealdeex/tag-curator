@@ -1,8 +1,8 @@
-"""T26 integration test: full dry-run -> rebuild -> rerun -> rollback cycle on a 1k-scene scope.
+"""Integration test: full dry-run -> rebuild -> idempotent-rerun cycle on a 1k-scene scope.
 
 Uses deterministic synthetic scene generation (1000 scenes) driven through a
 stateful in-memory Stash stand-in so the optimistic-safety, idempotency, and
-rollback engines all exercise real state transitions at 1k scale.
+engine exercises real state transitions at 1k scale.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import pytest
 from curator.journal import Journal
 from curator.processing import SCOPE_ALL, RebuildEngine
 from curator.rules import Rules
-from curator.rollback import RollbackEngine
 from curator.state import StateDB
 from curator.providers import ProviderLookup
 from tests.unit.test_processing import (
@@ -63,7 +62,7 @@ def _build_1k_scenes() -> list[dict[str, Any]]:
 
 
 @pytest.mark.slow
-def test_full_cycle_dry_rebuild_rerun_rollback_1k(state: StateDB) -> None:
+def test_full_cycle_dry_rebuild_rerun_1k(state: StateDB) -> None:
     scenes = _build_1k_scenes()
     # One scraped result per scene in the batch (25-scene batches -> 40 batches).
     scrape_inner = [[_scraped(["Blowjob"], remote_site_id=f"stashdb-{i:04d}")] for i in range(NUM_SCENES)]
@@ -105,9 +104,3 @@ def test_full_cycle_dry_rebuild_rerun_rollback_1k(state: StateDB) -> None:
     assert exec2.scenes_skipped.get("idempotent_noop") == NUM_SCENES
     assert client.scene_update_calls == []
 
-    # Phase 3: rollback run-1 -> restores all 1000 scenes.
-    rb_engine = RollbackEngine(client, state, Journal(state), rules=None, progress_fn=lambda _f: None)
-    report = rb_engine.run("run-1", rollback_run_id="rb-1")
-    assert report.aborted is False
-    assert report.scenes_reverted == NUM_SCENES
-    assert report.scenes_skipped.get("conflict") is None

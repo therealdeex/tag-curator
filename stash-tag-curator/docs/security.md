@@ -97,19 +97,25 @@ secrets: the browser code never sees the stash-box API key (which stays
 server-side) and treats the optional local API key as a server-applied header,
 not something it reads.
 
-## Mutation safety
+## Mutation safety (0.5.0)
 
-Every tag mutation is journaled in the SQLite `mutations` table before the
-GraphQL call fires. The row records the old and proposed tag id sets. After the
-call confirms, the row is marked `applied`. On resume after a kill, each
-`pending` row is reconciled against the live scene state, so the engine never
-guesses whether a mutation landed.
+Scene mutations are idempotent full replacements: every `sceneUpdate` writes
+the complete desired tag set, so re-running a scene always converges on the
+correct state. Crash safety follows from that property instead of a pre-write
+journal: a scene killed mid-write is never marked successful in
+`scene_state`, so the next run re-selects and re-derives it (a write that DID
+land simply re-applies as an identical no-op). The SQLite `mutations` table
+survives as a post-success HISTORY record — old and new tag ids and names per
+scene per run — powering the dashboard's run-diff view and audits. There is
+no rollback engine; fixing a bad run means fixing the input (dictionary) and
+re-running.
 
 Tag deletions from cleanup are journaled in a separate `tag_deletions` table
-with name, axis, parent, child, and alias metadata before `tagsDestroy` fires.
-The ordering is test-enforced: the journal rows exist before the destroy call.
-A kill between journal and destroy still leaves enough metadata to rebuild the
-tag through `Undo Cleanup`.
+with name, axis, and alias metadata before `tagsDestroy` fires. The ordering
+is test-enforced: the audit rows exist before the destroy call. Cleanup is
+conservative by construction (canonical tags, `CURATOR:` markers, and
+protected names are never candidates; every association count must be zero)
+and global-orphan cleanup requires explicit opt-in per run.
 
 Active canonical tags, `CURATOR:` markers, and tags matching
 `protected.prefixes` (default `MANUAL:`) or `protected.tag_names` are never

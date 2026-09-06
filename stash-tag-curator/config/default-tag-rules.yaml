@@ -66,6 +66,7 @@ canonical_tags:
   - 'BODY: Circumcised'
   - 'BODY: Average body'
   - 'BODY: Oiled'
+  - 'BODY: Landing strip'
   AGE: []
   THEME:
   - 'THEME: Cheating'
@@ -85,6 +86,8 @@ canonical_tags:
   - 'THEME: Reluctance'
   - 'THEME: Swingers'
   - 'THEME: Gangbang'
+  - 'THEME: Sci-fi/Fantasy'
+  - 'THEME: Wedding'
   SET:
   - 'SET: Bedroom'
   - 'SET: Bathroom'
@@ -100,6 +103,9 @@ canonical_tags:
   - 'SET: Pool/water'
   - 'SET: School'
   - 'SET: Stairs'
+  - 'SET: Garage'
+  - 'SET: Hospital'
+  - 'SET: Prison'
   WARD:
   - 'WARD: Lingerie'
   - 'WARD: Heels'
@@ -134,6 +140,9 @@ canonical_tags:
   - 'KINK: Sensory deprivation'
   - 'KINK: Sissification'
   - 'KINK: Pet play'
+  - 'KINK: Medical'
+  - 'KINK: Rough sex'
+  - 'KINK: Smothering'
   PROD:
   - 'PROD: Gonzo'
   - 'PROD: POV'
@@ -142,6 +151,8 @@ canonical_tags:
   - 'PROD: Compilation'
   - 'PROD: Glamour'
   - 'PROD: Reality'
+  - 'PROD: Softcore'
+  - 'PROD: Webcam'
   ERA: []
   STUDIO: []
 mappings:
@@ -4895,8 +4906,6 @@ mappings:
     outputs:
     - 'KINK: Dom/Sub'
     notes: 'FIX 2026-07-12: was wrongly mapped to ACT: Cunnilingus; punishment is a D/s dynamic descriptor.'
-
-  # --- Ops patch 2026-07-12: approved mappings ---
   discipline:
     outputs:
     - 'KINK: Dom/Sub'
@@ -5055,7 +5064,6 @@ mappings:
     outputs:
     - 'KINK: Dom/Sub'
     disposition: map
-  # --- Ops patch 2026-07-12: approved ignores ---
   gimp:
     disposition: ignore
     notes: 'Ops patch: blacklisted per Shahram - BDSM role too vague for canonical mapping.'
@@ -5240,7 +5248,437 @@ mappings:
   fuck n lick:
     disposition: ignore
     notes: 'Ops patch: generic act combo noise.'
-
+  2 big to be true:
+    disposition: map
+    outputs:
+    - 'BODY: Big dick'
+    notes: Implausibly large penis theme.
+  anal dildo:
+    disposition: map
+    outputs:
+    - 'ACT: Anal sex'
+    - 'ACT: Sex toys'
+  anal hooks:
+    disposition: map
+    outputs:
+    - 'KINK: Bondage'
+    - 'ACT: Sex toys'
+    notes: Restraint toy.
+  anally plugged sex:
+    disposition: map
+    outputs:
+    - 'ACT: Sex toys'
+    notes: Plug worn during sex.
+  ankle bracelet:
+    disposition: map
+    outputs:
+    - 'WARD: Jewelry'
+  ass toying:
+    disposition: map
+    outputs:
+    - 'ACT: Anal sex'
+    - 'ACT: Sex toys'
+  belt:
+    disposition: detail
+    outputs:
+    - belt
+    notes: Wardrobe detail tag.
+  big vs. small:
+    disposition: detail
+    outputs:
+    - big vs. small
+    notes: Size-contrast pairing theme.
+  bikini panties:
+    disposition: map
+    outputs:
+    - 'WARD: Lingerie'
+  biting balls:
+    disposition: detail
+    outputs:
+    - biting balls
+    notes: Playful ball-biting during oral; not coded as CBT.
+  bodybuilder:
+    disposition: map
+    outputs:
+    - 'BODY: Muscular'
+  breast abuse:
+    disposition: map
+    outputs:
+    - 'KINK: Nipple torment'
+  bridge:
+    disposition: detail
+    outputs:
+    - bridge
+    notes: Position (cf. lotus, full nelson).
+  cap:
+    disposition: detail
+    outputs:
+    - cap
+    notes: Wardrobe detail tag.
+  castingcouch:
+    disposition: map
+    outputs:
+    - 'PROD: Reality'
+    notes: Casting-premise reality content.
+  coed:
+    disposition: detail
+    outputs:
+    - coed
+    notes: Young-college archetype; age is otherwise derived from performer data.
+  comedy:
+    disposition: detail
+    outputs:
+    - comedy
+  corruption:
+    disposition: detail
+    outputs:
+    - corruption
+    notes: Corruption/seduction premise.
+  couple sex (fm):
+    disposition: map
+    outputs:
+    - 'CAST: 1M1F'
+  cowboy:
+    disposition: detail
+    outputs:
+    - cowboy
+    notes: Position variant.
+  creeper:
+    disposition: map
+    outputs:
+    - 'THEME: Voyeurism'
+  crying:
+    disposition: detail
+    outputs:
+    - crying
+  cuffs:
+    disposition: map
+    outputs:
+    - 'KINK: Gags/restraints'
+  customer:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+  dancing:
+    disposition: detail
+    outputs:
+    - dancing
+  delivery driver:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+  dominant woman:
+    disposition: map
+    outputs:
+    - 'KINK: Dom/Sub'
+  double facial (2 penises):
+    disposition: map
+    outputs:
+    - 'ACT: Cumshot - face'
+    notes: Two-penis facial variant.
+  drinking cum:
+    disposition: map
+    outputs:
+    - 'ACT: Cumshot - mouth'
+  employee:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+  enhanced lips:
+    disposition: detail
+    outputs:
+    - enhanced lips
+  exploitation:
+    disposition: detail
+    outputs:
+    - exploitation
+  eyes - green:
+    disposition: detail
+    outputs:
+    - eyes - green
+    notes: Performer attribute; no BODY eye-color canonicals.
+  eyes - grey:
+    disposition: detail
+    outputs:
+    - eyes - grey
+    notes: Performer attribute; no BODY eye-color canonicals.
+  fake cum:
+    disposition: detail
+    outputs:
+    - fake cum
+  feel me:
+    disposition: defer
+    notes: Unrecognized niche tag; needs human review before activation.
+  female boss:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+    - 'KINK: Dom/Sub'
+  female directed:
+    disposition: detail
+    outputs:
+    - female directed
+  food:
+    disposition: detail
+    outputs:
+    - food
+    notes: Food play; no KINK canonical.
+  foot sex:
+    disposition: map
+    outputs:
+    - 'KINK: Foot fetish'
+  garage:
+    disposition: map
+    outputs:
+    - 'SET: Garage'
+  girl next door:
+    disposition: detail
+    outputs:
+    - girl next door
+  gokkun:
+    disposition: detail
+    outputs:
+    - gokkun
+    notes: Niche cum-drinking tag, high filtering value.
+  hand gagging:
+    disposition: detail
+    outputs:
+    - hand gagging
+  holding balls during blowjob:
+    disposition: detail
+    outputs:
+    - holding balls during blowjob
+  holding hair:
+    disposition: detail
+    outputs:
+    - holding hair
+  hospital:
+    disposition: map
+    outputs:
+    - 'SET: Hospital'
+  landing strip:
+    disposition: map
+    outputs:
+    - 'BODY: Landing strip'
+    notes: Pubic-hair style between Shaved and Hairy.
+  makeup:
+    disposition: detail
+    outputs:
+    - makeup
+  male:
+    disposition: ignore
+    notes: Near-universal noise as a scene tag; performer gender is derived (CAST axis) from performer metadata.
+  male teacher:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+    - 'SET: School'
+  medical fetish:
+    disposition: map
+    outputs:
+    - 'KINK: Medical'
+  medical play:
+    disposition: map
+    outputs:
+    - 'KINK: Medical'
+  mirror:
+    disposition: detail
+    outputs:
+    - mirror
+  multiple ejaculations:
+    disposition: detail
+    outputs:
+    - multiple ejaculations
+  my mom's fucking blackzilla:
+    disposition: detail
+    outputs:
+    - my mom's fucking blackzilla
+    notes: Named series (Hush Hush); pass-through.
+  nerd:
+    disposition: detail
+    outputs:
+    - nerd
+  observer:
+    disposition: map
+    outputs:
+    - 'THEME: Voyeurism'
+  old (60+):
+    disposition: map
+    outputs:
+    - 'AGE: 60+'
+  ottoman:
+    disposition: detail
+    outputs:
+    - ottoman
+  over-the-knee socks:
+    disposition: map
+    outputs:
+    - 'WARD: Stockings'
+    notes: Thigh-high hosiery.
+  pants:
+    disposition: map
+    outputs:
+    - 'WARD: Casual'
+  pearls:
+    disposition: map
+    outputs:
+    - 'WARD: Jewelry'
+  peep toe heels:
+    disposition: map
+    outputs:
+    - 'WARD: Heels'
+  peeptoes:
+    disposition: map
+    outputs:
+    - 'WARD: Heels'
+  pervert:
+    disposition: detail
+    outputs:
+    - pervert
+  pornstar wife:
+    disposition: detail
+    outputs:
+    - pornstar wife
+  prison:
+    disposition: map
+    outputs:
+    - 'SET: Prison'
+  pussy play:
+    disposition: map
+    outputs:
+    - 'ACT: Fingering'
+    - 'ACT: Masturbation'
+  pyjamas:
+    disposition: map
+    outputs:
+    - 'WARD: Casual'
+  revenge:
+    disposition: detail
+    outputs:
+    - revenge
+  reverse piledriver:
+    disposition: detail
+    outputs:
+    - reverse piledriver
+    notes: Position.
+  sadism:
+    disposition: map
+    outputs:
+    - 'KINK: Dom/Sub'
+  sci fi and fantasy:
+    disposition: map
+    outputs:
+    - 'THEME: Sci-fi/Fantasy'
+  see-through bra:
+    disposition: map
+    outputs:
+    - 'WARD: Lingerie'
+  see-through garter belt:
+    disposition: map
+    outputs:
+    - 'WARD: Lingerie'
+  self anal fingering:
+    disposition: map
+    outputs:
+    - 'ACT: Fingering'
+    - 'ACT: Masturbation'
+  sex - rough:
+    disposition: map
+    outputs:
+    - 'KINK: Rough sex'
+  sexual abuse:
+    disposition: map
+    outputs:
+    - 'THEME: Reluctance'
+    notes: Abuse-fantasy premise.
+  slavic:
+    disposition: detail
+    outputs:
+    - slavic
+    notes: 'Eastern-European archetype; DEMO: Caucasian would lose the signal.'
+  slow dance:
+    disposition: detail
+    outputs:
+    - slow dance
+  smiling:
+    disposition: ignore
+    notes: Generic expression descriptor with no filtering value (cf. 'sultry' precedent).
+  smothering:
+    disposition: map
+    outputs:
+    - 'KINK: Smothering'
+  softcore:
+    disposition: map
+    outputs:
+    - 'PROD: Softcore'
+  south asian woman:
+    disposition: map
+    outputs:
+    - 'DEMO: Indian'
+    notes: 'Matches derived ethnicity_aliases: ''South Asian'' -> Indian.'
+  spread pussy:
+    disposition: detail
+    outputs:
+    - spread pussy
+  stocks:
+    disposition: map
+    outputs:
+    - 'KINK: Bondage'
+    notes: Restraint furniture.
+  stripper:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+    - 'SET: Club/bar'
+  swallowing multiple loads:
+    disposition: map
+    outputs:
+    - 'ACT: Cumshot - mouth'
+  tall man:
+    disposition: map
+    outputs:
+    - 'BODY: Tall'
+  tenant:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+  the hanging garden:
+    disposition: defer
+    notes: Unrecognized niche tag; needs human review before activation.
+  therapist:
+    disposition: map
+    outputs:
+    - 'THEME: Roleplay'
+  transparent clothing:
+    disposition: detail
+    outputs:
+    - transparent clothing
+  trimmed dick:
+    disposition: detail
+    outputs:
+    - trimmed dick
+  triple blowjob (3 mouths):
+    disposition: map
+    outputs:
+    - 'ACT: Blowjob'
+  wall:
+    disposition: detail
+    outputs:
+    - wall
+    notes: Against-the-wall position/prop.
+  webcam:
+    disposition: map
+    outputs:
+    - 'PROD: Webcam'
+  wedding:
+    disposition: map
+    outputs:
+    - 'THEME: Wedding'
+  young (22-30):
+    disposition: map
+    outputs:
+    - 'AGE: 23-29'
+    notes: Spans the 18-22/23-29 buckets; 23-29 covers the majority.
 derived:
   age_buckets:
   - min: 18
@@ -5389,6 +5827,108 @@ derived:
     label: 'ERA: 2020s'
   studio_passthrough: true
   married_irl_tag: 'THEME: Married IRL'
+  jav_detection:
+    enabled: true
+    tag_name: 'JAV'
+    code_pattern: '^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?$'
+    path_code_pattern: '^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?\b'
+    url_substrings:
+    - 'javdatabase'
+    - 'r18.dev'
+    - 'r18.com'
+    - 'dmm.co.jp'
+    - 'javlibrary'
+    - 'javbus'
+    code_exempt_studios:
+    - 'Evil Angel'
+    - 'Anal Overdose'
+    - 'Oral Overdose'
+    - 'Up Her Asshole'
+    - 'Teens3Some'
+    - 'Delphine Films'
+    studio_names:
+    - 'ABC / Mousouzoku'
+    - 'An Amazingly Rare Amateur'
+    - 'Attackers'
+    - 'Aurora Project ANNEX'
+    - 'AVS collector''s'
+    - 'BAZOOKA'
+    - 'Befree'
+    - 'Big Morkal'
+    - 'Black Dog/Delusional Tribe'
+    - 'Celeb no Tomo'
+    - 'Center Village'
+    - 'Cinema'
+    - 'Cosmos Eizo'
+    - 'Crystal Eizo'
+    - 'DAHLIA'
+    - 'Das !'
+    - 'Deep''s'
+    - 'Dream Ticket'
+    - 'FA Pro'
+    - 'Faleno'
+    - 'Fitch'
+    - 'Focus'
+    - 'Global Media Annex'
+    - 'Glory Quest'
+    - 'Gogos'
+    - 'Hajime Kikaku'
+    - 'Hibino'
+    - 'Honnaka'
+    - 'Hunter'
+    - 'Idea Pocket'
+    - 'In Mad'
+    - 'Janes'
+    - 'JET Eizo'
+    - 'JET Images'
+    - 'Juku No kura / Emmanuelle'
+    - 'K.M.Produce'
+    - 'KaguyahimePt/Mousouzoku'
+    - 'Kawaii'
+    - 'Keimoa/Mousouzoku'
+    - 'KSB Kikaku / Emmanuelle'
+    - 'Lez Re!'
+    - 'long style'
+    - 'LUNATICS'
+    - 'M''s Video Group'
+    - 'Madonna'
+    - 'Magic Mirror Van'
+    - 'MAGNOLIA'
+    - 'Manji Group'
+    - 'Mankitsu'
+    - 'Married Woman Flower Garden Theater'
+    - 'Max A'
+    - 'MEGAMI'
+    - 'Megami (venus)'
+    - 'Milu'
+    - 'Misesu no Sugao/Emmanuelle'
+    - 'Mokkori TV'
+    - 'Momotaro Eizo'
+    - 'Monroe'
+    - 'MOODYZ'
+    - 'MOODYZ ACID'
+    - 'MOODYZ GATI'
+    - 'MOODYZ REAL'
+    - 'Mr. Michiru'
+    - 'Nagae Style'
+    - 'Otona No Drama'
+    - 'Pakopakodan To Yukaina Nakamatachi'
+    - 'Premium'
+    - 'Red Face Girl'
+    - 'Rocket'
+    - 'Ryubaku'
+    - 'S1'
+    - 'S1 Number One Style'
+    - 'Shark'
+    - 'SOD Create'
+    - 'Super Special'
+    - 'Takara Eizou'
+    - 'Takara Video'
+    - 'Tameike Goro'
+    - 'Ure Comi'
+    - 'VENUS'
+    - 'Yama to Sora'
+
 protected:
   prefixes:
   - 'MANUAL:'

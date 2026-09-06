@@ -30,6 +30,204 @@ configurable local `stash_api_key` is used only for authenticated local
 GraphQL calls when Stash requires it, and is never written to logs or
 snapshots.
 
+## [0.5.0] - 2026-08-28
+
+### The Simplification
+
+The library's tag state is derived data — recomputed from scene content,
+provider data, and the dictionary on every run. Every feature whose only
+job was time travel has been removed; "just re-run it" is the repair tool.
+Rationale: [docs/plan.md](docs/plan.md).
+
+### Removed
+
+- **Rollback a Run** and **Undo Cleanup** — rollback.py deleted, along with
+  the Activity tab's Undo buttons and the typed run-ID modals.
+- **Recovery trinity** (Resume / Abandon / Force-release tasks) — stale
+  locks auto-release on the next run, and Update Library *is* the resume:
+  `scene_state` checkpoints progress, ambiguous scenes reprocess.
+- **The rebuild-family task grid** (Full/Dry-Run Rebuild, Process
+  Never-Processed, Reprocess Stale / Failed / Affected, Enrich, both
+  standalone Cleanups) — all are now scope phases of the one **Update
+  Library** run (23 manifest tasks → 7).
+- **Pre-write mutation journaling and D16 reconciliation** — the journal is
+  now a post-success *history* record (with tag names, powering the new
+  per-run diff view). Crash safety comes from idempotent re-derivation;
+  this also removes the T11 UNIQUE-constraint crash class at its root.
+- **Two-phase cleanup proposal tokens** — cleanup is conservative by
+  construction instead: plugin-owned orphans always, global orphans only on
+  explicit opt-in in the confirm modal.
+- **Trap settings** `scan_before_curate` / `generate_before_curate` — Scan
+  and Generate are now orchestrated by the dashboard (browser-side waiting
+  is safe; in-task polling deadlocks), which also retires the manual
+  "run Scan first" footgun and the poll/timeout settings.
+
+### Added
+
+- **Run result card + diff view**: every finished run reports scenes
+  updated / already correct / failed / tags removed, with a per-scene
+  tag-diff review, backed by the new `run_detail` report and snapshot.
+- **Preview**: a dry-run of every Update Library phase from one button;
+  nothing is written.
+- **Affected-by-mapping phase**: dictionary saves can be applied to exactly
+  the scenes they touch through the same Update Library task.
+- Auto-reconciliation of orphaned `running` rows to `interrupted` on each
+  run start (no phantom in-flight runs).
+
+### Changed
+
+- **Dashboard is two tabs** (Home / Dictionary). Recent runs and a
+  details/maintenance section (stats, preflight, validate) fold into Home;
+  the dictionary triage surface is unchanged.
+- The Update Library confirmation shows live scope counts (new, stale,
+  failed scenes) before dispatch.
+- Run-history summaries aggregate multi-phase curate runs correctly
+  (recursive totals walker) and include cleanup deletions.
+
+## [0.4.0] - 2026-08-27
+
+### Changed
+
+- **Dashboard rebuilt around the operator's job** (Home / Dictionary /
+  Activity / Advanced). The old five-tab control panel (Dashboard,
+  Operations, Unmapped Tags, Run History, Rules Audit) exposed internal
+  machinery; the new surface leads with status, the tag dictionary, and a
+  reversible activity feed. All previous capabilities remain, reachable
+  from where they are contextually relevant.
+
+- **Tag Dictionary** replaces the unmapped-tags queue as the primary
+  editing surface. It lists EVERY provider tag - mapped or not - with its
+  translation, scene count, and per-row plain-language decisions
+  (Translate / Keep as-is / Hide). Mapped tags can now be edited or removed
+  from the UI (previously impossible without hand-editing YAML). Includes
+  typeahead with fuzzy suggestions from similar mappings, new-canonical-tag
+  creation via category chips (no more silent axis guessing), multi-select
+  batch decisions, and keyboard triage (j/k/t/s/h/x).
+
+- **Save-then-apply loop closes.** After a dictionary save the UI reports
+  how many scenes the edit touches (from the plugin's affected-scene
+  counter) and offers a one-click scoped "update those scenes now" pass
+  (`Reprocess Affected-by-Mapping` with the edited tag list) - previously
+  this operation existed only as a manifest task that processed zero
+  scenes when invoked without arguments.
+
+- **Home** shows a status hero with one primary action (Update Library)
+  and an attention list: interrupted runs (with resume/discard/release),
+  unsaved dictionary edits affecting scenes, pending tag decisions, and
+  grouped run notes (repeated ghost-skip messages collapse to "×N"
+  instead of filling an error wall).
+
+- **Activity** groups run phases under their parent run (`parent_run_id`
+  is now included in the run-history snapshot), summarizes each run in
+  plain language, and offers per-run Undo without typing a run id.
+
+- **Confirmation gate on destructive tasks.** Destructive rebuild-family
+  and cleanup-execute invocations that arrive through the raw entrypoint
+  without `confirmed=true` (i.e. a stray click on Stash's generic Tasks
+  page) return a guidance payload instead of mutating. Dry-run
+  invocations and the recovery modes remain direct-run: resume / abandon /
+  force-release auto-detect the current lock precisely so they stay usable
+  from the Tasks page.
+
+### Added
+
+- `Tag Dictionary` read-only report task and `dictionary.json` snapshot:
+  the full translation table (observed raw tags with distinct-scene counts
+  merged with every mapping key), canonical taxonomy, per-status stats,
+  and fuzzy suggestions for high-impact undecided tags.
+
+- `scene_counts_by_raw_tags` state selector and `affected_raw_tags` /
+  `affected_scene_count` / `affected_scene_counts` fields in
+  `save_result.json`.
+
+- Mapping `remove` support in `Save Mapping Edit` change entries
+  (``{"normalized_key": ..., "remove": true}``) - returns a tag to
+  "needs decision".
+
+- First-run seeding: the first task load materialises the active
+  `<data-dir>/tag-rules.yml` from the bundled default (the README always
+  claimed this happened).
+
+### Fixed
+
+- **Fresh installs no longer dead-end at the review queue.** Dry runs now
+  record each scene's observed provider tags into internal state
+  (`scene_raw_tags_current`), so the dictionary and unmapped queue have
+  data from the FIRST dry run. Previously raw tags were only written on
+  execute success, which made the documented dry-run -> review ->
+  map -> rebuild workflow impossible on a new install.
+
+- Save-result side channel now carries `rules_sha` and the
+  affected-scene data (previously the whitelist dropped them).
+
+- Job matching for run cancellation no longer uses a bare `"tag"`
+  substring (which matched Stash's own Auto-Tag job and could SIGKILL it);
+  only curator-dispatched labels qualify.
+
+- UI Save/apply buttons are disabled while a curator job is running.
+
+## [Unreleased]
+
+### Added
+
+- **JAV identification subsystem.** Scenes identified as JAV now receive a
+  derived `JAV` tag on every run, so manually applied JAV tags survive the
+  full-replacement writes (previously they were wiped on the next Update
+  Library). Identification is any-signal-wins over four deterministic
+  signals configured under `derived.jav_detection` in the rules file: a
+  curated JAV studio list (81 labels, case-insensitive), JAV-database URL
+  substrings (`r18.dev`, `javdatabase.com`, `dmm.co.jp`, …), the canonical
+  `ABP-987` scene-code notation, and a file-basename fallback for unscraped
+  scenes whose code lives only in the filename (`VKO-209 ….mp4`). Western
+  studios whose catalog codes share the JAV notation (Evil Angel & the
+  Mike Adriano labels, Teens3Some, Delphine Films) are exempted from the
+  two code-shaped signals. The block is optional in the v3 schema: active
+  rules files written before this change keep validating with the
+  subsystem disabled; regex patterns are compile-checked at load time.
+  Validated against the production library's 434 manually tagged JAV
+  scenes: 433 re-derived, 0 false positives, 96 previously untagged JAV
+  scenes detected (under-tagged studios like Otona No Drama, Befree,
+  Shark, MOODYZ sublabels, and path-only unscraped files). Scene queries
+  now also select `files.path` for the basename signal.
+
+### Fixed
+
+- **Scenes deleted from Stash no longer kill processing runs.** A scene
+  referenced by curator state but removed from the library (media churn —
+  the library is fed by whisparr/tdarr automation) aborted the entire run:
+  Stash v0.31.1 fails the whole `findScenes(ids: [...])` call with
+  `scene with id N not found`, and the engine had no per-scene catch (live
+  failure 2026-08-15, run `curate-library-d7af493aea7203af`, phase
+  `p2-stale_rules`). The fetch layer now recognises that error, re-probes
+  the batch per-scene via `findScene(id:)` (which returns a clean null for
+  deleted ids), and skips ghosts as a new `scene_missing` skip reason —
+  counted in both dry-run and execute reports. Ghost scenes' local state is
+  purged (`scene_state` row, `scene_raw_tags_current` rows,
+  still-`proposed` dry-run proposals expired as `skipped(scene_missing)`;
+  append-only audit tables are preserved) so the `stale_rules` / `failed` /
+  `affected_by_mapping` scopes stop re-selecting them every run. Any other
+  fetch error still fails the run.
+
+- **Curate Library no longer crashes with `UNIQUE constraint failed:
+  mutations.run_id, mutations.scene_id`.** Every curate run since
+  2026-07-14 died this way: the workflow's four scene phases shared one
+  `run_id` while the mutations journal enforces `PRIMARY KEY (run_id,
+  scene_id)`, so the first scene touched by two phases (process, then
+  performer enrichment) killed the run. Each phase now runs under its own
+  child run row (`<parent>-pN-<phase>`, linked via `parent_run_id`), which
+  also gives Run History per-phase granularity and per-phase rollback.
+  Stale-lock reclaim now closes orphaned child phase rows together with
+  the parent.
+
+### Changed
+
+- Default rules grew by 100 curated mappings (57 map / 39 detail / 2
+  defer / 2 ignore) and 11 canonical tags (KINK: Medical, Rough sex,
+  Smothering; SET: Garage, Hospital, Prison; THEME: Sci-fi/Fantasy,
+  Wedding; PROD: Softcore, Webcam; BODY: Landing strip). `Male` and
+  `Smiling` resolve to `ignore` as documented noise; `Feel Me` and
+  `The Hanging Garden` are `defer` pending human review.
+
 ## [0.2.0] - 2026-07-12
 
 ### Added

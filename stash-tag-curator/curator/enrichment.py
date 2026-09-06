@@ -23,6 +23,7 @@ Tier-A: no live Stash, no network, no third-party services.
 from __future__ import annotations
 
 import datetime
+import re
 from collections.abc import Iterable, Mapping, Sequence
 
 from .normalization import normalize_country, normalize_ethnicity
@@ -30,6 +31,9 @@ from .normalization import normalize_country, normalize_ethnicity
 __all__ = [
     "AGE_MIN_VALID",
     "CAST_EMIT_ORDER",
+    "DEFAULT_JAV_CODE_PATTERN",
+    "DEFAULT_JAV_PATH_CODE_PATTERN",
+    "DEFAULT_JAV_TAG_NAME",
     "GENDER_SHORT_CODES",
     "HEIGHT_MAX_VALID_DEFAULT",
     "HEIGHT_MIN_VALID_DEFAULT",
@@ -43,6 +47,7 @@ __all__ = [
     "derive_country_tags",
     "derive_ethnicity_tags",
     "derive_height_tags",
+    "derive_jav_tag",
     "derive_married_irl",
     "derive_weight_tags",
     "validate_buckets",
@@ -554,6 +559,179 @@ def derive_cast_tag(
         if counts[code] > 0
     ]
     return f"CAST: {''.join(parts)}"
+
+
+# ---------------------------------------------------------------------------
+# JAV identification (scene-level signals)
+# ---------------------------------------------------------------------------
+
+#: Default scene-code pattern: 1-7 letters, hyphen, 2-5 digits, optional
+#: trailing letter. Matches the canonical JAV code notation (``ABP-987``,
+#: ``START-100``, ``HUNTA-137B``, ``C-2861``).
+DEFAULT_JAV_CODE_PATTERN: str = r"^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?$"
+
+#: Default file-basename pattern: same code shape anchored at the start of
+#: the basename (``VKO-209 Japanese wife swap....mp4``). Anchoring avoids
+#: matching bracketed quality tokens like ``[WEBDL-1080p]`` at the end of
+#: western basenames, whose letter-run + digits shape is identical.
+DEFAULT_JAV_PATH_CODE_PATTERN: str = r"^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?\b"
+
+#: Default tag emitted when a scene is identified as JAV.
+DEFAULT_JAV_TAG_NAME: str = "JAV"
+
+
+def _cf_set(values: object, field: str) -> frozenset[str]:
+    """Coerce a config list of names into a casefolded, stripped frozenset."""
+    if isinstance(values, (str, bytes)) or not isinstance(
+        values, (list, tuple, set, frozenset)
+    ):
+        raise TypeError(
+            f"jav_detection {field!r} must be a list of strings, got "
+            f"{type(values).__name__}"
+        )
+    out: set[str] = set()
+    for v in values:
+        if not isinstance(v, str) or not v.strip():
+            raise TypeError(
+                f"jav_detection {field!r} entries must be non-empty strings"
+            )
+        out.add(v.strip().casefold())
+    return frozenset(out)
+
+
+def _first_path_basename(scene: Mapping[str, object]) -> str:
+    """Basename of the scene's first file path ('' when absent/unusable)."""
+    files = scene.get("files")
+    if not isinstance(files, list):
+        return ""
+    for f in files:
+        if isinstance(f, Mapping):
+            p = f.get("path")
+            if isinstance(p, str) and p.strip():
+                return p.replace("\\", "/").rsplit("/", 1)[-1]
+    return ""
+
+
+def derive_jav_tag(
+    scene: Mapping[str, object],
+    config: Mapping[str, object],
+) -> "str | None":
+    """Return the JAV tag name when the scene is identified as JAV, else ``None``.
+
+    Identification is any-signal-wins over four deterministic signals:
+
+    1. **Studio list** -- the scene's studio name (case-insensitive) appears
+       in ``studio_names`` (curated JAV studios/labels).
+    2. **URL substrings** -- any scene URL contains one of
+       ``url_substrings`` (JAV databases/aggregators like ``r18.dev`` or
+       ``javdatabase.com``).
+    3. **Scene code** -- ``code`` matches ``code_pattern`` (the canonical
+       ``ABP-987`` notation) unless the studio is in
+       ``code_exempt_studios`` (western studios whose catalog codes share
+       the same shape, e.g. Evil Angel's ``OO-0087``).
+    4. **File basename** -- when the code is missing or does not match, the
+       first file's basename starts with a code matching
+       ``path_code_pattern`` (covers unscraped scenes whose code lives
+       only in the filename). Same studio exemption applies.
+
+    The studio exemption gates ONLY the code-shaped signals (3 and 4);
+    studio-list and URL hits are independent evidence. Missing data
+    (no studio, no urls, no code, no files) contributes nothing.
+
+    ``config`` is the ``derived.jav_detection`` mapping; ``enabled``
+    defaults to True, all lists default to empty, and both patterns fall
+    back to :data:`DEFAULT_JAV_CODE_PATTERN` /
+    :data:`DEFAULT_JAV_PATH_CODE_PATTERN`. Raises TypeError on malformed
+    config values and ValueError on an uncompilable pattern.
+    """
+    if not isinstance(scene, Mapping):
+        raise TypeError(
+            f"scene must be a mapping, got {type(scene).__name__}"
+        )
+    if not isinstance(config, Mapping):
+        raise TypeError(
+            f"jav_detection config must be a mapping, got "
+            f"{type(config).__name__}"
+        )
+    if not _policy_bool(config, "enabled", True):
+        return None
+
+    raw_tag = config.get("tag_name", DEFAULT_JAV_TAG_NAME)
+    if not isinstance(raw_tag, str) or not raw_tag.strip():
+        raise TypeError(
+            "jav_detection 'tag_name' must be a non-empty string"
+        )
+    tag_name = raw_tag.strip()
+
+    studio_names = _cf_set(config.get("studio_names") or [], "studio_names")
+    exempt = _cf_set(
+        config.get("code_exempt_studios") or [], "code_exempt_studios"
+    )
+    raw_subs = config.get("url_substrings") or []
+    if isinstance(raw_subs, (str, bytes)) or not isinstance(
+        raw_subs, (list, tuple, set, frozenset)
+    ):
+        raise TypeError(
+            "jav_detection 'url_substrings' must be a list of strings"
+        )
+    url_substrings: list[str] = []
+    for sub in raw_subs:
+        if not isinstance(sub, str) or not sub.strip():
+            raise TypeError(
+                "jav_detection 'url_substrings' entries must be non-empty "
+                "strings"
+            )
+        url_substrings.append(sub.strip().casefold())
+
+    raw_code_pat = config.get("code_pattern") or DEFAULT_JAV_CODE_PATTERN
+    if not isinstance(raw_code_pat, str) or not raw_code_pat.strip():
+        raise TypeError(
+            "jav_detection 'code_pattern' must be a non-empty regex string"
+        )
+    raw_path_pat = (
+        config.get("path_code_pattern") or DEFAULT_JAV_PATH_CODE_PATTERN
+    )
+    if not isinstance(raw_path_pat, str) or not raw_path_pat.strip():
+        raise TypeError(
+            "jav_detection 'path_code_pattern' must be a non-empty regex "
+            "string"
+        )
+    try:
+        code_re = re.compile(raw_code_pat)
+        path_re = re.compile(raw_path_pat)
+    except re.error as exc:
+        raise ValueError(f"jav_detection pattern does not compile: {exc}") from None
+
+    studio = scene.get("studio")
+    studio_cf = ""
+    if isinstance(studio, Mapping):
+        name = studio.get("name")
+        if isinstance(name, str):
+            studio_cf = name.strip().casefold()
+
+    if studio_cf and studio_cf in studio_names:
+        return tag_name
+
+    urls = scene.get("urls")
+    if isinstance(urls, list):
+        for u in urls:
+            if isinstance(u, str) and any(
+                sub in u.casefold() for sub in url_substrings
+            ):
+                return tag_name
+
+    if studio_cf in exempt:
+        return None
+
+    code = scene.get("code")
+    code_s = code.strip() if isinstance(code, str) else ""
+    if code_s and code_re.match(code_s):
+        return tag_name
+
+    base = _first_path_basename(scene)
+    if base and path_re.match(base):
+        return tag_name
+    return None
 
 
 # ---------------------------------------------------------------------------

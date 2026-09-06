@@ -737,27 +737,6 @@ class TestRunHistory:
         result = engine.generate_run_history()
         assert result["runs"][0]["scope"] == "failed"
 
-    def test_rollback_available(
-        self, engine: ReportEngine, state: StateDB
-    ) -> None:
-        conn = state.connection
-        _insert_run(conn, "run-1")
-        _insert_mutation(conn, "run-1", 10, status="applied")
-        _insert_mutation(conn, "run-1", 11, status="applied")
-
-        result = engine.generate_run_history()
-        assert result["runs"][0]["rollback_available"] is True
-
-    def test_rollback_not_available_no_applied(
-        self, engine: ReportEngine, state: StateDB
-    ) -> None:
-        conn = state.connection
-        _insert_run(conn, "run-1")
-        _insert_mutation(conn, "run-1", 10, status="pending")
-
-        result = engine.generate_run_history()
-        assert result["runs"][0]["rollback_available"] is False
-
     def test_empty_state(self, engine: ReportEngine) -> None:
         result = engine.generate_run_history()
         assert result["runs"] == []
@@ -859,16 +838,16 @@ class TestRulesAudit:
     ) -> None:
         result = engine.generate_rules_audit()
         counts = result["mapping_disposition_counts"]
-        # The bundled default has: map=814, ignore=401, detail=32, defer=30
+        # The bundled default has: map=871, ignore=403, detail=71, defer=32
         # (includes reconciliation/identity mappings for existing tags).
-        assert counts[DISPOSITION_MAP] == 814
-        assert counts[DISPOSITION_IGNORE] == 401
-        assert counts[DISPOSITION_DETAIL] == 32
-        assert counts[DISPOSITION_DEFER] == 30
+        assert counts[DISPOSITION_MAP] == 871
+        assert counts[DISPOSITION_IGNORE] == 403
+        assert counts[DISPOSITION_DETAIL] == 71
+        assert counts[DISPOSITION_DEFER] == 32
 
     def test_total_mappings(self, engine: ReportEngine) -> None:
         result = engine.generate_rules_audit()
-        assert result["total_mappings"] == 1277
+        assert result["total_mappings"] == 1377
 
     def test_canonical_tag_counts_all_axes(
         self, engine: ReportEngine

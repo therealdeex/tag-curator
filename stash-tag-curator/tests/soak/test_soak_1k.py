@@ -2,7 +2,7 @@
 
 This is the **v1 release-gate** soak test (D8: 1k-cassette soak gates v1; 20k
 is a v1.1 milestone documented in ``docs/soak.md``).  It drives a full
-dry-run -> rebuild -> rerun -> rollback cycle on a deterministic synthetic
+dry-run -> rebuild -> idempotent-rerun cycle on a deterministic synthetic
 1000-scene cassette and asserts the metrics from ``planning-handoff.md``
 L1181-1190 that apply at Tier-A scale:
 
@@ -33,7 +33,6 @@ import pytest
 from curator.graphql_queries import GET_CONFIGURATION_STASHBOXES, SCRAPE_MULTI_SCENES
 from curator.journal import Journal
 from curator.processing import SCOPE_ALL, RebuildEngine
-from curator.rollback import RollbackEngine
 from curator.state import StateDB
 from curator.providers import ProviderLookup
 from tests.harness.cassette import Cassette, Interaction, signature_for_query
@@ -120,7 +119,7 @@ class _SoakCassetteClient:
     Provider reads (``GetConfigurationStashBoxes``, ``ScrapeMultiScenes``) are
     served from a deterministic :class:`Cassette`.  Scene writes
     (``SceneUpdate``) are applied to an in-memory dict so
-    :class:`~curator.rollback.RollbackEngine` can read current state via
+    engine can read current state via
     ``FindSceneById``.  ``find_scenes`` streams from the dict in pages of
     ``BATCH_SIZE``, mirroring ``GraphQLClient.find_scenes`` pagination **without
     loading the full library into memory** (the streaming-design guarantee that
@@ -252,7 +251,7 @@ def _mutation_count(state: StateDB) -> int:
 
 @pytest.mark.slow
 def test_soak_1k_full_cycle_with_metrics(state: StateDB) -> None:
-    """Full dry-run -> rebuild -> rerun -> rollback on 1000 synthetic scenes.
+    """Full dry-run -> rebuild -> idempotent rerun on 1000 synthetic scenes.
 
     Captures and asserts the handoff soak metrics (L1181-1190) at Tier-A scale:
     provider-call volume, processing rate, state-DB growth, journal growth, and
@@ -316,16 +315,6 @@ def test_soak_1k_full_cycle_with_metrics(state: StateDB) -> None:
     assert exec2.scenes_skipped.get("idempotent_noop") == NUM_SCENES
     assert client.scene_update_calls == []
 
-    # -- Phase 4: rollback ------------------------------------------------
-    rb_engine = RollbackEngine(
-        client, state, Journal(state), rules=None,
-        progress_fn=lambda _f: None,
-    )
-    report = rb_engine.run("run-1", rollback_run_id="rb-1")
-    assert report.aborted is False
-    assert report.scenes_reverted == NUM_SCENES
-    assert report.scenes_skipped.get("conflict") is None
-
     cycle_duration = time.monotonic() - t_cycle_start
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -353,11 +342,11 @@ def test_soak_1k_full_cycle_with_metrics(state: StateDB) -> None:
         "expected substantial growth from 1000 proposals + mutations"
     )
 
-    # Journal growth: rollback adds another 1000 mutation rows.
-    mutations_after_rollback = _mutation_count(state)
-    assert mutations_after_rollback >= NUM_SCENES * 2, (
-        f"journal has {mutations_after_rollback} rows after rollback; "
-        f"expected >= {NUM_SCENES * 2} (run + rollback)"
+    # Journal growth: exactly one history row per successful mutation.
+    mutations_after_rerun = _mutation_count(state)
+    assert mutations_after_rerun >= NUM_SCENES, (
+        f"journal has {mutations_after_rerun} rows after the cycle; "
+        f"expected >= {NUM_SCENES} (one history row per mutation)"
     )
 
 

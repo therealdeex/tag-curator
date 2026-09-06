@@ -11,3 +11,4 @@ assets/*.json
 
 stash-tag-curator-data/
 dist-test/
+.zcode/

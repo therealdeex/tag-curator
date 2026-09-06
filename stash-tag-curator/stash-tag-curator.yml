@@ -1,9 +1,10 @@
 name: "Stash Tag Curator"
 description: >-
-  Hybrid raw+UI plugin that curates scene tags from provider metadata using
-  configurable mapping rules, with reversible cleanup, run history, and a
-  dashboard. Targets Stash v0.31.1.
-version: 0.3.0
+  Plugin that translates provider tags into your taxonomy via an editable
+  tag dictionary, fills missing scene metadata, and keeps the library
+  up to date. One button: Update Library — idempotent, resumable, and
+  self-repairing by re-running. Targets Stash v0.31.1.
+version: 0.5.0
 url: https://example.invalid/stash-tag-curator
 
 exec:
@@ -32,12 +33,6 @@ settings:
     description: >-
       Number of scenes sent to each provider lookup per request.
     type: STRING
-  dry_run_default:
-    displayName: Dry Run By Default
-    description: >-
-      When true, destructive tasks default to dry-run unless explicitly
-      overridden by the task invocation.
-    type: STRING
   strict_version:
     displayName: Strict Version Check
     description: >-
@@ -56,7 +51,6 @@ settings:
       When true, tags whose labels start with a protected prefix (e.g.
       MANUAL:) are never removed by cleanup or rebuild.
     type: STRING
-  # -- Milestone 3/4: entity creation + scan/generate settings --
   provider_priority:
     displayName: Provider Priority
     description: >-
@@ -75,190 +69,70 @@ settings:
     description: >-
       Maximum number of new studios the curator may create in a single run.
     type: NUMBER
-  scan_before_curate:
-    displayName: Scan Before Curate
-    description: >-
-      DO NOT ENABLE. Synchronously polling a metadata scan from inside this
-      plugin task self-deadlocks on Stash v0.31.1 (single serial job queue:
-      the scan is queued behind this task and never starts). Run Scan from
-      Stash's native Tasks UI instead. Kept for the planned staged-
-      continuation architecture; enabling it now fails the run immediately
-      with an explanatory error.
-    type: BOOLEAN
-  generate_before_curate:
-    displayName: Generate Before Curate
-    description: >-
-      DO NOT ENABLE. Synchronously polling a metadata generate from inside
-      this plugin task self-deadlocks on Stash v0.31.1 (single serial job
-      queue: the generate is queued behind this task and never starts). Run
-      Generate from Stash's native Tasks UI instead. Kept for the planned
-      staged-continuation architecture; enabling it now fails the run
-      immediately with an explanatory error.
-    type: BOOLEAN
   generate_previews:
     displayName: Generate Previews
     description: >-
-      Generate video previews during the Generate phase of Curate Library.
+      Generate video previews during the dashboard's Generate step (before
+      Update Library).
     type: BOOLEAN
   generate_image_previews:
     displayName: Generate Image Previews
     description: >-
-      Generate animated image previews during the Generate phase.
+      Generate animated image previews during the dashboard's Generate step.
     type: BOOLEAN
   generate_phashes:
     displayName: Generate Perceptual Hashes
     description: >-
-      Generate video perceptual hashes (phashes) during the Generate phase.
+      Generate video perceptual hashes (phashes) during the dashboard's
+      Generate step.
     type: BOOLEAN
-  stash_job_poll_interval_seconds:
-    displayName: Stash Job Poll Interval (seconds)
-    description: >-
-      How often (in seconds) to poll findJob while waiting for Scan/Generate.
-    type: NUMBER
-  scan_timeout_minutes:
-    displayName: Scan Timeout (minutes)
-    description: >-
-      Maximum minutes to wait for a Scan job before the run is marked incomplete.
-    type: NUMBER
-  generate_timeout_minutes:
-    displayName: Generate Timeout (minutes)
-    description: >-
-      Maximum minutes to wait for a Generate job before the run is marked incomplete.
-    type: NUMBER
 
 tasks:
-  - name: Curate Library
+  - name: Update Library
     description: >-
-      One-button curation workflow: identifies scenes via stash-box, applies
-      tags, fills missing scene metadata, creates missing performers/studios
-      (capped), enriches from performer metadata, then removes tags with zero
-      associations. Run Scan and Generate from Stash's native Tasks UI first
-      (synchronous scan/generate from inside this task self-deadlocks on
-      Stash v0.31.1's single serial job queue). All tag, metadata, and entity
-      changes are journaled for rollback. Requires confirmation from the
-      dashboard.
+      The one maintenance workflow: identifies scenes via stash-box, applies
+      the dictionary, fills missing scene metadata, creates missing
+      performers/studios (capped), enriches from performer metadata, removes
+      orphaned plugin tags, and retries prior failures. Idempotent and
+      resumable: interrupted runs continue next time. Requires confirmation
+      from the dashboard; running it from the Tasks page is a safe no-op.
     defaultArgs:
       task: CurateLibrary
       confirmed: "false"
-  - name: Full Library Rebuild
+  - name: Preview Update Library
     description: >-
-      Re-derive every scene's tags from provider metadata using the active
-      rules. CURATOR-owned tags are replaced; protected tags are preserved.
+      Simulate Update Library across every scene phase and report what would
+      change without writing anything to Stash.
     defaultArgs:
-      task: Rebuild
-      dryRun: "false"
-  - name: Dry-Run Full Library Rebuild
+      task: CurateLibrary
+      preview: "true"
+  - name: Save Dictionary Edit
     description: >-
-      Simulate a full library rebuild and report the planned changes without
-      writing anything.
-    defaultArgs:
-      task: DryRebuild
-      dryRun: "true"
-  - name: Process Never-Processed
-    description: >-
-      Run the curation pass over scenes that have never been processed by the
-      curator.
-    defaultArgs:
-      task: ProcessNew
-  - name: Reprocess Stale
-    description: >-
-      Re-run the curation pass over scenes whose last processing predates the
-      current rules or provider data.
-    defaultArgs:
-      task: ReprocessStale
-  - name: Reprocess Failed
-    description: >-
-      Retry scenes that failed on a previous run.
-    defaultArgs:
-      task: ReprocessFailed
-  - name: Reprocess Affected-by-Mapping
-    description: >-
-      Re-run the curation pass over scenes whose tags were affected by a
-      recent mapping edit.
-    defaultArgs:
-      task: ReprocessAffected
-  - name: Enrich from Performer Metadata
-    description: >-
-      Add tags derived from performer metadata (e.g. cast, demographic, era
-      buckets) without a full provider re-scrape. Existing scene tags are
-      preserved.
-    defaultArgs:
-      task: Enrich
-  - name: Cleanup Safe-Global Orphans
-    description: >-
-      Remove orphaned tags that are not owned by the curator and that match a
-      safe-global cleanup rule.
-    defaultArgs:
-      task: CleanupSafe
-  - name: Cleanup Plugin-Owned Orphans
-    description: >-
-      Remove orphaned CURATOR-owned tags left behind by earlier runs.
-    defaultArgs:
-      task: CleanupPlugin
-  - name: Validate Rules
-    description: >-
-      Validate the active rules file against the JSON schema and report any
-      violations without running the engine.
-    defaultArgs:
-      task: ValidateRules
-  - name: Save Mapping Edit
-    description: >-
-      Persist a mapping edit performed via the UI to the active rules file and
-      re-validate it.
+      Persist a dictionary edit performed via the dashboard to the active
+      rules file and re-validate it.
     defaultArgs:
       task: SaveMapping
+  - name: Validate Dictionary
+    description: >-
+      Validate the active dictionary file against the JSON schema and report
+      any violations without running the engine.
+    defaultArgs:
+      task: ValidateRules
   - name: Preflight
     description: >-
       Run connectivity, configuration, and rule checks before starting a long
       run.
     defaultArgs:
       task: Preflight
-  - name: Resume Interrupted Run
+  - name: Refresh Data
     description: >-
-      Resume the most recent interrupted run from its last checkpoint.
+      Regenerate every dashboard snapshot (status, dictionary, run history,
+      rules audit) in one read-only pass.
     defaultArgs:
-      task: ResumeRun
-  - name: Abandon Interrupted Run
+      task: RefreshData
+  - name: Run Detail
     description: >-
-      Mark an interrupted run as abandoned and release its run lock without
-      resuming.
+      Report exactly what one prior run changed (per-scene tag diffs). Pass
+      the run_id arg; the dashboard does this automatically.
     defaultArgs:
-      task: AbandonRun
-  - name: Force Release Stale Run
-    description: >-
-      Force-release a run lock that is stale beyond the safety grace period.
-    defaultArgs:
-      task: ForceRelease
-  - name: Undo Cleanup
-    description: >-
-      Restore tags removed by a prior cleanup operation using its recorded
-      snapshot. Requires a cleanup_run_id arg (use the dashboard Operations panel).
-    defaultArgs:
-      task: UndoCleanup
-  - name: Rollback a Run
-    description: >-
-      Revert the effects of a specific prior run using its recorded history
-      snapshot. Requires a run_id arg (use the dashboard Operations panel).
-    defaultArgs:
-      task: Rollback
-  - name: Dashboard
-    description: >-
-      Open the curator dashboard route in the UI.
-    defaultArgs:
-      task: Dashboard
-  - name: Unmapped Tags
-    description: >-
-      Report tags observed in the library that have no mapping in the active
-      rules.
-    defaultArgs:
-      task: UnmappedTags
-  - name: Run History
-    description: >-
-      Report the recorded history of curator runs.
-    defaultArgs:
-      task: RunHistory
-  - name: Rules Audit
-    description: >-
-      Audit the active rules for collisions, deferrals, and coverage gaps.
-    defaultArgs:
-      task: RulesAudit
+      task: RunDetail

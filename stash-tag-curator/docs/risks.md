@@ -1,5 +1,9 @@
 # Risks and compatibility disclosure
 
+> **0.5.0 note:** rollback, undo, and the recovery-task model described in
+> this document were removed in the 0.5.0 simplification (see
+> [plan.md](plan.md)). Stale locks auto-reclaim; re-runs are the repair tool.
+
 This document lists the material risks for Stash Tag Curator v0.2.0, the
 conditions under which each risk manifests, the mitigation the plugin
 already applies, and the decision reference from the design record. It also

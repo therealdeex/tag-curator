@@ -44,6 +44,7 @@ runtime surface.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -590,6 +591,7 @@ def _validate_semantic(raw: dict[str, Any], src: Path, errors: list[str]) -> Non
             "weight_buckets", derived.get("weight_buckets"), src, errors
         )
         _validate_era_buckets(derived.get("era_buckets"), src, errors)
+        _validate_jav_detection(derived.get("jav_detection"), src, errors)
 
     ct = raw.get("canonical_tags")
     rule_axis_names: dict[str, frozenset[str]] = {}
@@ -723,6 +725,30 @@ def _validate_era_buckets(era_buckets: Any, src: Path, errors: list[str]) -> Non
             errors.append(
                 f"{src}: derived.era_buckets: bucket (index {curr_i}) "
                 f"overlaps bucket (index {prev_i})"
+            )
+
+
+def _validate_jav_detection(
+    jav_detection: Any, src: Path, errors: list[str]
+) -> None:
+    """Compile-check the jav_detection subsystem's regex patterns.
+
+    Structural shape is owned by the JSON Schema; this semantic check fails
+    fast at load time on patterns that do not compile (the engine would
+    otherwise record a per-scene subsystem failure for every scene in the
+    library on every run).
+    """
+    if not isinstance(jav_detection, dict):
+        return
+    for key in ("code_pattern", "path_code_pattern"):
+        pattern = jav_detection.get(key)
+        if not isinstance(pattern, str) or not pattern:
+            continue  # schema catches non-string values
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            errors.append(
+                f"{src}: derived.jav_detection.{key} does not compile: {exc}"
             )
 
 

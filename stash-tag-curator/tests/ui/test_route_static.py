@@ -98,38 +98,20 @@ def test_no_dangerously_set_inner_html() -> None:
     assert "new Function(" not in text
 
 
-def test_destructive_ops_are_confirm_gated() -> None:
-    """Every destructive operation in the registry must route through confirm."""
+def test_update_library_is_confirm_gated() -> None:
+    """The one destructive operation dispatches confirmed=true only from
+    the confirm-modal handler; the Preview path never writes."""
     text = _read_ui()
-    # The OPERATIONS registry exists with destructive flags.
-    assert "destructive: true" in text, "expected destructive:true flags"
-    # A confirm modal is rendered when opToConfirm is set.
     assert "ConfirmModal" in text
-    assert "opToConfirm" in text or "confirm" in text.lower()
-    # The dispatch path requires going through the confirm modal: every
-    # destructive button opens the modal before any runPluginTask call.
-    assert "runPluginTask" in text.lower() or "RUN_PLUGIN_TASK" in text
-    # dispatch() must be called from the confirm handler, not from the button
-    # directly. The handler literally named `confirmAndDispatch` is the gate.
-    assert "confirmAndDispatch" in text, (
-        "expected a confirmAndDispatch handler that gates destructive dispatch"
-    )
-    # confirmAndDispatch must reference dispatch() somewhere in its body. We
-    # approximate the body by looking at the 2KB window after the function
-    # name; that comfortably covers the handler without false-matching other
-    # functions.
-    window = re.search(
-        r"function\s+confirmAndDispatch[\s\S]{0,2500}?\n    \}",
-        text,
-    )
-    assert window is not None, "confirmAndDispatch body not found"
-    assert "dispatch(" in window.group(0), (
-        "confirmAndDispatch must invoke dispatch() inside its body"
-    )
-    # The ConfirmModal must be wired so its onConfirm triggers confirmAndDispatch.
-    assert re.search(r"onConfirm[\s\S]{0,80}confirmAndDispatch", text) or re.search(
-        r"confirmAndDispatch[\s\S]{0,80}onConfirm", text
-    ), "ConfirmModal.onConfirm must be wired to confirmAndDispatch"
+    assert "opToConfirm" in text
+    # The confirmed dispatch exists exactly once per entry point and always
+    # inside an onConfirm handler (Update Library + apply-edits flows).
+    assert re.search(r'confirmed:\s*"true"', text)
+    # The modal's confirm button wires to a handler that starts the flow.
+    assert re.search(r"onConfirm[\s\S]{0,120}(confirmUpdate|onSaveConfirmed)", text)
+    # Preview never passes confirmed=true.
+    preview_branch = text[text.index("PREVIEW_TASK_NAME"):]
+    assert '{ preview: "true" }' in preview_branch
 
 
 def test_job_polling_loop() -> None:
@@ -239,12 +221,15 @@ def test_bootstrap_used_not_bundled() -> None:
 
 
 def test_dashboard_asset_read_path() -> None:
-    """Dashboard reads via the D14 asset snapshot path."""
+    """All panels read via the D14 asset snapshot path (single fetcher)."""
     text = _read_ui()
     assert "/plugin/stash-tag-curator/assets/" in text, (
-        "dashboard snapshot must be fetched as a plugin asset (D14)"
+        "snapshots must be fetched as plugin assets (D14)"
     )
-    assert "dashboard.json" in text
+    assert "dashboard" in text
+    # One generic snapshot fetcher feeds every panel.
+    assert "function fetchSnapshot(" in text
+    assert "function useAssetSnapshot(" in text
 
 
 def test_node_syntax_check_when_available() -> None:
@@ -261,125 +246,139 @@ def test_node_syntax_check_when_available() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T23: unmapped-tags + run-history + rules-audit panels
+# Dictionary / Activity / Advanced panels (0.4.0 UX rebuild)
 # ---------------------------------------------------------------------------
 
 
-def test_unmapped_tags_panel_present() -> None:
-    """The unmapped-tags review queue panel exists and reads its snapshot."""
+def test_dictionary_panel_present() -> None:
+    """The Dictionary panel exists: triage tabs, search, three decisions."""
     text = _read_ui()
-    assert "UnmappedTagsPanel" in text
-    assert "unmapped_tags" in text, "must read the unmapped_tags asset"
-    for disp in ("map", "detail", "ignore", "defer"):
-        assert f'"{disp}"' in text, f"disposition {disp!r} must be an option"
-    assert "UNMAPPED_DISPOSITIONS" in text
+    assert "DictionaryPanel" in text
+    assert "dictionary" in text, "must read the dictionary asset"
+    # Plain-language decisions only; internal dispositions never surface.
+    for decision in ("Translate", "Keep", "Hide"):
+        assert f'"{decision}' in text, f"decision {decision!r} must be offered"
+    assert "STATUS_TO_DISPOSITION" in text
+    # Status vocabulary is user-facing, not jargon.
+    for status in ("needs_decision", "translated", "kept", "hidden", "deferred"):
+        assert f'"{status}"' in text, f"status {status!r} missing"
 
 
-def test_unmapped_multi_select_control() -> None:
-    """Map control must be multi-select (not a single dropdown).
+def test_dictionary_can_edit_existing_mappings() -> None:
+    """The dictionary lists mapped tags too, and supports editing them.
 
-    QA scenario (T23): static review confirms the multi-select pattern.
+    Regression for the "no way to change a tag mapped to something else"
+    complaint: Change buttons on non-decision rows, remove-mapping staging,
+    and a single Save batch flow.
     """
     text = _read_ui()
-    assert "MapOutputsCell" in text
-    assert "addOutput" in text or "onAddOutput" in text
-    assert "removeOutput" in text or "onRemoveOutput" in text
-    assert "stash-tag-curator-output-chips" in text
-    assert "stash-tag-curator-multiselect-list" in text
-    assert "outputs" in text and "push(" in text
+    assert "Change" in text, "mapped rows must offer Change"
+    assert "Remove translation" in text, "mapped rows must offer removal"
+    assert "remove: true" in text or "remove:true" in text
+    assert "normalized_key" in text
+
+
+def test_dictionary_batch_and_keyboard() -> None:
+    """Batch operations and keyboard triage exist (j/k/t/s/h/x)."""
+    text = _read_ui()
+    assert "onStageMany" in text
+    assert "stash-tag-curator-batchbar" in text
+    for key in ("j", "k", "t", "s", "h", "x"):
+        assert f'"{key}"' in text, f"keyboard shortcut {key!r} missing"
 
 
 def test_save_mapping_dispatch_with_checksum() -> None:
-    """T32: SaveMapping dispatch uses the exact args_map shape."""
+    """Save dispatch uses the exact args_map shape with the live checksum."""
     text = _read_ui()
-    assert "SaveMapping" in text
+    assert "Save Dictionary Edit" in text
     assert "expected_rules_sha" in text
-    assert "rules_checksum" in text
-    assert "SaveMappingConfirmModal" in text
+    assert "save_request_id" in text
     assert "changes" in text and "canonical_additions" in text
-    # T32: payload must be direct args_map, not JSON-wrapped mapping_edit.
     assert "mapping_edit" not in text, (
-        "T32 uses direct args_map keys; remove the legacy mapping_edit wrapper"
+        "save uses direct args_map keys; no legacy mapping_edit wrapper"
     )
 
 
-def test_t32_conflict_modal() -> None:
-    """T32: rules_changed conflict modal offers reload and re-apply."""
+def test_save_result_side_channel_close_the_loop() -> None:
+    """After a save the UI reads affected-scene counts and offers a scoped
+    update (Update Library scoped by the edited raw tags)."""
     text = _read_ui()
-    assert "MappingConflictModal" in text
-    assert "Rules changed" in text
-    assert "Reload and re-apply" in text
-    assert "rules_audit.json" in text
+    assert "save_result" in text
+    assert "affected_scene_count" in text
+    assert "affected_raw_tags" in text
+    assert "verifySaveResult" in text
+    # The scoped apply dispatches the ONE task, scoped by tags.
+    assert "CURATE_TASK_NAME" in text
 
 
-def test_t32_save_disabled_while_job_running() -> None:
-    """T32: Save button is disabled while a curator job is running."""
+def test_conflict_is_reported_not_silent() -> None:
+    """A rules_changed outcome surfaces a clear message and keeps drafts."""
     text = _read_ui()
-    assert "jobInProgress" in text
-    assert "Save Mapping" in text
+    assert 'result.error === "rules_changed"' in text
+    assert "changed elsewhere" in text
+    assert 'result.error === "run_lock_active"' in text
+
+
+def test_save_disabled_while_job_running() -> None:
+    """Save/apply are disabled while a curator job is running."""
+    text = _read_ui()
+    assert "saveDisabled" in text
+    assert "Save " in text
     assert "disabled" in text
 
 
-def test_t32_snapshot_cache_busting() -> None:
-    """T32: snapshot fetches carry mtime cache-buster query param."""
+def test_snapshot_cache_busting() -> None:
+    """Snapshot fetches carry a cache-buster query param."""
     text = _read_ui()
-    assert '"?_=" + Date.now()' in text
-    assert "rules_audit.json" in text
+    assert '".json?_=" + Date.now()' in text
 
-def test_run_history_panel_present() -> None:
-    """Run history table renders the documented columns (handoff L682-696)."""
+
+def test_home_shows_recent_runs_without_undo() -> None:
+    """Home lists recent runs with their counts; no rollback vocabulary."""
     text = _read_ui()
-    assert "RunHistoryPanel" in text
     assert "run_history" in text
-    for col in (
-        "run_id", "operation", "status", "started_at", "ended_at", "scope",
-        "scenes_changed", "scenes_skipped", "failures", "unmapped_count",
-        "rollback_available", "rules_sha",
-    ):
-        assert col in text, f"run-history column {col!r} missing"
-
-
-def test_run_history_rollback_confirm_gated() -> None:
-    """Per-row rollback button opens a confirmation modal before dispatch."""
-    text = _read_ui()
-    assert "RollbackConfirmModal" in text
-    assert "rollback_available" in text
-    assert re.search(r'taskName\s*:\s*["\']Rollback a Run["\']', text) is not None
-    assert "confirmRollback" in text
-
-
-def test_run_history_cancel_uses_stop_job() -> None:
-    """Cancel button for RUNNING rows uses stopJob (D5/D21 SIGKILL model)."""
-    text = _read_ui()
-    assert "StopRunConfirmModal" in text or "stopActiveRun" in text
-    assert "STOP_JOB_MUTATION" in text or "stopJob" in text
-    assert "jobQueue" in text or "JOB_QUEUE" in text
-    assert "SIGKILL" in text or "stale" in text.lower()
-
-
-def test_rules_audit_panel_present() -> None:
-    """Rules audit panel renders the documented snapshot fields."""
-    text = _read_ui()
-    assert "RulesAuditPanel" in text
-    assert "rules_audit" in text
+    assert "Recent runs" in text
     for field in (
-        "rules_version", "rules_checksum", "total_mappings",
-        "total_canonical_tags", "protected_prefixes", "protected_tag_names_count",
-        "canonical_tag_counts", "mapping_disposition_counts",
+        "run_id", "operation", "status", "started_at", "scope",
+        "scenes_changed", "parent_run_id",
     ):
-        assert field in text, f"rules-audit field {field!r} missing"
+        assert field in text, f"run-history field {field!r} missing"
+    # Undo/rollback/recovery surfaces are gone (labels, tasks, fields).
+    for gone in ("rollback_available", "onUndoRun", "Rollback a Run",
+                 "Resume Interrupted Run", "Abandon Interrupted Run",
+                 "Force Release Stale Run", "Undo Cleanup",
+                 "ActivityPanel", "AdvancedPanel"):
+        assert gone not in text, f"retired surface {gone!r} still present"
 
 
-def test_t23_panels_render_no_unescaped_values() -> None:
-    """T23 panels must not introduce escape-hatch HTML APIs."""
+def test_result_card_shows_what_changed() -> None:
+    """The result card renders per-scene tag diffs from run_detail."""
+    text = _read_ui()
+    assert "ResultCard" in text
+    assert "run_detail" in text
+    assert "added_tags" in text and "removed_tags" in text
+    assert "Review changes" in text
+
+
+def test_scan_generate_orchestration_lives_in_the_ui() -> None:
+    """The dashboard dispatches Stash's own Scan/Generate before the curator
+    task -- the plugin process never waits on the serial job queue."""
+    text = _read_ui()
+    assert "metadataScan" in text
+    assert "metadataGenerate" in text
+    assert "Scan & generate new files first" in text
+
+
+def test_panels_render_no_unescaped_values() -> None:
+    """Panels must not introduce escape-hatch HTML APIs."""
     text = _read_ui()
     assert "dangerouslySetInnerHTML" not in text
     assert ".innerHTML" not in text
     assert "eval(" not in text and "new Function(" not in text
 
 
-def test_t23_reuses_plugin_api_react_bootstrap() -> None:
-    """T23 panels must NOT bundle a second React or import Bootstrap."""
+def test_reuses_plugin_api_react_bootstrap() -> None:
+    """Panels must NOT bundle a second React or import Bootstrap."""
     text = _read_ui()
     lower = text.lower()
     assert "import react" not in lower
@@ -387,16 +386,15 @@ def test_t23_reuses_plugin_api_react_bootstrap() -> None:
     assert "import 'react-bootstrap'" not in lower and 'import \"react-bootstrap\"' not in lower
 
 
-def test_t23_app_has_three_new_tabs() -> None:
-    """App's tab bar exposes unmapped-tags, run-history, rules-audit tabs."""
+def test_app_has_two_tabs() -> None:
+    """App's tab bar is Home / Dictionary (0.5.0 simplification)."""
     text = _read_ui()
     for tab_key, tab_title in (
-        ("unmapped", "Unmapped Tags"),
-        ("runhistory", "Run History"),
-        ("rulesaudit", "Rules Audit"),
+        ("home", "Home"),
+        ("dictionary", "Dictionary"),
     ):
         assert f'eventKey: "{tab_key}"' in text, f"tab {tab_key!r} missing"
-        assert tab_title in text, f"tab title {tab_title!r} missing"
-    assert "Review Queues" not in text, (
-        "T22 placeholder Review Queues tab must be replaced by real T23 tabs"
-    )
+        assert f'title: "{tab_title}"' in text, f"tab title {tab_title!r} missing"
+    # The retired tabs are gone.
+    for gone in ('eventKey: "activity"', 'eventKey: "advanced"'):
+        assert gone not in text, f"retired tab {gone!r} still present"

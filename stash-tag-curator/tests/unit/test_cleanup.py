@@ -28,14 +28,11 @@ from curator.cleanup import (
     SCOPE_PLUGIN_OWNED,
     SCOPE_SAFE_GLOBAL,
     CleanupEngine,
-    CleanupProposal,
     CleanupReport,
     TagCandidate,
-    UndoReport,
     is_protected_name,
     plugin_owned_orphans,
     safe_global_orphans,
-    undo_cleanup,
 )
 from curator.processing import CURATOR_MARKERS
 from curator.rules import Rules
@@ -470,87 +467,64 @@ class TestPluginOwnedOrphans:
 # ---------------------------------------------------------------------------
 
 
-class TestCleanupEngineDryRun:
-    """D19: dry-run produces a proposal + token; no destruction happens."""
+class TestCleanupEngineRun:
+    """One conservative step: compute candidates -> journal -> destroy."""
 
-    def test_dry_run_returns_proposal_with_token(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
+    def test_run_destroys_orphans_and_reports(self) -> None:
+        client = TagsClient([_tag(1, "Orphan A"), _tag(2, "Orphan B")])
         rules = _build_rules()
         engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        assert isinstance(proposal, CleanupProposal)
-        assert len(proposal.token) >= 32  # 16 bytes hex = 32 chars
-        assert proposal.scope == SCOPE_SAFE_GLOBAL
-        assert len(proposal.candidates) == 1
+        report = engine.run(SCOPE_SAFE_GLOBAL)
+        assert isinstance(report, CleanupReport)
+        assert report.scope == SCOPE_SAFE_GLOBAL
+        assert report.destroyed_count == 2
+        assert set(report.destroyed_tag_ids) == {"1", "2"}
+        assert len(client.destroy_calls) == 1, "must be a single bulk destroy"
 
-    def test_dry_run_does_NOT_destroy(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        engine.dry_run(SCOPE_SAFE_GLOBAL)
-        assert client.destroy_calls == []
-
-    def test_dry_run_unknown_scope_raises(self) -> None:
+    def test_run_unknown_scope_raises(self) -> None:
         client = TagsClient([])
         rules = _build_rules()
         engine = CleanupEngine(client, state=_make_state(), rules=rules)
         with pytest.raises(ValueError):
-            engine.dry_run("nonsense")
+            engine.run("nonsense")
 
-    def test_dry_run_exclude_vetoes_by_id(self) -> None:
+    def test_run_exclude_vetoes_by_id(self) -> None:
         client = TagsClient([_tag(1, "Orphan A"), _tag(2, "Orphan B")])
         rules = _build_rules()
         engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL, exclude=["1"])
-        ids = {c.tag_id for c in proposal.candidates}
-        assert ids == {"2"}
+        report = engine.run(SCOPE_SAFE_GLOBAL, exclude=["1"])
+        assert set(report.destroyed_tag_ids) == {"2"}
 
-    def test_propose_is_alias_for_dry_run(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
+    def test_run_empty_candidate_list_short_circuits(self) -> None:
+        """No candidates -> no journal rows, no destroy call."""
+        client = TagsClient([_tag(1, "ACT: Blowjob")])  # canonical
+        rules = _build_rules()
+        state = _make_state()
+        engine = CleanupEngine(client, state=state, rules=rules)
+        report = engine.run(SCOPE_SAFE_GLOBAL)
+        assert report.destroyed_count == 0
+        assert client.destroy_calls == []
+        rows = state.connection.execute(
+            "SELECT COUNT(*) FROM tag_deletions"
+        ).fetchone()
+        assert int(rows[0]) == 0
+
+    def test_run_plugin_owned_scope(self) -> None:
+        client = TagsClient([_tag(1, "CURATOR: Stale Marker")])
         rules = _build_rules()
         engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.propose(SCOPE_SAFE_GLOBAL)
-        assert engine.pending_proposal(proposal.token) is proposal
+        report = engine.run(SCOPE_PLUGIN_OWNED)
+        assert report.scope == SCOPE_PLUGIN_OWNED
+        assert report.destroyed_count == 1
 
-    def test_token_is_single_use(self) -> None:
-        """A token consumed by execute cannot be reused."""
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        engine.execute_cleanup(proposal.token)
-        # Second use -> LookupError.
-        with pytest.raises(LookupError):
-            engine.execute_cleanup(proposal.token)
-
-
-def _make_state() -> StateDB:
-    """In-memory state DB (fresh per call to keep tests hermetic)."""
-    return StateDB(":memory:")
-
-
-class TestCleanupEngineExecute:
-    """D20: tag_deletions rows BEFORE destroy; bulk destroy; reports."""
-
-    def test_execute_requires_valid_token(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        with pytest.raises(LookupError):
-            engine.execute_cleanup("not-a-real-token")
-
-    def test_execute_writes_tag_deletions_before_destroy(self) -> None:
-        """D20 ordering: journal rows exist BEFORE tagsDestroy fires."""
+    def test_run_writes_audit_rows_before_destroy(self) -> None:
+        """tag_deletions rows exist BEFORE tagsDestroy fires."""
         client = TagsClient([_tag(1, "Orphan A"), _tag(2, "Orphan B")])
         rules = _build_rules()
         state = _make_state()
         engine = CleanupEngine(client, state=state, rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
 
-        # Intercept: at the moment tagsDestroy fires, the tag_deletions rows
-        # MUST already be present in the state DB.
         observed_row_count: list[int] = []
-
         original_submit = client.submit
 
         def _snoop_submit(query: str, variables: Any = None) -> dict[str, Any]:
@@ -564,272 +538,50 @@ class TestCleanupEngineExecute:
 
         client.submit = _snoop_submit  # type: ignore[assignment]
 
-        report = engine.execute_cleanup(proposal.token)
-
+        report = engine.run(SCOPE_SAFE_GLOBAL)
         assert observed_row_count == [2], (
             "tag_deletions must have 2 rows BEFORE tagsDestroy fires, "
             f"observed={observed_row_count!r}"
         )
         assert report.destroyed_count == 2
-        assert set(report.destroyed_tag_ids) == {"1", "2"}
-        assert len(report.deletion_row_ids) == 2
 
-    def test_tagsDestroy_called_once_with_full_id_list(self) -> None:
-        """Acceptance: tagsDestroy called once with the full id list (bulk)."""
-        client = TagsClient(
-            [_tag(i, f"Orphan {i}") for i in range(1, 6)]
-        )
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        report = engine.execute_cleanup(proposal.token)
-
-        assert len(client.destroy_calls) == 1, "must be a single bulk destroy"
-        destroyed = set(client.destroy_calls[0]["ids"])
-        assert destroyed == {str(i) for i in range(1, 6)}
-        assert report.destroyed_count == 5
-
-    def test_execute_empty_proposal_short_circuits(self) -> None:
-        """No candidates -> no journal rows, no destroy, empty report."""
-        client = TagsClient([_tag(1, "ACT: Blowjob")])  # canonical, no candidates
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(client, state=state, rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        assert proposal.candidates == []
-
-        report = engine.execute_cleanup(proposal.token)
-        assert report.destroyed_count == 0
-        assert client.destroy_calls == []
-        rows = state.connection.execute(
-            "SELECT COUNT(*) FROM tag_deletions"
-        ).fetchone()
-        assert int(rows[0]) == 0
-
-    def test_execute_plugin_owned_scope(self) -> None:
-        client = TagsClient([_tag(1, "CURATOR: Stale Marker")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_PLUGIN_OWNED)
-        assert len(proposal.candidates) == 1
-        report = engine.execute_cleanup(proposal.token)
-        assert report.scope == SCOPE_PLUGIN_OWNED
-        assert report.destroyed_count == 1
-
-    def test_execute_with_exclude_vetoes_last_minute(self) -> None:
-        client = TagsClient([_tag(1, "Orphan A"), _tag(2, "Orphan B")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        report = engine.execute_cleanup(proposal.token, exclude=["1"])
-        assert set(report.destroyed_tag_ids) == {"2"}
-
-    def test_execute_records_run_id_and_token_in_journal(self) -> None:
+    def test_run_records_run_id_in_audit_rows(self) -> None:
         client = TagsClient([_tag(1, "Orphan")])
         rules = _build_rules()
         state = _make_state()
         engine = CleanupEngine(
             client, state=state, rules=rules, run_id="cleanup-run-42"
         )
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        engine.execute_cleanup(proposal.token)
+        engine.run(SCOPE_SAFE_GLOBAL)
 
         row = state.connection.execute(
-            "SELECT run_id, tag_name, deletion_proposal_token, deleted_at, "
-            "restored_at FROM tag_deletions WHERE tag_name = ?",
+            "SELECT run_id, tag_name, deleted_at, restored_at "
+            "FROM tag_deletions WHERE tag_name = ?",
             ("Orphan",),
         ).fetchone()
         assert row is not None
         assert row["run_id"] == "cleanup-run-42"
-        assert row["deletion_proposal_token"] == proposal.token
         assert row["deleted_at"] is not None
-        assert row["restored_at"] is None
 
-    def test_execute_destroy_failure_surfaces_in_skipped(self) -> None:
+    def test_run_destroy_failure_surfaces_in_skipped(self) -> None:
         client = TagsClient([_tag(1, "Orphan")])
         rules = _build_rules()
         state = _make_state()
         engine = CleanupEngine(client, state=state, rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
 
         client.destroy_should_fail = True
-        report = engine.execute_cleanup(proposal.token)
+        report = engine.run(SCOPE_SAFE_GLOBAL)
 
         assert report.destroyed_count == 0
         assert len(report.skipped) == 1
         assert report.skipped[0]["phase"] == "tagsDestroy"
-        # Journal rows still written (audit of intent).
+        # The audit rows remain as a record of intent; the next run retries.
         rows = state.connection.execute(
             "SELECT COUNT(*) FROM tag_deletions"
         ).fetchone()
         assert int(rows[0]) == 1
 
-    def test_proposal_to_dict_is_json_serialisable(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        serialised = json.dumps(proposal.to_dict())
-        assert "token" in serialised
-        assert "candidates" in serialised
 
-    def test_report_to_dict_round_trips(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        engine = CleanupEngine(client, state=_make_state(), rules=rules)
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        report = engine.execute_cleanup(proposal.token)
-        d = report.to_dict()
-        assert d["destroyed_count"] == 1
-        # Re-serialise cleanly.
-        json.dumps(d)
-
-
-# ---------------------------------------------------------------------------
-# undo_cleanup (D20 best-effort restoration)
-# ---------------------------------------------------------------------------
-
-
-class TestUndoCleanup:
-    """D20: UndoCleanup reads tag_deletions and recreates via tagCreate."""
-
-    def test_undo_recreates_deleted_tags(self) -> None:
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(
-            client, state=state, rules=rules, run_id="cleanup-run-1"
-        )
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        report = engine.execute_cleanup(proposal.token)
-        assert report.destroyed_count == 1
-
-        undo = undo_cleanup(client, state, "cleanup-run-1")
-        assert undo.restored_count == 1
-        assert undo.restored[0]["name"] == "Orphan"
-        assert undo.restored[0]["old_tag_id"] != undo.restored[0]["new_tag_id"]
-        assert len(client.create_calls) == 1
-        assert client.create_calls[0]["input"]["name"] == "Orphan"
-
-    def test_undo_marks_restored_at(self) -> None:
-        client = TagsClient([_tag(1, "Orphan"), _tag(2, "Orphan 2")])
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(
-            client, state=state, rules=rules, run_id="cleanup-run-2"
-        )
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        engine.execute_cleanup(proposal.token)
-
-        undo_cleanup(client, state, "cleanup-run-2")
-
-        rows = state.connection.execute(
-            "SELECT restored_at FROM tag_deletions WHERE run_id = ?",
-            ("cleanup-run-2",),
-        ).fetchall()
-        assert all(r["restored_at"] is not None for r in rows)
-
-    def test_undo_is_idempotent_for_already_restored(self) -> None:
-        """A repeat undo call skips rows where restored_at is set."""
-        client = TagsClient([_tag(1, "Orphan")])
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(
-            client, state=state, rules=rules, run_id="cleanup-run-3"
-        )
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        engine.execute_cleanup(proposal.token)
-
-        first = undo_cleanup(client, state, "cleanup-run-3")
-        second = undo_cleanup(client, state, "cleanup-run-3")
-        assert first.restored_count == 1
-        assert second.restored_count == 0
-
-    def test_undo_records_failure_without_aborting(self) -> None:
-        """A failing tagCreate is recorded in .failed; the loop continues."""
-
-        class FailingCreateClient(TagsClient):
-            def submit(self, query: str, variables: Any = None) -> dict[str, Any]:
-                sig = self._signature(query)
-                if sig == "TagCreate":
-                    raise RuntimeError("server rejected create")
-                return super().submit(query, variables)
-
-        client = FailingCreateClient([_tag(1, "Orphan A"), _tag(2, "Orphan B")])
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(
-            client, state=state, rules=rules, run_id="cleanup-run-4"
-        )
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        engine.execute_cleanup(proposal.token)
-
-        undo = undo_cleanup(client, state, "cleanup-run-4")
-        assert undo.restored_count == 0
-        assert undo.failed_count == 2
-        for entry in undo.failed:
-            assert "error" in entry
-
-    def test_undo_unknown_run_returns_empty_report(self) -> None:
-        client = TagsClient([])
-        rules = _build_rules()
-        state = _make_state()
-        undo = undo_cleanup(client, state, "nonexistent-run")
-        assert undo.restored_count == 0
-        assert undo.failed_count == 0
-
-
-# ---------------------------------------------------------------------------
-# Integration: full dry-run + execute + undo round-trip
-# ---------------------------------------------------------------------------
-
-
-class TestEndToEndRoundTrip:
-    """A mixed library cleaned + restored round-trip."""
-
-    def test_round_trip_preserves_orphan_count(self) -> None:
-        client = TagsClient(
-            [
-                _tag(1, "Orphan 1"),
-                _tag(2, "Orphan 2"),
-                _tag(3, "Orphan 3"),
-                _tag(4, "ACT: Blowjob"),  # canonical -- preserved
-                _tag(5, "CURATOR: Needs Review"),  # marker -- preserved
-                _tag(6, "Parent", child_count=4),  # parent -- preserved
-            ]
-        )
-        rules = _build_rules()
-        state = _make_state()
-        engine = CleanupEngine(
-            client, state=state, rules=rules, run_id="round-trip"
-        )
-
-        proposal = engine.dry_run(SCOPE_SAFE_GLOBAL)
-        assert {c.tag_id for c in proposal.candidates} == {"1", "2", "3"}
-
-        execute_report = engine.execute_cleanup(proposal.token)
-        assert execute_report.destroyed_count == 3
-
-        undo = undo_cleanup(client, state, "round-trip")
-        assert undo.restored_count == 3
-        recreated_names = {r["name"] for r in undo.restored}
-        assert recreated_names == {"Orphan 1", "Orphan 2", "Orphan 3"}
-
-    def test_canonical_and_marker_and_protected_all_preserved(self) -> None:
-        """Issue 9 belt-and-braces: all three exclusion classes survive."""
-        client = TagsClient(
-            [
-                _tag(10, "ACT: Vaginal Sex"),           # canonical
-                _tag(11, "CURATOR: Processing Failed"), # marker
-                _tag(12, "MANUAL: User Pin"),           # protected prefix
-                _tag(13, "Pinned Exact"),               # protected exact
-                _tag(14, "True Orphan"),                # candidate
-            ]
-        )
-        rules = _build_rules(
-            canonical_tags={"ACT": ["ACT: Vaginal Sex"], "THEME": []},
-            protected={"prefixes": ["MANUAL:"], "tag_names": ["Pinned Exact"]},
-        )
-        candidates = safe_global_orphans(client, rules)
-        assert len(candidates) == 1
-        assert candidates[0].name == "True Orphan"
+def _make_state() -> StateDB:
+    """In-memory state DB (fresh per call to keep tests hermetic)."""
+    return StateDB(":memory:")

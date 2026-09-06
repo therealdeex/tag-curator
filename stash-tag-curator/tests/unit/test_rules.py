@@ -66,8 +66,8 @@ class TestLoadDefault:
     def test_loads_default_file(self) -> None:
         rules = Rules.load()
         assert rules.source_path == DEFAULT_RULES_PATH
-        assert rules.num_mappings == 1277
-        assert len(rules.canonical_tag_names()) == 119
+        assert rules.num_mappings == 1377
+        assert len(rules.canonical_tag_names()) == 130
 
     def test_rules_sha_matches_t7_fingerprint(self) -> None:
         rules = Rules.load()
@@ -80,7 +80,7 @@ class TestLoadDefault:
         counts = {}
         for rule in raw["mappings"].values():
             counts[rule["disposition"]] = counts.get(rule["disposition"], 0) + 1
-        assert counts == {"map": 814, "ignore": 401, "detail": 32, "defer": 30}
+        assert counts == {"map": 871, "ignore": 403, "detail": 71, "defer": 32}
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestPathPolicy:
         missing = tmp_path / "tag-rules.yml"
         rules = Rules.load(missing)
         assert rules.source_path == DEFAULT_RULES_PATH
-        assert rules.num_mappings == 1277
+        assert rules.num_mappings == 1377
 
     def test_load_with_explicit_schema(self, tmp_path: Path) -> None:
         rules = Rules.load(DEFAULT_RULES_PATH, schema_path=DEFAULT_SCHEMA_PATH)
@@ -300,6 +300,23 @@ class TestCollectorValidation:
         assert any(
             "era_buckets" in e and "overlaps" in e for e in exc_info.value.errors
         )
+
+    def test_jav_detection_uncompilable_pattern_rejected(self) -> None:
+        raw = _load_default_dict()
+        raw["derived"]["jav_detection"]["code_pattern"] = "([unclosed"
+        with pytest.raises(RulesValidationError) as exc_info:
+            Rules.from_dict(raw)
+        assert any(
+            "jav_detection.code_pattern" in e and "compile" in e
+            for e in exc_info.value.errors
+        )
+
+    def test_jav_detection_block_optional(self) -> None:
+        # Active rules files written before the subsystem existed must keep
+        # validating (absent block = subsystem disabled at runtime).
+        raw = _load_default_dict()
+        del raw["derived"]["jav_detection"]
+        Rules.from_dict(raw)  # no raise
 
     def test_canonical_reference_missing(self) -> None:
         raw = _load_default_dict()
@@ -418,8 +435,8 @@ class TestImmutability:
         be enumerable so the D6 tagCreate pre-pass can create them."""
         rules = Rules.load()
         detail = rules.detail_output_tags()
-        # The default rules have 32 detail mappings.
-        assert len(detail) == 32
+        # The default rules have 71 detail mappings.
+        assert len(detail) == 71
         # Known pass-through tags from the default rules.
         for expected in ("lotus", "dirty talk", "eye contact", "prone bone", "split"):
             assert expected in detail, f"{expected!r} missing from detail_output_tags()"

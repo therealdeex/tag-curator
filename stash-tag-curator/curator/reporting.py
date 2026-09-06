@@ -379,6 +379,179 @@ class ReportEngine:
             conn.close()
 
     # ------------------------------------------------------------------
+    # Tag dictionary
+    # ------------------------------------------------------------------
+
+    #: How many undecided entries get fuzzy-match suggestions computed.
+    #: Suggestions are ranked by scene count first, so this bounds the
+    #: SequenceMatcher cost while covering the tags a user is most likely
+    #: to triage.
+    _DICTIONARY_SUGGESTION_LIMIT = 500
+
+    def generate_dictionary(self, limit: int = 5000) -> dict[str, Any]:
+        """Build the tag-dictionary snapshot for the Dictionary panel.
+
+        This is the complete translation table in one payload so the UI can
+        render, search, and EDIT every provider tag -- mapped or not --
+        without a second round-trip:
+
+        * ``entries``: the union of (a) every raw tag observed on a scene
+          (``scene_raw_tags_current``, with distinct-scene counts) and (b)
+          every mapping key in the active rules (even one never yet
+          observed, ``scenes: 0``).  Each entry carries its effective status
+          (``needs_decision`` / ``translated`` / ``kept`` / ``hidden`` /
+          ``deferred``), outputs, notes, and -- for high-impact undecided
+          entries -- fuzzy-match suggestions drawn from existing mappings
+          and canonical tags.
+        * ``canonical_tags``: the enumerated taxonomy with axis names, so
+          the UI's "translate to" typeahead needs no extra fetch.
+        * ``stats``: per-status counts for the filter tabs.
+
+        ``limit`` bounds the number of returned entries (highest scene
+        count first); the default is far above any real library's
+        distinct-tag count and exists only as a runaway guard.
+        """
+        import difflib
+
+        raw = self._rules._raw  # noqa: SLF001 -- same-package access
+        mappings_raw: dict[str, Any] = {}
+        if isinstance(raw, dict):
+            candidate = raw.get("mappings")
+            if isinstance(candidate, dict):
+                mappings_raw = candidate
+
+        canonical: list[dict[str, str]] = []
+        for name in self._rules.canonical_tag_names():
+            axis = self._rules.axis_for(name) or ""
+            canonical.append({"name": name, "axis": axis})
+
+        # Effective status from the mapping entry's disposition.
+        def _status_for(disposition: str) -> str:
+            return {
+                DISPOSITION_MAP: "translated",
+                DISPOSITION_DETAIL: "kept",
+                DISPOSITION_IGNORE: "hidden",
+                DISPOSITION_DEFER: "deferred",
+            }.get(disposition, "needs_decision")
+
+        conn = self._state.read_only()
+        try:
+            rows = conn.execute(
+                "SELECT lower(rtrim(trim(raw_tag), ',')) AS norm_tag, "
+                "COUNT(DISTINCT scene_id) AS cnt "
+                "FROM scene_raw_tags_current GROUP BY norm_tag"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        # Entries are keyed by the normalized form so a mapping key and its
+        # observed raw tags (any provider casing) merge into ONE entry.
+        entries: dict[str, dict[str, Any]] = {}
+
+        def _entry_for(key: str) -> dict[str, Any]:
+            entry = entries.get(key)
+            if entry is None:
+                entry = {
+                    "tag": key,
+                    "scenes": 0,
+                    "status": "needs_decision",
+                    "outputs": [],
+                    "notes": None,
+                    "suggestions": [],
+                }
+                entries[key] = entry
+            return entry
+
+        for row in rows:
+            key = str(row["norm_tag"] or "")
+            if not key:
+                continue
+            entry = _entry_for(key)
+            entry["scenes"] = int(row["cnt"])
+
+        for key, rule in mappings_raw.items():
+            if not isinstance(key, str):
+                continue
+            entry = _entry_for(key.strip().lower().rstrip(","))
+            if not isinstance(rule, dict):
+                continue
+            disp = str(rule.get("disposition") or "")
+            entry["status"] = _status_for(disp)
+            outputs = rule.get("outputs")
+            if isinstance(outputs, list):
+                entry["outputs"] = [str(o) for o in outputs if isinstance(o, str)]
+            notes = rule.get("notes")
+            if isinstance(notes, str):
+                entry["notes"] = notes
+            elif isinstance(notes, list):
+                entry["notes"] = "; ".join(str(n) for n in notes if n)
+
+        # Fuzzy suggestions for the highest-impact undecided entries.
+        undecided = sorted(
+            (e for e in entries.values() if e["status"] == "needs_decision"),
+            key=lambda e: e["scenes"],
+            reverse=True,
+        )
+        # Candidates: mapping keys that RESOLVE somewhere (map/detail), plus
+        # canonical tag names.  A suggestion says "this tag looks like that
+        # tag, which translates to X".
+        resolve_candidates: dict[str, list[str]] = {}
+        for key, rule in mappings_raw.items():
+            if not isinstance(key, str) or not isinstance(rule, dict):
+                continue
+            if rule.get("disposition") in (DISPOSITION_MAP, DISPOSITION_DETAIL):
+                resolve_candidates[key] = [
+                    str(o) for o in (rule.get("outputs") or []) if isinstance(o, str)
+                ]
+        canonical_names = [c["name"] for c in canonical]
+
+        for entry in undecided[: self._DICTIONARY_SUGGESTION_LIMIT]:
+            tag = entry["tag"]
+            suggestions: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for match in difflib.get_close_matches(
+                tag, list(resolve_candidates), n=3, cutoff=0.75
+            ):
+                if match not in seen:
+                    seen.add(match)
+                    suggestions.append(
+                        {"tag": match, "outputs": resolve_candidates[match]}
+                    )
+            for match in difflib.get_close_matches(
+                tag, canonical_names, n=3, cutoff=0.75
+            ):
+                if match.casefold() not in seen:
+                    seen.add(match.casefold())
+                    suggestions.append({"tag": match, "outputs": [match]})
+            entry["suggestions"] = suggestions[:4]
+
+        stats = {
+            "needs_decision": 0,
+            "translated": 0,
+            "kept": 0,
+            "hidden": 0,
+            "deferred": 0,
+        }
+        for entry in entries.values():
+            if entry["status"] in stats:
+                stats[entry["status"]] += 1
+            else:
+                stats["needs_decision"] += 1
+
+        ordered = sorted(entries.values(), key=lambda e: (-e["scenes"], e["tag"]))
+        return {
+            "generated_at": _now_iso(),
+            "rules": {
+                "version": self._rules_version(),
+                "checksum": self._rules.rules_sha,
+            },
+            "entries": ordered[:limit],
+            "total_entries": len(entries),
+            "canonical_tags": canonical,
+            "stats": stats,
+        }
+
+    # ------------------------------------------------------------------
     # Run history
     # ------------------------------------------------------------------
 
@@ -389,14 +562,18 @@ class ReportEngine:
 
         Each run entry includes: run_id, operation, status, started_at,
         ended_at, rules_sha, scope, scenes_changed, scenes_skipped, failures,
-        unmapped_count, and rollback availability.
+        and unmapped_count.
         """
         conn = self._state.read_only()
         try:
+            # Parent runs only: child phase rows (curate phases) are
+            # aggregated into their parent's totals and would otherwise
+            # crowd the recent-runs window.
             rows = conn.execute(
                 "SELECT run_id, operation, status, rules_sha, started_at, "
-                "ended_at, scope_json, totals_json, error_message "
-                "FROM runs ORDER BY started_at DESC LIMIT ?",
+                "ended_at, scope_json, totals_json, error_message, parent_run_id "
+                "FROM runs WHERE parent_run_id IS NULL "
+                "ORDER BY started_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
 
@@ -412,6 +589,10 @@ class ReportEngine:
                     "rules_sha": row["rules_sha"],
                     "error": row["error_message"],
                     "scope": self._extract_scope_name(row["scope_json"]),
+                    "parent_run_id": (
+                        row["parent_run_id"]
+                        if "parent_run_id" in row.keys() else None
+                    ),
                 }
                 # Parse totals_json for count fields.  The totals_json is the
                 # nested result dict written by _record_run_end: for a full
@@ -422,23 +603,104 @@ class ReportEngine:
                 totals = self._parse_json(row["totals_json"])
                 extracted = self._extract_run_totals(totals)
                 entry["scenes_changed"] = extracted["scenes_changed"]
+                entry["scenes_ok"] = extracted["scenes_ok"]
                 entry["scenes_skipped"] = extracted["scenes_skipped"]
                 entry["failures"] = extracted["failures"]
                 entry["unmapped_count"] = extracted["unmapped_count"]
-                # Rollback availability: at least one applied mutation.
-                rollback_count = self._count(
-                    conn,
-                    "SELECT COUNT(*) FROM mutations "
-                    "WHERE run_id = ? "
-                    "AND status IN ('applied', 'reconciled_applied')",
-                    (run_id,),
-                )
-                entry["rollback_available"] = rollback_count > 0
+                entry["tags_deleted"] = extracted["tags_deleted"]
+                entry["proposals_written"] = extracted["proposals_written"]
                 runs.append(entry)
 
             return {
                 "generated_at": _now_iso(),
                 "runs": runs,
+            }
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Run detail (what exactly a run changed)
+    # ------------------------------------------------------------------
+
+    def generate_run_detail(
+        self, run_id: str, limit: int = 500
+    ) -> dict[str, Any]:
+        """Build the change list for one run from the mutations history.
+
+        Returns the run row (when present) plus up to ``limit`` changed
+        scenes with their pre/post tag NAMES.  Scenes mutated before the
+        history schema captured names (pre-0.5.0 runs) are counted in
+        ``changes_without_names`` and returned without diffs.
+        """
+        conn = self._state.read_only()
+        try:
+            run_row = conn.execute(
+                "SELECT run_id, operation, status, started_at, ended_at, "
+                "scope_json, totals_json, error_message "
+                "FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            run_entry: dict[str, Any] | None = None
+            if run_row is not None:
+                totals = self._parse_json(run_row["totals_json"])
+                extracted = self._extract_run_totals(totals)
+                run_entry = {
+                    "run_id": run_row["run_id"],
+                    "operation": run_row["operation"],
+                    "status": run_row["status"],
+                    "started_at": run_row["started_at"],
+                    "ended_at": run_row["ended_at"],
+                    "scope": self._extract_scope_name(run_row["scope_json"]),
+                    "error": run_row["error_message"],
+                    "scenes_changed": extracted["scenes_changed"],
+                    "scenes_ok": extracted["scenes_ok"],
+                    "scenes_skipped": extracted["scenes_skipped"],
+                    "failures": extracted["failures"],
+                    "unmapped_count": extracted["unmapped_count"],
+                    "tags_deleted": extracted["tags_deleted"],
+                    "proposals_written": extracted["proposals_written"],
+                }
+
+            total_rows = self._count(
+                conn,
+                "SELECT COUNT(*) FROM mutations WHERE run_id = ?",
+                (run_id,),
+            )
+            rows = conn.execute(
+                "SELECT scene_id, old_tag_names_json, new_tag_names_json "
+                "FROM mutations WHERE run_id = ? ORDER BY scene_id "
+                "LIMIT ?",
+                (run_id, limit),
+            ).fetchall()
+
+            changes: list[dict[str, Any]] = []
+            without_names = 0
+            for row in rows:
+                old_names = self._parse_json(row["old_tag_names_json"])
+                new_names = self._parse_json(row["new_tag_names_json"])
+                if not isinstance(old_names, list):
+                    old_names = []
+                if not isinstance(new_names, list):
+                    new_names = []
+                if not old_names and not new_names:
+                    without_names += 1
+                changes.append({
+                    "scene_id": row["scene_id"],
+                    "removed_tags": [
+                        str(n) for n in old_names if n not in new_names
+                    ],
+                    "added_tags": [
+                        str(n) for n in new_names if n not in old_names
+                    ],
+                })
+
+            return {
+                "generated_at": _now_iso(),
+                "run": run_entry,
+                "changes": changes,
+                "total_changes": total_rows,
+                "changes_without_names": without_names,
+                "truncated": total_rows > limit,
             }
         finally:
             conn.close()
@@ -603,92 +865,100 @@ class ReportEngine:
     def _extract_run_totals(totals: dict[str, Any]) -> dict[str, int]:
         """Extract run-history count fields from a nested ``totals_json``.
 
-        The ``totals_json`` written by ``_record_run_end`` is the full result
-        dict, which has a nested shape::
+        The ``totals_json`` written by ``_record_run_end`` is the full
+        result dict.  Shapes seen in practice::
 
             {"mode":"rebuild", "dry_run":{...}, "execute":{...}}
+            {"mode":"curate_library", "scene_phases":
+                {"never_processed": {"dry_run":{...}, "execute":{...}},
+                 "performer_enrichment": {...}, ...},
+             "orphan_cleanup": {"plugin_owned": {"destroyed_count": N}}}
 
-        For dry-only runs there is no ``execute`` key.  For cleanup runs the
-        counts live under a ``cleanup`` key.  This method navigates the
-        nesting and handles shape mismatches (``scenes_skipped`` is a dict of
-        per-reason counts, ``unmapped_tags`` is a list) that the flat
-        :meth:`_int_from` cannot reach.
+        Rather than hand-navigating each shape, this walks the whole tree
+        and AGGREGATES each recognised report dict exactly once.  Report
+        shapes are distinguished by their unique keys:
 
-        Returns a dict with ``scenes_changed``, ``scenes_skipped``,
-        ``failures``, ``unmapped_count`` — all ints, defaulting to 0.
+        * execute report (``mutations_applied``): scenes actually changed,
+          per-reason skips (``idempotent_noop`` = already correct,
+          ``mutation_failure`` = failed writes);
+        * dry report (``proposals_written``): scenes proposed for change
+          (preview runs), provider-transient skips, unmapped tag names;
+        * cleanup report (``destroyed_count``): tags removed.
+
+        Dry and execute reports describe different stages of the same
+        scenes, so their counts are kept in SEPARATE buckets -- nothing is
+        double counted.  Parent curate results embed their child phase
+        reports, so aggregating the parent covers all phases (child phases
+        are separate run rows and are never aggregated through the parent).
+
+        Returns a dict of ints, defaulting to 0::
+
+            scenes_changed, scenes_ok, scenes_skipped, failures,
+            unmapped_count, tags_deleted, proposals_written
         """
         if not isinstance(totals, dict):
-            return {"scenes_changed": 0, "scenes_skipped": 0,
-                    "failures": 0, "unmapped_count": 0}
+            return {"scenes_changed": 0, "scenes_ok": 0, "scenes_skipped": 0,
+                    "failures": 0, "unmapped_count": 0, "tags_deleted": 0,
+                    "proposals_written": 0}
 
-        # The execute-phase counts live under "execute" (rebuild/resume) or
-        # "cleanup" (cleanup tasks).  Dry-only runs have neither.
-        exec_block = totals.get("execute") or totals.get("cleanup") or {}
-        if not isinstance(exec_block, dict):
-            exec_block = {}
-        dry_block = totals.get("dry_run") or {}
-        if not isinstance(dry_block, dict):
-            dry_block = {}
+        acc = {"scenes_changed": 0, "scenes_ok": 0, "scenes_skipped": 0,
+               "failures": 0, "unmapped_count": 0, "tags_deleted": 0,
+               "proposals_written": 0}
 
-        # scenes_changed: mutations_applied > scenes_processed > top-level.
-        changed = ReportEngine._int_from(
-            exec_block, ("mutations_applied", "scenes_processed", "processed"),
-        )
-        if changed == 0:
-            changed = ReportEngine._int_from(
-                totals, ("mutations_applied", "scenes_processed", "processed"),
-            )
+        def _num(v: Any) -> int:
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return int(v)
+            return 0
 
-        # scenes_skipped: stored as a dict of per-reason counts (e.g.
-        # {"missing_tags": 2, "conflict": 1}); sum the values.  Fall back to
-        # top-level for legacy flat shapes.
-        skipped_raw = exec_block.get("scenes_skipped")
-        if skipped_raw is None:
-            skipped_raw = totals.get("scenes_skipped")
-        if isinstance(skipped_raw, dict):
-            scenes_skipped = sum(
-                v for v in skipped_raw.values()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
-            )
-        elif isinstance(skipped_raw, (int, float)) and not isinstance(skipped_raw, bool):
-            scenes_skipped = int(skipped_raw)
-        else:
-            scenes_skipped = 0
+        def _walk(node: Any) -> None:
+            if isinstance(node, dict):
+                if "mutations_applied" in node:
+                    # Execute report.
+                    acc["scenes_changed"] += _num(node.get("mutations_applied"))
+                    skipped = node.get("scenes_skipped")
+                    if isinstance(skipped, dict):
+                        for reason, count in skipped.items():
+                            n = _num(count)
+                            if reason == "idempotent_noop":
+                                acc["scenes_ok"] += n
+                            elif reason == "mutation_failure":
+                                acc["failures"] += n
+                            else:
+                                acc["scenes_skipped"] += n
+                    else:
+                        acc["scenes_skipped"] += _num(skipped)
+                if "proposals_written" in node or "scenes_inspected" in node:
+                    # Dry report (the scenes_inspected check covers legacy
+                    # dry shapes that predate the proposals_written key).
+                    acc["proposals_written"] += _num(node.get("proposals_written"))
+                    dry_skipped = node.get("skipped")
+                    if isinstance(dry_skipped, dict):
+                        acc["failures"] += _num(dry_skipped.get("transient"))
+                        acc["scenes_skipped"] += _num(
+                            dry_skipped.get("scene_missing")
+                        )
+                    unmapped = node.get("unmapped_tags")
+                    if isinstance(unmapped, list):
+                        acc["unmapped_count"] += len(unmapped)
+                if "destroyed_count" in node:
+                    # Cleanup report.
+                    acc["tags_deleted"] += _num(node.get("destroyed_count"))
+                    failed = node.get("skipped")
+                    if isinstance(failed, list):
+                        acc["failures"] += len(failed)
+                # Legacy flat keys (pre-nested result shapes).
+                if "failures" in node:
+                    acc["failures"] += _num(node.get("failures"))
+                if "unmapped_count" in node:
+                    acc["unmapped_count"] += _num(node.get("unmapped_count"))
+                for value in node.values():
+                    _walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
 
-        # failures: the execute report has no explicit "failures" field; the
-        # closest is scenes_skipped["mutation_failure"].  Also check top-level
-        # for legacy shapes.
-        failures = 0
-        if isinstance(skipped_raw, dict):
-            mf = skipped_raw.get("mutation_failure", 0)
-            if isinstance(mf, (int, float)) and not isinstance(mf, bool):
-                failures = int(mf)
-        if failures == 0:
-            failures = ReportEngine._int_from(
-                totals, ("failures", "failed", "failure_count"),
-            )
-
-        # unmapped_count: stored as a LIST of tag names under
-        # dry_run.unmapped_tags; take its length.  Also check top-level for
-        # legacy shapes.
-        unmapped_raw = dry_block.get("unmapped_tags")
-        if unmapped_raw is None:
-            unmapped_raw = totals.get("unmapped_tags")
-        if isinstance(unmapped_raw, list):
-            unmapped_count = len(unmapped_raw)
-        elif isinstance(unmapped_raw, (int, float)) and not isinstance(unmapped_raw, bool):
-            unmapped_count = int(unmapped_raw)
-        else:
-            unmapped_count = ReportEngine._int_from(
-                totals, ("unmapped_count", "unmapped"),
-            )
-
-        return {
-            "scenes_changed": changed,
-            "scenes_skipped": scenes_skipped,
-            "failures": failures,
-            "unmapped_count": unmapped_count,
-        }
+        _walk(totals)
+        return acc
 
     @staticmethod
     def _extract_scope_name(scope_json: Any) -> str | None:

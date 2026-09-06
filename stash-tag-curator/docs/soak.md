@@ -1,5 +1,9 @@
 # Scale and soak testing
 
+> **0.5.0 note:** the rollback phases described here were removed in the
+> 0.5.0 simplification (see [plan.md](plan.md)). The soak suite now covers
+> dry-run → execute → idempotent rerun and SIGKILL resume-by-rerun.
+
 This document describes the soak testing strategy for the Stash Tag Curator.
 The **1k-scene cassette soak is the v1 release gate** (Decision D8). The
 20k-scene soak is a **v1.1 milestone**, not a v1 gate. The streaming design
