@@ -1,4 +1,16 @@
+state/
 __pycache__/
 *.pyc
-*.png
+.venv/
+dist/
+*.zip
+node_modules/
+assets/*.json
+.pytest_cache/
+.hypothesis/
+
+stash-tag-curator-data/
+dist-test/
+.zcode/
+.playwright-mcp/
 .opencode/playwright/

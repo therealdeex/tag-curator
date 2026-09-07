@@ -1,8 +1,0 @@
-- generic [ref=f5e4]:
-  - generic [ref=f5e5]:
-    - heading "Username" [level=6] [ref=f5e7]
-    - textbox "Username" [ref=f5e8]
-  - generic [ref=f5e9]:
-    - heading "Password" [level=6] [ref=f5e11]
-    - textbox "Password" [ref=f5e12]
-  - button "Login" [ref=f5e15] [cursor=pointer]

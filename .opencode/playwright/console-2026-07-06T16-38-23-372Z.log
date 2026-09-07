@@ -1,6 +1,0 @@
-[     370ms] [ERROR] WebSocket connection to 'ws://192.168.8.40:9999/graphql' failed: HTTP Authentication failed; no valid credentials available @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:52
-[    2922ms] [ERROR] WebSocket connection to 'ws://192.168.8.40:9999/graphql' failed: HTTP Authentication failed; no valid credentials available @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:52
-[    2923ms] [ERROR] Unable to make websocket connection: see browser console for details @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:52
-[    6024ms] [ERROR] WebSocket connection to 'ws://192.168.8.40:9999/graphql' failed: HTTP Authentication failed; no valid credentials available @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:52
-[   10282ms] [LOG] Download the Apollo DevTools for a better development experience: %s https://chrome.google.com/webstore/detail/apollo-client-developer-t/jdkknkkbebbapilgoeccciglkfbmbnfm @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:19
-[   12174ms] [ERROR] WebSocket connection to 'ws://192.168.8.40:9999/graphql' failed: HTTP Authentication failed; no valid credentials available @ http://192.168.8.40:9999/assets/index-P3WhZ6Nb.js:52

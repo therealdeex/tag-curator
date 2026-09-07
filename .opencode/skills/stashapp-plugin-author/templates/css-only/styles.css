@@ -1,4 +1,0 @@
-/* Keep selectors narrowly scoped. Avoid global resets. */
-.__PLUGIN_CSS_ID__-notice {
-  font-weight: 600;
-}

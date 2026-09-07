@@ -1,0 +1,32 @@
+proposed_category,decision,reason
+ACT: Ball play,omit,"Incidental body-part contact; omit this extra act category without substituting blowjob, handjob or CBT."
+ACT: Breast play,retain,Distinct from a titjob; corrects several common contact mappings.
+ACT: Clitoral stimulation,omit,Adds a stimulation micro-category to an already broad act taxonomy; omit rather than infer oral contact or penetration.
+ACT: Facesitting,retain,Preserves an established concept without guessing the oral act or domination.
+ACT: Groping,omit,Broad incidental contact; omit rather than misclassify as rimming or impact.
+ACT: Orgasm,omit,Generic orgasm is a weak discriminator for this compact taxonomy; explicit control/denial remains useful.
+BODY: Augmented ass,omit,Optional body-part-specific filter; omit rather than infer size or breast augmentation.
+BODY: Augmented lips,omit,Minor appearance detail; prioritize established body filters.
+BODY: Lactation,omit,A specialized preference that can be added deliberately later; omission must not imply pregnancy.
+BODY: Natural ass,omit,Low-priority natural/negative body descriptor; never substitute natural breasts.
+KINK: Dirty talk,retain,Used by 181 snapshot scenes; distinct from humiliation.
+KINK: Food play,retain,Existing food-play detail has 139 snapshot scenes and an explicit rule definition.
+PROD: Behind the scenes,retain,"Recognizable production format, 229 snapshot scenes."
+PROD: Comedy,omit,"Optional tonal genre, less central than the retained formats; do not force it into gonzo."
+PROD: Female directed,omit,Optional production-credit filter; omit rather than infer director gender from cast or names.
+PROD: Full movie,omit,Describes work length/completeness rather than a reliable scene format; not necessarily compilation.
+PROD: Interactive,retain,Format is independent of viewpoint; no automatic VR assumption.
+PROD: Interview,retain,Consolidates interview variants; 184 and 24 snapshot scene references.
+PROD: Live show,omit,Overlapping performance label without establishing webcam or recording format; omit at this stage.
+PROD: Photoshoot,retain,Consolidates photoshoot/modeling without claiming a narrative format.
+PROD: Unedited,omit,Editing detail; postpone until it is a deliberate browsing preference.
+PROD: VR,retain,Format is independent of viewpoint.
+SET: Library,omit,Specific setting with limited evidence in this review; omit rather than merge into School.
+THEME: Glory hole,retain,Distinct searchable setup; no inferred act.
+THEME: Impregnation fantasy,retain,Represents a premise without claiming pregnancy or ejaculation.
+THEME: Orgy,retain,Separates group premises from many-on-one gangbang.
+THEME: Partner sharing,omit,An extra broad sharing bucket is not needed for the compact initial set; omit the detail without asserting marriage or cheating.
+THEME: Revenge,omit,Specific story motivation; omit rather than infer a wider relationship theme.
+THEME: Size contrast,omit,"Subjective pairing contrast; omit rather than claim particular sizes, ages or measurements."
+WARD: Sheer clothing,retain,Consolidates transparent clothing without inventing a garment type.
+WARD: Swimwear,retain,Corrects one-piece-to-bikini errors with a broader useful clothing category.
