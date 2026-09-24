@@ -21,7 +21,7 @@ def rules():
     ("impregnation", {"THEME: Impregnation fantasy"}),
     ("interactive", {"PROD: Interactive"}),
     ("virtual reality", {"PROD: VR"}),
-    ("face fuck - pov", {"ACT: Blowjob", "PROD: POV"}),
+    ("face fuck - pov", {"PROD: POV"}),  # Blowjob retired 2026-09-24
     ("gokkun", {"ACT: Cumshot - mouth"}),
     ("hand gagging", {"KINK: Gags/restraints"}),
 ])

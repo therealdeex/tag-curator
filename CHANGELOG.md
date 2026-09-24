@@ -8,6 +8,21 @@ schema).
 
 ## Unreleased
 
+- Tag-value review 2026-09-24 (data-driven, against live per-tag scene
+  counts and a full dictionary simulation over 436k raw tag observations):
+  retire `ACT: Blowjob` (61% coverage, provider-tagging bias made it
+  non-discriminative), move the intensity family (`rough`, `hard fuck`,
+  `brutal`, `aggressive`, `destruction`, `hair pulling`) from `PROD: Gonzo`
+  / `KINK: Spanking/impact` into `KINK: Rough sex`, add `ACT: Blowbang` as
+  its own canonical act, re-home `cum swapping` to `ACT: Cumshot - mouth`,
+  `jerk off instruction` to `KINK: Dirty talk`, and ignore the
+  degradation-language (`slutty`, `spitting`), undressed-state
+  (`nude`, `topless`, `bottomless`, `no underwear`) and `drool` / `switch`
+  inputs that diluted their host tags.
+- Sync the repo's live dictionary copy with the host's dashboard-triaged
+  superset (2,897 mappings) and apply the value-review edits on top.
+- Fix stale rules-audit assertions in `test_reporting.py` (still expected
+  the pre-0.5.0 1,377-mapping default).
 - Add Export Dictionary and a Dictionary-tab download of the complete saved
   YAML with checksums. Export requests are correlated to their result and do
   not initialize missing rules or change scene state.

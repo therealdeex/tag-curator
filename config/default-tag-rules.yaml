@@ -37,6 +37,7 @@ canonical_tags:
   - 'ACT: Ass-to-mouth'
   - 'ACT: Fisting'
   - 'ACT: Bukkake'
+  - 'ACT: Blowbang'
   - 'ACT: Breast play'
   - 'ACT: Facesitting'
   BODY:
@@ -235,160 +236,104 @@ mappings:
     - 'ACT: Anal sex'
     disposition: map
   blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   double blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   blowjob - pov:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   blowjob nose pinch:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   hands-free blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   sloppy blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   throat fucking:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   face fuck:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   cock worship:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   dick licking:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   ball licking:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   ball sucking:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   ball sucking during blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   blowjob sandwich:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   booth blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   cowgirl blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   deepthroat:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   deep throat:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   head pushing blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   inverted blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   missionary blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   side fuck blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   standing blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   triple blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   blowjob only:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   double blowjob (2 mouths):
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   double blowjob (2 penises):
     outputs:
-    - 'ACT: Blowjob'
+    - 'ACT: Blowbang'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'Value review 2026-09-24: many-on-one oral act; separated from the retired ubiquitous ACT: Blowjob bucket'
   multiple blowjobs (2+ mouths):
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   multiple blowjobs (2+ penises):
     outputs:
-    - 'ACT: Blowjob'
+    - 'ACT: Blowbang'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'Value review 2026-09-24: many-on-one oral act; separated from the retired ubiquitous ACT: Blowjob bucket'
   train (oral sex):
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   blowbang:
     outputs:
-    - 'ACT: Blowjob'
+    - 'ACT: Blowbang'
     disposition: map
-    notes: 'v2 grouping: Oral-stack variants (deepthroat, throat fucking, face fuck, gagging) and ball-play (ball licking/sucking) live here: they co-occur with and imply oral on a penis. ''blowbang'' grouped here as the many-on-one oral act.'
+    notes: 'Value review 2026-09-24: many-on-one oral act; separated from the retired ubiquitous ACT: Blowjob bucket'
   pussy licking:
     outputs:
     - 'ACT: Cunnilingus'
@@ -611,14 +556,12 @@ mappings:
     notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
   cum swapping:
     outputs:
-    - 'ACT: Kissing'
+    - 'ACT: Cumshot - mouth'
     disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
+    notes: 'Value review 2026-09-24: cum play, not kissing'
   drool:
-    outputs:
-    - 'ACT: Kissing'
-    disposition: map
-    notes: 'v2 grouping: Mouth/saliva-play tags (fish-hooking, spit in mouth, cum kissing/swapping, drool) grouped here as the canonical mouth-centric bucket.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: saliva artefact, not a mouth-centric act'
   rimming:
     outputs:
     - 'ACT: Rimming'
@@ -2258,9 +2201,8 @@ mappings:
     - 'WARD: Casual'
     disposition: map
   no underwear:
-    outputs:
-    - 'WARD: Casual'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: undressed state is the absence of wardrobe, not casual wear'
   panties:
     outputs:
     - 'WARD: Casual'
@@ -2278,21 +2220,17 @@ mappings:
     - 'WARD: Casual'
     disposition: map
   bottomless:
-    outputs:
-    - 'WARD: Casual'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: undressed state is the absence of wardrobe, not casual wear'
   topless:
-    outputs:
-    - 'WARD: Casual'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: undressed state is the absence of wardrobe, not casual wear'
   nude:
-    outputs:
-    - 'WARD: Casual'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: undressed state is the absence of wardrobe, not casual wear'
   bottomless female:
-    outputs:
-    - 'WARD: Casual'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: undressed state is the absence of wardrobe, not casual wear'
   business woman:
     outputs:
     - 'WARD: Business'
@@ -2481,9 +2419,9 @@ mappings:
     notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
   hair pulling:
     outputs:
-    - 'KINK: Spanking/impact'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'v2 grouping: clothespins/clamps/zipper/weights grouped here as sensation/impact-adjacent toys.'
+    notes: 'Value review 2026-09-24: mainstream intensity cue, not impact play'
   single-tailed whip:
     outputs:
     - 'KINK: Spanking/impact'
@@ -2600,10 +2538,8 @@ mappings:
     disposition: map
     notes: 'v2 grouping: ''sex fight'' grouped here as a power-exchange dynamic.'
   switch:
-    outputs:
-    - 'KINK: Dom/Sub'
-    disposition: map
-    notes: 'v2 grouping: ''sex fight'' grouped here as a power-exchange dynamic.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: switching explicitly denotes the absence of a fixed D/s role'
   sex fight:
     outputs:
     - 'KINK: Dom/Sub'
@@ -2620,10 +2556,8 @@ mappings:
     disposition: map
     notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language. NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
   spitting:
-    outputs:
-    - 'KINK: Humiliation'
-    disposition: map
-    notes: 'v2 grouping: ''slutty'', ''bitch'', ''bad girl'' grouped here as degradation language. NOTE: these also appear in BLACKLIST (blacklist wins in map_tag).'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ambiguous: usually lube-spitting in mainstream scenes, not degradation'
   choking:
     outputs:
     - 'KINK: Choking/breath'
@@ -2888,24 +2822,24 @@ mappings:
     notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
   hard fuck:
     outputs:
-    - 'PROD: Gonzo'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
+    notes: 'Value review 2026-09-24: intensity signal, not a production style; was polluting PROD: Gonzo'
   aggressive:
     outputs:
-    - 'PROD: Gonzo'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
+    notes: 'Value review 2026-09-24: intensity signal, not a production style; was polluting PROD: Gonzo'
   brutal:
     outputs:
-    - 'PROD: Gonzo'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
+    notes: 'Value review 2026-09-24: intensity signal, not a production style; was polluting PROD: Gonzo'
   destruction:
     outputs:
-    - 'PROD: Gonzo'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'v2 grouping: NOTE: ''hardcore'' and ''rough'' also appear in BLACKLIST; blacklist takes precedence in map_tag (checked first -> returns None), so their presence here is preserved for documentation of intent but never reached at runtime.'
+    notes: 'Value review 2026-09-24: intensity signal, not a production style; was polluting PROD: Gonzo'
   pov:
     outputs:
     - 'PROD: POV'
@@ -3011,15 +2945,13 @@ mappings:
     disposition: map
     notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent). v2 also blacklisted it; collision resolved by mapping.'
   slutty:
-    outputs:
-    - 'KINK: Humiliation'
-    disposition: map
-    notes: 'Collision-resolution: degradation language (per v2 KINK: Humiliation intent). v2 also blacklisted it; collision resolved by mapping.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: degradation language descriptor, not humiliation play'
   rough:
     outputs:
-    - 'PROD: Gonzo'
+    - 'KINK: Rough sex'
     disposition: map
-    notes: 'Collision-resolution: genuine intensity/production-style signal, more specific than ''hardcore'' (per v2 PROD: Gonzo intent). v2 also blacklisted it; collision resolved by mapping.'
+    notes: 'Value review 2026-09-24: intensity signal, not a production style; was polluting PROD: Gonzo'
   enhanced ass:
     disposition: ignore
     notes: 'Compact taxonomy review 2026-09-07: Omit optional detail rather than expanding the taxonomy or forcing a misleading substitute.'
@@ -4296,10 +4228,8 @@ mappings:
     disposition: map
     notes: 'Identity map: tag is already in canonical form.'
   'act: blowjob':
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
-    notes: 'Identity map: tag is already in canonical form.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   'act: cumshot - body':
     outputs:
     - 'ACT: Cumshot - body'
@@ -4874,13 +4804,13 @@ mappings:
     - 'BODY: Pierced'
     disposition: map
   reverse cowgirl blowjob:
-    outputs:
-    - 'ACT: Blowjob'
-    disposition: map
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   jerk off instruction:
     outputs:
-    - 'KINK: Dom/Sub'
+    - 'KINK: Dirty talk'
     disposition: map
+    notes: 'Value review 2026-09-24: JOI is verbal instruction, not a D/s pairing'
   cum on forehead:
     outputs:
     - 'ACT: Cumshot - face'
@@ -5265,10 +5195,8 @@ mappings:
     - 'KINK: Gags/restraints'
     notes: 'Taxonomy review 2026-09-07: Explicit gagging by hand.'
   holding balls during blowjob:
-    disposition: map
-    outputs:
-    - 'ACT: Blowjob'
-    notes: 'Taxonomy review 2026-09-07: Act explicitly named; omit incidental hand placement.'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   holding hair:
     disposition: ignore
     notes: 'Taxonomy review 2026-09-07: Holding hair alone does not establish pulling or rough sex.'
@@ -5459,9 +5387,8 @@ mappings:
     disposition: ignore
     notes: 'Taxonomy review 2026-09-07: Hide minor appearance, expression, prop, series or vague premise details; do not infer acts, demographics or relationships.'
   triple blowjob (3 mouths):
-    disposition: map
-    outputs:
-    - 'ACT: Blowjob'
+    disposition: ignore
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   wall:
     disposition: ignore
     notes: 'Taxonomy review 2026-09-07: Hide position variants under the user-selected compact taxonomy policy.'
@@ -5568,11 +5495,10 @@ mappings:
     - 'SET: Pool/water'
     notes: 'Taxonomy review 2026-09-07: Explicit water setting.'
   face fuck - pov:
-    disposition: map
     outputs:
-    - 'ACT: Blowjob'
     - 'PROD: POV'
-    notes: 'Taxonomy review 2026-09-07: Both act and viewpoint explicitly named.'
+    disposition: map
+    notes: 'Value review 2026-09-24: ACT: Blowjob retired (61% coverage, provider-bias noise); non-oral outputs kept'
   double creampie:
     disposition: map
     outputs:
@@ -5972,106 +5898,105 @@ derived:
   married_irl_tag: 'THEME: Married IRL'
   jav_detection:
     enabled: true
-    tag_name: 'JAV'
-    code_pattern: '^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?$'
-    path_code_pattern: '^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?\b'
+    tag_name: JAV
+    code_pattern: ^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?$
+    path_code_pattern: ^[A-Za-z]{1,7}-\d{2,5}[A-Za-z]?\b
     url_substrings:
-    - 'javdatabase'
-    - 'r18.dev'
-    - 'r18.com'
-    - 'dmm.co.jp'
-    - 'javlibrary'
-    - 'javbus'
+    - javdatabase
+    - r18.dev
+    - r18.com
+    - dmm.co.jp
+    - javlibrary
+    - javbus
     code_exempt_studios:
-    - 'Evil Angel'
-    - 'Anal Overdose'
-    - 'Oral Overdose'
-    - 'Up Her Asshole'
-    - 'Teens3Some'
-    - 'Delphine Films'
+    - Evil Angel
+    - Anal Overdose
+    - Oral Overdose
+    - Up Her Asshole
+    - Teens3Some
+    - Delphine Films
     studio_names:
-    - 'ABC / Mousouzoku'
-    - 'An Amazingly Rare Amateur'
-    - 'Attackers'
-    - 'Aurora Project ANNEX'
-    - 'AVS collector''s'
-    - 'BAZOOKA'
-    - 'Befree'
-    - 'Big Morkal'
-    - 'Black Dog/Delusional Tribe'
-    - 'Celeb no Tomo'
-    - 'Center Village'
-    - 'Cinema'
-    - 'Cosmos Eizo'
-    - 'Crystal Eizo'
-    - 'DAHLIA'
-    - 'Das !'
-    - 'Deep''s'
-    - 'Dream Ticket'
-    - 'FA Pro'
-    - 'Faleno'
-    - 'Fitch'
-    - 'Focus'
-    - 'Global Media Annex'
-    - 'Glory Quest'
-    - 'Gogos'
-    - 'Hajime Kikaku'
-    - 'Hibino'
-    - 'Honnaka'
-    - 'Hunter'
-    - 'Idea Pocket'
-    - 'In Mad'
-    - 'Janes'
-    - 'JET Eizo'
-    - 'JET Images'
-    - 'Juku No kura / Emmanuelle'
-    - 'K.M.Produce'
-    - 'KaguyahimePt/Mousouzoku'
-    - 'Kawaii'
-    - 'Keimoa/Mousouzoku'
-    - 'KSB Kikaku / Emmanuelle'
-    - 'Lez Re!'
-    - 'long style'
-    - 'LUNATICS'
-    - 'M''s Video Group'
-    - 'Madonna'
-    - 'Magic Mirror Van'
-    - 'MAGNOLIA'
-    - 'Manji Group'
-    - 'Mankitsu'
-    - 'Married Woman Flower Garden Theater'
-    - 'Max A'
-    - 'MEGAMI'
-    - 'Megami (venus)'
-    - 'Milu'
-    - 'Misesu no Sugao/Emmanuelle'
-    - 'Mokkori TV'
-    - 'Momotaro Eizo'
-    - 'Monroe'
-    - 'MOODYZ'
-    - 'MOODYZ ACID'
-    - 'MOODYZ GATI'
-    - 'MOODYZ REAL'
-    - 'Mr. Michiru'
-    - 'Nagae Style'
-    - 'Otona No Drama'
-    - 'Pakopakodan To Yukaina Nakamatachi'
-    - 'Premium'
-    - 'Red Face Girl'
-    - 'Rocket'
-    - 'Ryubaku'
-    - 'S1'
-    - 'S1 Number One Style'
-    - 'Shark'
-    - 'SOD Create'
-    - 'Super Special'
-    - 'Takara Eizou'
-    - 'Takara Video'
-    - 'Tameike Goro'
-    - 'Ure Comi'
-    - 'VENUS'
-    - 'Yama to Sora'
-
+    - ABC / Mousouzoku
+    - An Amazingly Rare Amateur
+    - Attackers
+    - Aurora Project ANNEX
+    - AVS collector's
+    - BAZOOKA
+    - Befree
+    - Big Morkal
+    - Black Dog/Delusional Tribe
+    - Celeb no Tomo
+    - Center Village
+    - Cinema
+    - Cosmos Eizo
+    - Crystal Eizo
+    - DAHLIA
+    - Das !
+    - Deep's
+    - Dream Ticket
+    - FA Pro
+    - Faleno
+    - Fitch
+    - Focus
+    - Global Media Annex
+    - Glory Quest
+    - Gogos
+    - Hajime Kikaku
+    - Hibino
+    - Honnaka
+    - Hunter
+    - Idea Pocket
+    - In Mad
+    - Janes
+    - JET Eizo
+    - JET Images
+    - Juku No kura / Emmanuelle
+    - K.M.Produce
+    - KaguyahimePt/Mousouzoku
+    - Kawaii
+    - Keimoa/Mousouzoku
+    - KSB Kikaku / Emmanuelle
+    - Lez Re!
+    - long style
+    - LUNATICS
+    - M's Video Group
+    - Madonna
+    - Magic Mirror Van
+    - MAGNOLIA
+    - Manji Group
+    - Mankitsu
+    - Married Woman Flower Garden Theater
+    - Max A
+    - MEGAMI
+    - Megami (venus)
+    - Milu
+    - Misesu no Sugao/Emmanuelle
+    - Mokkori TV
+    - Momotaro Eizo
+    - Monroe
+    - MOODYZ
+    - MOODYZ ACID
+    - MOODYZ GATI
+    - MOODYZ REAL
+    - Mr. Michiru
+    - Nagae Style
+    - Otona No Drama
+    - Pakopakodan To Yukaina Nakamatachi
+    - Premium
+    - Red Face Girl
+    - Rocket
+    - Ryubaku
+    - S1
+    - S1 Number One Style
+    - Shark
+    - SOD Create
+    - Super Special
+    - Takara Eizou
+    - Takara Video
+    - Tameike Goro
+    - Ure Comi
+    - VENUS
+    - Yama to Sora
 protected:
   prefixes:
   - 'MANUAL:'

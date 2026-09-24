@@ -67,7 +67,7 @@ class TestLoadDefault:
         rules = Rules.load()
         assert rules.source_path == DEFAULT_RULES_PATH
         assert rules.num_mappings == 1476
-        assert len(rules.canonical_tag_names()) == 144
+        assert len(rules.canonical_tag_names()) == 145
 
     def test_rules_sha_matches_t7_fingerprint(self) -> None:
         rules = Rules.load()
@@ -80,7 +80,7 @@ class TestLoadDefault:
         counts = {}
         for rule in raw["mappings"].values():
             counts[rule["disposition"]] = counts.get(rule["disposition"], 0) + 1
-        assert counts == {"map": 873, "ignore": 592, "defer": 11}
+        assert counts == {"map": 832, "ignore": 633, "defer": 11}
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +91,9 @@ class TestForwardIndex:
 
     def test_map_returns_output(self) -> None:
         rules = Rules.load()
-        result = rules.map_raw("Blowjob")
+        result = rules.map_raw("Blowbang")
         assert result == MappingResult(
-            outputs=("ACT: Blowjob",), disposition="map"
+            outputs=("ACT: Blowbang",), disposition="map"
         )
 
     def test_one_to_many_returns_all_outputs(self) -> None:
@@ -146,10 +146,10 @@ class TestForwardIndex:
     def test_map_raw_normalizes_input(self) -> None:
         rules = Rules.load()
         variants = [
-            "  Blowjob",
-            "BLOWJOB",
-            "blowjob,",
-            "\tblowjob\n",
+            "  Cunnilingus",
+            "CUNNILINGUS",
+            "cunnilingus,",
+            "\tcunnilingus\n",
         ]
         for v in variants:
             assert rules.map_raw(v).disposition == "map"
@@ -162,7 +162,7 @@ class TestForwardIndex:
     def test_get_mapping_preserves_notes_and_provider(self) -> None:
         raw = _load_default_dict()
         raw["mappings"]["test-provider"] = {
-            "outputs": ["ACT: Blowjob"],
+            "outputs": ["ACT: Blowbang"],
             "disposition": "map",
             "notes": ["line one", "line two"],
             "provider": "stashdb",
@@ -170,7 +170,7 @@ class TestForwardIndex:
         rules = Rules.from_dict(raw)
         m = rules.get_mapping("test-provider")
         assert isinstance(m, Mapping)
-        assert m.outputs == ("ACT: Blowjob",)
+        assert m.outputs == ("ACT: Blowbang",)
         assert m.notes == ("line one", "line two")
         assert m.provider == "stashdb"
         assert m.disposition == "map"
@@ -184,7 +184,7 @@ class TestReverseIndex:
 
     def test_axis_for_rule_mapped_axis(self) -> None:
         rules = Rules.load()
-        assert rules.axis_for("ACT: Blowjob") == "ACT"
+        assert rules.axis_for("ACT: Blowbang") == "ACT"
         assert rules.axis_for("BODY: Big ass") == "BODY"
         assert rules.axis_for("THEME: Cheating") == "THEME"
 
@@ -254,7 +254,7 @@ class TestCollectorValidation:
         }
         # 3) normalization collision
         raw["mappings"]["blowjob,"] = {
-            "outputs": ["ACT: Blowjob"],
+            "outputs": ["ACT: Cunnilingus"],
             "disposition": "map",
         }
 
@@ -360,7 +360,7 @@ class TestCollectorValidation:
         raw = _load_default_dict()
         # Distinct YAML key that normalizes to the same source key as "blowjob".
         raw["mappings"]["blowjob,"] = {
-            "outputs": ["ACT: Blowjob"],
+            "outputs": ["ACT: Cunnilingus"],
             "disposition": "map",
         }
         with pytest.raises(RulesValidationError) as exc_info:
@@ -382,7 +382,7 @@ class TestCollectorValidation:
     def test_ignore_forbids_outputs(self) -> None:
         raw = _load_default_dict()
         raw["mappings"]["ignore-with-outputs"] = {
-            "outputs": ["ACT: Blowjob"],
+            "outputs": ["ACT: Cunnilingus"],
             "disposition": "ignore",
         }
         with pytest.raises(RulesValidationError) as exc_info:

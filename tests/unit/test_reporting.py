@@ -838,16 +838,15 @@ class TestRulesAudit:
     ) -> None:
         result = engine.generate_rules_audit()
         counts = result["mapping_disposition_counts"]
-        # The bundled default has: map=871, ignore=403, detail=71, defer=32
-        # (includes reconciliation/identity mappings for existing tags).
-        assert counts[DISPOSITION_MAP] == 871
-        assert counts[DISPOSITION_IGNORE] == 403
-        assert counts[DISPOSITION_DETAIL] == 71
-        assert counts[DISPOSITION_DEFER] == 32
+        # The bundled default has: map=832, ignore=633, defer=11
+        # (v3 dictionary after the 2026-09-24 value review).
+        assert counts[DISPOSITION_MAP] == 832
+        assert counts[DISPOSITION_IGNORE] == 633
+        assert counts[DISPOSITION_DEFER] == 11
 
     def test_total_mappings(self, engine: ReportEngine) -> None:
         result = engine.generate_rules_audit()
-        assert result["total_mappings"] == 1377
+        assert result["total_mappings"] == 1476
 
     def test_canonical_tag_counts_all_axes(
         self, engine: ReportEngine
