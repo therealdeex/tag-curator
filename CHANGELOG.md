@@ -8,6 +8,12 @@ schema).
 
 ## Unreleased
 
+- Follow-up taxonomy decisions (2026-09-24): define `ACT: Blowbang` as
+  3+ penises (the two-penis threesome variants return to ignore), add
+  `THEME: Parody` for `parody` / `rule 34` (cosplay and character stay in
+  `THEME: Roleplay`), and rename `THEME: Wife sharing` to
+  `THEME: Hotwife` to match its hotwife-driven population; cuckolding
+  remains its own theme.
 - Tag-value review 2026-09-24 (data-driven, against live per-tag scene
   counts and a full dictionary simulation over 436k raw tag observations):
   retire `ACT: Blowjob` (61% coverage, provider-tagging bias made it

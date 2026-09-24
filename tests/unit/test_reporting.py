@@ -838,10 +838,10 @@ class TestRulesAudit:
     ) -> None:
         result = engine.generate_rules_audit()
         counts = result["mapping_disposition_counts"]
-        # The bundled default has: map=832, ignore=633, defer=11
+        # The bundled default has: map=830, ignore=635, defer=11
         # (v3 dictionary after the 2026-09-24 value review).
-        assert counts[DISPOSITION_MAP] == 832
-        assert counts[DISPOSITION_IGNORE] == 633
+        assert counts[DISPOSITION_MAP] == 830
+        assert counts[DISPOSITION_IGNORE] == 635
         assert counts[DISPOSITION_DEFER] == 11
 
     def test_total_mappings(self, engine: ReportEngine) -> None:

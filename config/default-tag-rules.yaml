@@ -79,10 +79,11 @@ canonical_tags:
   - 'THEME: Voyeurism'
   - 'THEME: Exhibitionism'
   - 'THEME: Roleplay'
+  - 'THEME: Parody'
   - 'THEME: Romance'
   - 'THEME: Massage'
   - 'THEME: First time'
-  - 'THEME: Wife sharing'
+  - 'THEME: Hotwife'
   - 'THEME: Older/younger'
   - 'THEME: Holiday/seasonal'
   - 'THEME: Freeuse'
@@ -314,18 +315,14 @@ mappings:
     disposition: ignore
     notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   double blowjob (2 penises):
-    outputs:
-    - 'ACT: Blowbang'
-    disposition: map
-    notes: 'Value review 2026-09-24: many-on-one oral act; separated from the retired ubiquitous ACT: Blowjob bucket'
+    disposition: ignore
+    notes: 'Follow-up review 2026-09-24: 2 penises is threesome territory; ACT: Blowbang is defined as 3+ penises'
   multiple blowjobs (2+ mouths):
     disposition: ignore
     notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
   multiple blowjobs (2+ penises):
-    outputs:
-    - 'ACT: Blowbang'
-    disposition: map
-    notes: 'Value review 2026-09-24: many-on-one oral act; separated from the retired ubiquitous ACT: Blowjob bucket'
+    disposition: ignore
+    notes: 'Follow-up review 2026-09-24: ''2+'' starts at the threesome level; ACT: Blowbang is defined as 3+ penises'
   train (oral sex):
     disposition: ignore
     notes: 'Value review 2026-09-24: ACT: Blowjob retired: 61% of library carried it and providers tag it far more diligently than other acts, so it discriminated nothing'
@@ -1492,9 +1489,9 @@ mappings:
     notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   parody:
     outputs:
-    - 'THEME: Roleplay'
+    - 'THEME: Parody'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
+    notes: 'Follow-up review 2026-09-24: parody is its own genre premise, not generic roleplay'
   sci-fi:
     outputs:
     - 'THEME: Roleplay'
@@ -1512,9 +1509,9 @@ mappings:
     notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
   rule 34:
     outputs:
-    - 'THEME: Roleplay'
+    - 'THEME: Parody'
     disposition: map
-    notes: 'v2 grouping: Genre-fiction tags (sci-fi, horror, parody, rule 34, character) grouped here as fictional/narrative roleplay.'
+    notes: 'Follow-up review 2026-09-24: IP-based parody content, not generic roleplay'
   character:
     outputs:
     - 'THEME: Roleplay'
@@ -1598,14 +1595,14 @@ mappings:
     disposition: map
   hotwife:
     disposition: map
-    notes: 'Compact taxonomy review 2026-09-07: Explicit genre premise; does not assert actual marriage or real-world conduct.'
+    notes: 'Follow-up review 2026-09-24: renamed from THEME: Wife sharing; the tag population is hotwife-driven'
     outputs:
-    - 'THEME: Wife sharing'
+    - 'THEME: Hotwife'
   hot wife xxx:
     disposition: map
-    notes: 'Compact taxonomy review 2026-09-07: Explicit genre premise; does not assert actual marriage or real-world conduct.'
+    notes: 'Follow-up review 2026-09-24: renamed from THEME: Wife sharing; the tag population is hotwife-driven'
     outputs:
-    - 'THEME: Wife sharing'
+    - 'THEME: Hotwife'
   other person's wife:
     disposition: ignore
     notes: 'Compact taxonomy review 2026-09-07: A relationship role does not establish consensual sharing or infidelity.'
@@ -4452,9 +4449,9 @@ mappings:
     notes: 'Identity map: tag is already in canonical form.'
   'theme: wife sharing':
     outputs:
-    - 'THEME: Wife sharing'
+    - 'THEME: Hotwife'
     disposition: map
-    notes: 'Identity map: tag is already in canonical form.'
+    notes: 'Follow-up review 2026-09-24: renamed from THEME: Wife sharing; the tag population is hotwife-driven'
   'ward: bikini':
     outputs:
     - 'WARD: Bikini'

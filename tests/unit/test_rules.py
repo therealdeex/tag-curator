@@ -67,7 +67,7 @@ class TestLoadDefault:
         rules = Rules.load()
         assert rules.source_path == DEFAULT_RULES_PATH
         assert rules.num_mappings == 1476
-        assert len(rules.canonical_tag_names()) == 145
+        assert len(rules.canonical_tag_names()) == 146
 
     def test_rules_sha_matches_t7_fingerprint(self) -> None:
         rules = Rules.load()
@@ -80,7 +80,7 @@ class TestLoadDefault:
         counts = {}
         for rule in raw["mappings"].values():
             counts[rule["disposition"]] = counts.get(rule["disposition"], 0) + 1
-        assert counts == {"map": 832, "ignore": 633, "defer": 11}
+        assert counts == {"map": 830, "ignore": 635, "defer": 11}
 
 
 # ---------------------------------------------------------------------------
