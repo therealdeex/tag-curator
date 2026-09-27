@@ -1138,12 +1138,15 @@ def _regenerate_snapshots(
     except Exception as exc:  # pragma: no cover -- best-effort
         _log(f"dashboard snapshot regeneration skipped: {exc}")
         return
-    for name in ("run_history", "unmapped_tags", "dictionary"):
+    for name in ("run_history", "unmapped_tags", "dictionary",
+                 "proposal_detail"):
         try:
             if name == "run_history":
                 payload = reporter.generate_run_history()
             elif name == "dictionary":
                 payload = reporter.generate_dictionary()
+            elif name == "proposal_detail":
+                payload = reporter.generate_proposal_detail()
             else:
                 payload = reporter.generate_unmapped_tags()
             reporter.write_snapshot(name, payload)
@@ -1707,6 +1710,7 @@ def _run_refresh_data(ctx: TaskContext, reporter: ReportEngine) -> dict[str, Any
         ("unmapped_tags", reporter.generate_unmapped_tags),
         ("dictionary", reporter.generate_dictionary),
         ("rules_audit", reporter.generate_rules_audit),
+        ("proposal_detail", reporter.generate_proposal_detail),
     ]
     for name, generate in jobs:
         try:

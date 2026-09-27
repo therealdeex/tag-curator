@@ -676,12 +676,8 @@ class ReportEngine:
             changes: list[dict[str, Any]] = []
             without_names = 0
             for row in rows:
-                old_names = self._parse_json(row["old_tag_names_json"])
-                new_names = self._parse_json(row["new_tag_names_json"])
-                if not isinstance(old_names, list):
-                    old_names = []
-                if not isinstance(new_names, list):
-                    new_names = []
+                old_names = self._parse_json_list(row["old_tag_names_json"])
+                new_names = self._parse_json_list(row["new_tag_names_json"])
                 if not old_names and not new_names:
                     without_names += 1
                 changes.append({
@@ -694,6 +690,18 @@ class ReportEngine:
                     ],
                 })
 
+            # D21: attach the proposal's ownership reasons so the diff view
+            # can explain WHY each tag was added, removed, or preserved.
+            # Joined via the proposal's applying run; rows without reason
+            # data (pre-D21) simply carry no ``ownership`` key.
+            ownership_by_scene = self._ownership_reasons_by_scene(
+                conn, run_id
+            )
+            for change in changes:
+                entry = ownership_by_scene.get(int(change["scene_id"]))
+                if entry is not None:
+                    change["ownership"] = entry
+
             return {
                 "generated_at": _now_iso(),
                 "run": run_entry,
@@ -701,6 +709,145 @@ class ReportEngine:
                 "total_changes": total_rows,
                 "changes_without_names": without_names,
                 "truncated": total_rows > limit,
+            }
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Ownership reasons (D21 hardening: make them user-visible)
+    # ------------------------------------------------------------------
+
+    #: The reason buckets stored in ``ownership_reasons_json``.
+    _OWNERSHIP_BUCKETS: tuple[str, ...] = (
+        "added",
+        "removed_managed",
+        "preserved_external",
+        "preserved_protected",
+    )
+
+    @classmethod
+    def _parse_ownership_reasons(cls, raw: Any) -> "dict[str, list[str]] | None":
+        """Parse an ``ownership_reasons_json`` blob; ``None`` when absent/invalid.
+
+        Older (pre-D21) rows have no reason data at all -- callers treat
+        ``None`` as "no explanation available" rather than an error.
+        """
+        if not raw or not isinstance(raw, str):
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        reasons: dict[str, list[str]] = {}
+        for bucket in cls._OWNERSHIP_BUCKETS:
+            value = parsed.get(bucket)
+            reasons[bucket] = (
+                [str(n) for n in value if isinstance(n, str) and n]
+                if isinstance(value, list) else []
+            )
+        if not any(reasons.values()):
+            return None
+        return reasons
+
+    def _ownership_reasons_by_scene(
+        self, conn: Any, run_id: str
+    ) -> dict[int, dict[str, Any]]:
+        """Ownership-reason entries for the proposals applied by ``run_id``."""
+        try:
+            rows = conn.execute(
+                "SELECT scene_id, ownership_mode, ownership_reasons_json "
+                "FROM dry_run_proposals WHERE applied_by_run_id = ?",
+                (run_id,),
+            ).fetchall()
+        except Exception:
+            return {}
+        by_scene: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            reasons = self._parse_ownership_reasons(
+                row["ownership_reasons_json"]
+            )
+            if reasons is None:
+                continue
+            entry: dict[str, Any] = dict(reasons)
+            mode = row["ownership_mode"]
+            if isinstance(mode, str) and mode:
+                entry["mode"] = mode
+            try:
+                by_scene[int(row["scene_id"])] = entry
+            except (KeyError, TypeError, ValueError):
+                continue
+        return by_scene
+
+    def generate_proposal_detail(
+        self, proposed_run_id: "str | None" = None, limit: int = 500,
+    ) -> dict[str, Any]:
+        """Ownership-reason detail for a dry-run proposal set (preview diff).
+
+        This powers the dashboard's PREVIEW view: before the user approves a
+        run it explains why each tag will be added, removed, or preserved
+        (``added by curator`` / ``managed assignment no longer derived`` /
+        ``preserved external assignment`` / ``preserved protected
+        assignment``).  When ``proposed_run_id`` is omitted, the LATEST
+        proposal set is used.  Older rows without reason data degrade to
+        empty lists with ``has_reasons: false``.
+        """
+        conn = self._state.read_only()
+        try:
+            target = proposed_run_id or self._latest_proposed_run_id(conn)
+            if not target:
+                return {
+                    "generated_at": _now_iso(),
+                    "proposed_run_id": None,
+                    "proposals": [],
+                    "total_proposals": 0,
+                    "truncated": False,
+                }
+            total = self._count(
+                conn,
+                "SELECT COUNT(*) FROM dry_run_proposals "
+                "WHERE proposed_run_id = ?",
+                (target,),
+            )
+            rows = conn.execute(
+                "SELECT scene_id, provider_match_status, status, skip_reason, "
+                "ownership_mode, ownership_reasons_json "
+                "FROM dry_run_proposals WHERE proposed_run_id = ? "
+                "ORDER BY scene_id LIMIT ?",
+                (target, limit),
+            ).fetchall()
+            proposals: list[dict[str, Any]] = []
+            for row in rows:
+                reasons = (
+                    self._parse_ownership_reasons(
+                        row["ownership_reasons_json"]
+                    )
+                    or {}
+                )
+                mode = row["ownership_mode"]
+                proposals.append({
+                    "scene_id": row["scene_id"],
+                    "provider_match_status": row["provider_match_status"],
+                    "status": row["status"],
+                    "skip_reason": row["skip_reason"],
+                    "ownership_mode": (
+                        mode if isinstance(mode, str) and mode else None
+                    ),
+                    "has_reasons": bool(reasons),
+                    "added_by_curator": reasons.get("added", []),
+                    "removed_managed": reasons.get("removed_managed", []),
+                    "preserved_external": reasons.get("preserved_external", []),
+                    "preserved_protected": reasons.get(
+                        "preserved_protected", []
+                    ),
+                })
+            return {
+                "generated_at": _now_iso(),
+                "proposed_run_id": target,
+                "proposals": proposals,
+                "total_proposals": total,
+                "truncated": total > len(proposals),
             }
         finally:
             conn.close()
@@ -851,6 +998,22 @@ class ReportEngine:
         except (json.JSONDecodeError, TypeError):
             return {}
         return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _parse_json_list(raw: Any) -> list[Any]:
+        """Parse a JSON LIST field from the DB; return [] on failure.
+
+        ``_parse_json`` deliberately returns {} for non-dict payloads (it
+        serves the nested totals blobs); the tag-name diff fields are JSON
+        arrays, so they need their own parser.
+        """
+        if not raw or not isinstance(raw, str):
+            return []
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return parsed if isinstance(parsed, list) else []
 
     @staticmethod
     def _int_from(d: dict[str, Any], keys: tuple[str, ...]) -> int:

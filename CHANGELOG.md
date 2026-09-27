@@ -8,6 +8,58 @@ schema).
 
 ## Unreleased
 
+- **Ownership-contract enforcement (D21 hardening).** Execution now rejects
+  any proposal lacking a complete ownership contract (`ownership_mode` of
+  `replace`/`acquire` plus a `managed_fp` baseline) with a clear
+  "fresh dry-run required" outcome — no scene write, no ledger mutation.
+  A pre-upgrade proposal's desired set may have been computed under
+  destructive pre-D21 semantics, so it is never silently defaulted to a
+  mode. The v4→v5 migration (and the v1→…→v5 chain) now also invalidates
+  outstanding `proposed` rows as `skipped(invalid_ownership_contract)`,
+  keeping them as audit history; execution re-checks the contract
+  independently, so schema-v5 databases with straggler rows are protected
+  too.
+- **Per-scene recovery serialization (D21 hardening).** An unresolved
+  pending mutation (crash-recovery probe or parse failure) now defers all
+  further writes and ownership updates for that scene while unrelated
+  scenes continue; unresolved scene ids and recovery errors are reported on
+  the execute report (`deferred_scenes`, `recovery_errors`). If pending
+  intents cannot be enumerated at all, the execute aborts with a clear
+  error instead of writing on top of unknown state. Pending-intent
+  finalization now validates the intent's recorded ownership baseline: a
+  stale `replace` transition is refused (status `reverted`, reason
+  recorded) so an older intent can never overwrite newer ledger state, and
+  multiple historical pendings for one scene are resolved deterministically
+  (newest matching intent adopted by `created_at`/`run_id`, the rest marked
+  superseded — database row order is never relied on).
+- **Ambiguous write failures keep their evidence (D21 hardening).** A
+  `sceneUpdate` transport failure no longer discards the pending intent:
+  the outcome may be unknown (the server can commit before a response is
+  lost), so the intent stays pending and is reconciled at the next execute,
+  with the scene deferred until then. Only definitive rejections (GraphQL /
+  auth errors, reliable server evidence) close the intent, and they are
+  recorded with their reason rather than deleted. Reconciliation wording is
+  honest about what happened: an unmatched intent is "unconfirmed …
+  ownership not adopted (nothing was undone in Stash)", and a recovered
+  intent that carried metadata fields is annotated "tag set confirmed
+  landed; carried metadata outcome unconfirmed" (matching tags alone do not
+  prove metadata changes succeeded).
+- **Ownership reasons are now user-visible (D21 hardening).** The
+  dashboard's run-diff view explains every tag — added by curator, managed
+  assignment no longer derived, preserved external assignment, preserved
+  protected assignment — via tooltips and muted preserved chips, and a new
+  `proposal_detail` snapshot (refreshed with the other snapshots and after
+  every run) powers a "Review proposed changes" view for previews before
+  anything is written. Pre-D21 rows without reason data degrade gracefully.
+  This also fixes the run-diff view itself: a `_parse_json` regression had
+  been reducing every tag-name diff to "metadata only".
+- **Local audit is non-destructive (D21 hardening).** The `local_audit`
+  scope re-maps attached display names as raw inputs; failing to map a
+  canonical output name is not evidence that provider support stopped, so
+  local-audit proposals are now additive (`acquire`): every attached
+  assignment is preserved and only newly derived tags are acquired.
+  Authoritative provider rebuilds (`UNIQUE_MATCH` from a real scrape)
+  remain the only path that retires managed assignments.
 - **Assignment-ownership preservation (D21, schema v5).** Manually attached
   scene tags are no longer erased by rebuilds. A new per-scene ownership
   ledger (`scene_managed_tags`, keyed on scene + tag id) records which

@@ -1257,3 +1257,184 @@ class TestRegenerateSnapshots:
         # Nothing written because dashboard is the gate.
         assert not (data_dir / "snapshots" / "dashboard.json").exists()
         assert not (data_dir / "snapshots" / "run_history.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Ownership reasons made user-visible (D21 hardening)
+# ---------------------------------------------------------------------------
+
+
+class TestOwnershipReasonReporting:
+    """run_detail + proposal_detail expose WHY tags are added/removed/kept."""
+
+    def _seed_run_with_mutation(self, state: StateDB) -> None:
+        conn = state.connection
+        conn.execute(
+            "INSERT OR REPLACE INTO runs "
+            "(run_id, operation, status, rules_sha, started_at, ended_at) "
+            "VALUES ('run-1', 'curate_phase', 'completed', 'abc', "
+            " '2026-09-27T00:00:00+00:00', '2026-09-27T01:00:00+00:00')"
+        )
+        conn.execute(
+            "INSERT INTO mutations "
+            "(run_id, scene_id, mutation_seq, status, old_tag_ids_json, "
+            " new_tag_ids_json, old_tag_names_json, new_tag_names_json, "
+            " rules_sha, provider_raw_tags_json, created_at, applied_at) "
+            "VALUES ('run-1', 7, 0, 'applied', '[\"200\"]', '[\"201\"]', "
+            " '[\"ACT: Blowjob\"]', '[\"ACT: Vaginal Sex\"]', "
+            " 'abc', '[]', '2026-09-27T00:10:00+00:00', "
+            " '2026-09-27T00:10:00+00:00')"
+        )
+        conn.execute(
+            "INSERT INTO dry_run_proposals "
+            "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+            " scene_state_fp, proposed_tag_names_json, "
+            " proposed_marker_names_json, provider_match_status, "
+            " raw_tags_json, created_at, expires_at, status, "
+            " applied_by_run_id, applied_at, ownership_mode, "
+            " ownership_reasons_json) "
+            "VALUES ('prop-1', 7, 'abc', 'fp', 'x', '[\"ACT: Vaginal Sex\"]', "
+            " '[]', 'UNIQUE_MATCH', '[]', "
+            " '2026-09-27T00:00:00+00:00', '2026-09-28T00:00:00+00:00', "
+            " 'applied', 'run-1', '2026-09-27T00:10:00+00:00', 'replace', ?)",
+            (
+                json.dumps({
+                    "added": ["ACT: Vaginal Sex", "CURATOR: Core Processed"],
+                    "removed_managed": ["ACT: Blowjob"],
+                    "preserved_external": ["Favorite"],
+                    "preserved_protected": ["MANUAL: Keep Me"],
+                }),
+            ),
+        )
+        conn.commit()
+
+    def test_run_detail_attaches_ownership_reasons(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        self._seed_run_with_mutation(state)
+        detail = engine.generate_run_detail("run-1")
+        assert detail["total_changes"] == 1
+        change = detail["changes"][0]
+        assert change["removed_tags"] == ["ACT: Blowjob"]
+        own = change.get("ownership")
+        assert own is not None, "reasons must be exposed, not just stored"
+        assert own["mode"] == "replace"
+        assert own["added"] == ["ACT: Vaginal Sex", "CURATOR: Core Processed"]
+        assert own["removed_managed"] == ["ACT: Blowjob"]
+        assert own["preserved_external"] == ["Favorite"]
+        assert own["preserved_protected"] == ["MANUAL: Keep Me"]
+
+    def test_run_detail_rows_without_reason_data_have_no_ownership_key(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # Pre-D21 mutations (no matching proposal with reasons) degrade
+        # gracefully: no ``ownership`` key, no error.
+        conn = state.connection
+        conn.execute(
+            "INSERT INTO mutations "
+            "(run_id, scene_id, mutation_seq, status, old_tag_ids_json, "
+            " new_tag_ids_json, old_tag_names_json, new_tag_names_json, "
+            " rules_sha, provider_raw_tags_json, created_at, applied_at) "
+            "VALUES ('old-run', 3, 0, 'applied', '[]', '[]', "
+            " '[\"A\"]', '[\"B\"]', 'sha', '[]', "
+            " '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
+        )
+        conn.commit()
+        detail = engine.generate_run_detail("old-run")
+        assert detail["total_changes"] == 1
+        assert "ownership" not in detail["changes"][0]
+
+    def test_proposal_detail_latest_set_with_reasons(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        conn = state.connection
+        for prop_id, scene_id, created in (
+            ("prop-old", 1, "2026-09-26T00:00:00+00:00"),
+            ("prop-new", 5, "2026-09-27T00:00:00+00:00"),
+        ):
+            conn.execute(
+                "INSERT INTO dry_run_proposals "
+                "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+                " scene_state_fp, proposed_tag_names_json, "
+                " proposed_marker_names_json, provider_match_status, "
+                " raw_tags_json, created_at, expires_at, status, "
+                " ownership_mode, ownership_reasons_json) "
+                "VALUES (?, ?, 'abc', 'fp', 'x', '[]', '[]', "
+                " 'UNIQUE_MATCH', '[]', ?, "
+                " '2026-09-29T00:00:00+00:00', 'proposed', 'replace', ?)",
+                (
+                    prop_id,
+                    scene_id,
+                    created,
+                    json.dumps({
+                        "added": ["ACT: Blowjob"],
+                        "removed_managed": [],
+                        "preserved_external": ["Favorite"],
+                        "preserved_protected": [],
+                    }),
+                ),
+            )
+        conn.commit()
+
+        detail = engine.generate_proposal_detail()
+        assert detail["proposed_run_id"] == "prop-new", (
+            "defaults to the latest proposal set"
+        )
+        entry = detail["proposals"][0]
+        assert entry["scene_id"] == 5
+        assert entry["ownership_mode"] == "replace"
+        assert entry["has_reasons"] is True
+        assert entry["added_by_curator"] == ["ACT: Blowjob"]
+        assert entry["removed_managed"] == []
+        assert entry["preserved_external"] == ["Favorite"]
+        assert entry["preserved_protected"] == []
+
+        explicit = engine.generate_proposal_detail("prop-old")
+        assert explicit["proposed_run_id"] == "prop-old"
+        assert explicit["proposals"][0]["scene_id"] == 1
+
+    def test_proposal_detail_legacy_row_without_reasons(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        state.connection.execute(
+            "INSERT INTO dry_run_proposals "
+            "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+            " scene_state_fp, proposed_tag_names_json, "
+            " proposed_marker_names_json, provider_match_status, "
+            " raw_tags_json, created_at, expires_at, status) "
+            "VALUES ('prop-1', 2, 'abc', 'fp', 'x', '[]', '[]', "
+            " 'NO_MATCH', '[]', '2026-09-27T00:00:00+00:00', "
+            " '2026-09-29T00:00:00+00:00', 'proposed')"
+        )
+        state.connection.commit()
+        detail = engine.generate_proposal_detail("prop-1")
+        entry = detail["proposals"][0]
+        assert entry["has_reasons"] is False
+        assert entry["added_by_curator"] == []
+        assert entry["ownership_mode"] is None
+
+    def test_proposal_detail_empty_state(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        detail = engine.generate_proposal_detail()
+        assert detail["proposed_run_id"] is None
+        assert detail["proposals"] == []
+        assert detail["total_proposals"] == 0
+
+    def test_proposal_detail_snapshot_written_by_refresh(
+        self, tmp_ctx, rules: Rules,
+    ) -> None:
+        # Snapshot regeneration writes proposal_detail alongside the others,
+        # so the dashboard preview diff has data after every run/refresh.
+        from curator.main import _regenerate_snapshots
+
+        ctx, state, data_dir, plugin_dir = tmp_ctx
+        _regenerate_snapshots(ctx, rules, state)
+        auth = data_dir / "snapshots" / "proposal_detail.json"
+        mirror = plugin_dir / "assets" / "proposal_detail.json"
+        assert auth.exists()
+        assert mirror.exists()
+        data = json.loads(auth.read_text(encoding="utf-8"))
+        assert data["proposed_run_id"] is None
+        assert data["proposals"] == []
+        assert data["total_proposals"] == 0

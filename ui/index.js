@@ -971,8 +971,57 @@
   // ------------------------------------------------------------------
   // ResultCard: what a finished run actually did, with a per-scene diff.
   // Backed by the run_history + run_detail snapshots, which the plugin
-  // regenerates as soon as a run completes.
+  // regenerates as soon as a run completes.  Preview runs show the
+  // proposed changes + ownership reasons from the proposal_detail
+  // snapshot instead (D21 hardening: why each tag is added/kept/removed).
   // ------------------------------------------------------------------
+
+  // Ownership reason labels (tooltips on the diff chips).
+  const OWNERSHIP_LABELS = {
+    added: "added by curator",
+    removed: "managed assignment no longer derived",
+    preserved_external: "preserved external assignment",
+    preserved_protected: "preserved protected assignment",
+  };
+
+  function ownershipChip(kind, tag, sign) {
+    return h(
+      "span",
+      {
+        key: sign + kind + tag,
+        className:
+          "stash-tag-curator-chip-diff " +
+          (kind === "added" ? "stash-tag-curator-chip-added"
+            : kind === "removed" ? "stash-tag-curator-chip-removed"
+              : "stash-tag-curator-chip-preserved"),
+        title: OWNERSHIP_LABELS[kind] || null,
+      },
+      sign + " " + tag
+    );
+  }
+
+  // Preserved assignments never show in the +/- diff (they were attached
+  // before AND after); render them as muted chips so the user can see why
+  // a scene mostly stayed as-is.  Capped so a heavily-tagged scene does
+  // not flood the card.
+  function preservedChips(ownership) {
+    const external = ownership.preserved_external || [];
+    const protectedTags = ownership.preserved_protected || [];
+    const cap = 10;
+    const chips = [];
+    external.slice(0, cap).forEach((t) =>
+      chips.push(ownershipChip("preserved_external", t, "\u00b7")));
+    protectedTags.slice(0, cap).forEach((t) =>
+      chips.push(ownershipChip("preserved_protected", t, "\u00b7")));
+    const overflow = Math.max(0, external.length - cap) +
+      Math.max(0, protectedTags.length - cap);
+    if (overflow > 0) {
+      chips.push(h("span",
+        { key: "more-preserved", className: "stash-tag-curator-muted" },
+        "\u2026" + overflow + " more preserved"));
+    }
+    return chips;
+  }
 
   function summarizeRunCounts(run) {
     const parts = [];
@@ -988,6 +1037,7 @@
   function ResultCard(props) {
     const run = props.run; // run_history entry
     const detail = props.detail; // run_detail snapshot payload
+    const proposalDetail = props.proposalDetail; // proposal_detail snapshot
     const needsDecision = props.needsDecision;
     const onDismiss = props.onDismiss;
     const onGotoDictionary = props.onGotoDictionary;
@@ -999,6 +1049,133 @@
     const changes = (detail && detail.changes) || [];
     const status = String(run.status || "");
     const failedRun = status === "failed";
+
+    // Executed-run diff rows: +/- chips gain ownership tooltips when the
+    // run's proposals carried reason data (pre-D21 rows simply omit it).
+    function diffBody() {
+      return [
+        detail && detail.total_changes === 0
+          ? h(
+              "div",
+              { className: "stash-tag-curator-muted" },
+              "This run made no scene changes."
+            )
+          : null,
+        detail && detail.changes_without_names > 0
+          ? h(
+              "div",
+              { className: "stash-tag-curator-muted small" },
+              detail.changes_without_names +
+                " older change(s) predate the diff record."
+            )
+          : null,
+        (changes || []).slice(0, 50).map((c) => {
+          const own = c.ownership || null;
+          const children = [
+            h(
+              "span",
+              { className: "stash-tag-curator-diff-scene" },
+              "Scene " + c.scene_id
+            ),
+          ];
+          (c.removed_tags || []).forEach((t) =>
+            children.push(
+              own
+                ? ownershipChip("removed", t, "\u2212")
+                : h(
+                    "span",
+                    { key: "-" + t, className: "stash-tag-curator-chip-diff stash-tag-curator-chip-removed" },
+                    "\u2212 " + t
+                  )
+            )
+          );
+          (c.added_tags || []).forEach((t) =>
+            children.push(
+              own
+                ? ownershipChip("added", t, "+")
+                : h(
+                    "span",
+                    { key: "+" + t, className: "stash-tag-curator-chip-diff stash-tag-curator-chip-added" },
+                    "+ " + t
+                  )
+            )
+          );
+          if (own) children.push(...preservedChips(own));
+          !(c.added_tags || []).length && !(c.removed_tags || []).length
+            ? children.push(
+                h("span", { className: "stash-tag-curator-muted" }, "metadata only")
+              )
+            : null;
+          return h(
+            "div",
+            { key: c.scene_id, className: "stash-tag-curator-diff-row" },
+            children
+          );
+        }),
+        detail && detail.total_changes > 50
+          ? h(
+              "div",
+              { className: "stash-tag-curator-muted small" },
+              "Showing the first 50 of " + detail.total_changes + " changed scenes."
+            )
+          : null,
+        !detail
+          ? h(
+              "div",
+              { className: "stash-tag-curator-muted" },
+              "Change details load after the run finishes…"
+            )
+          : null,
+      ];
+    }
+
+    // Preview diff rows: what WOULD change, with ownership reasons, from
+    // the proposal_detail snapshot (latest proposal set).
+    function previewBody() {
+      const proposals = (proposalDetail && proposalDetail.proposals) || [];
+      const changing = proposals.filter(
+        (p) =>
+          (p.added_by_curator || []).length || (p.removed_managed || []).length
+      );
+      if (!changing.length) {
+        return h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          proposalDetail
+            ? "No tag changes are proposed for this preview; preserved assignments are kept."
+            : "Proposal details load after the preview finishes…"
+        );
+      }
+      return [
+        changing.slice(0, 50).map((p) => {
+          const children = [
+            h(
+              "span",
+              { className: "stash-tag-curator-diff-scene" },
+              "Scene " + p.scene_id
+            ),
+          ];
+          (p.removed_managed || []).forEach((t) =>
+            children.push(ownershipChip("removed", t, "\u2212")));
+          (p.added_by_curator || []).forEach((t) =>
+            children.push(ownershipChip("added", t, "+")));
+          children.push(...preservedChips(p));
+          return h(
+            "div",
+            { key: p.scene_id, className: "stash-tag-curator-diff-row" },
+            children
+          );
+        }),
+        changing.length > 50
+          ? h(
+              "div",
+              { className: "stash-tag-curator-muted small" },
+              "Showing the first 50 of " + changing.length +
+                " scenes with proposed tag changes."
+            )
+          : null,
+      ];
+    }
 
     return h(
       "div",
@@ -1029,7 +1206,9 @@
               variant: "link",
               onClick: () => setShowChanges((v) => !v),
             },
-            showChanges ? "Hide changes" : "Review changes"
+            showChanges
+              ? "Hide changes"
+              : preview ? "Review proposed changes" : "Review changes"
           ),
           h(BSButton, { size: "sm", variant: "link", onClick: onDismiss }, "Dismiss")
         )
@@ -1063,67 +1242,7 @@
         ? h(
             "div",
             { className: "stash-tag-curator-diff" },
-            detail && detail.total_changes === 0
-              ? h(
-                  "div",
-                  { className: "stash-tag-curator-muted" },
-                  "This run made no scene changes."
-                )
-              : null,
-            detail && detail.changes_without_names > 0
-              ? h(
-                  "div",
-                  { className: "stash-tag-curator-muted small" },
-                  detail.changes_without_names +
-                    " older change(s) predate the diff record."
-                )
-              : null,
-            (changes || []).slice(0, 50).map((c) =>
-              h(
-                "div",
-                { key: c.scene_id, className: "stash-tag-curator-diff-row" },
-                h(
-                  "span",
-                  { className: "stash-tag-curator-diff-scene" },
-                  "Scene " + c.scene_id
-                ),
-                (c.removed_tags || []).map((t) =>
-                  h(
-                    "span",
-                    { key: "-" + t, className: "stash-tag-curator-chip-diff stash-tag-curator-chip-removed" },
-                    "− " + t
-                  )
-                ),
-                (c.added_tags || []).map((t) =>
-                  h(
-                    "span",
-                    { key: "+" + t, className: "stash-tag-curator-chip-diff stash-tag-curator-chip-added" },
-                    "+ " + t
-                  )
-                ),
-                !(c.added_tags || []).length && !(c.removed_tags || []).length
-                  ? h(
-                      "span",
-                      { className: "stash-tag-curator-muted" },
-                      "metadata only"
-                    )
-                  : null
-              )
-            ),
-            detail && detail.total_changes > 50
-              ? h(
-                  "div",
-                  { className: "stash-tag-curator-muted small" },
-                  "Showing the first 50 of " + detail.total_changes + " changed scenes."
-                )
-              : null,
-            !detail
-              ? h(
-                  "div",
-                  { className: "stash-tag-curator-muted" },
-                  "Change details load after the run finishes…"
-                )
-              : null
+            preview ? previewBody() : diffBody()
           )
         : null
     );
@@ -2130,6 +2249,7 @@
     const dictionary = useAssetSnapshot("dictionary", { refreshKey: refreshTick });
     const runHistory = useAssetSnapshot("run_history", { refreshKey: refreshTick });
     const runDetail = useAssetSnapshot("run_detail", { refreshKey: refreshTick });
+    const proposalDetail = useAssetSnapshot("proposal_detail", { refreshKey: refreshTick });
 
     const busy = flowState.running;
 
@@ -2576,6 +2696,7 @@
         ? h(ResultCard, {
             run: doneRun,
             detail: runDetail.data,
+            proposalDetail: proposalDetail.data,
             needsDecision: dictionary.data
               ? (dictionary.data.stats || {}).needs_decision
               : null,

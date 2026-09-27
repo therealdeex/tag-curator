@@ -214,13 +214,18 @@ class TestSchemaCreation:
             }
             assert "old_metadata_json" in mut_cols
             assert "new_metadata_json" in mut_cols
-            # Existing row survived
+            # Existing row survived (as audit history).  Because the row
+            # predates D21, the migration chain invalidates it: a pre-D21
+            # proposal's desired set may have been computed under destructive
+            # semantics, so it must never execute -- fresh dry-run required.
             row = db.connection.execute(
-                "SELECT proposed_run_id, scene_id, status FROM dry_run_proposals"
+                "SELECT proposed_run_id, scene_id, status, skip_reason "
+                "FROM dry_run_proposals"
             ).fetchone()
             assert row["proposed_run_id"] == "run1"
             assert row["scene_id"] == 42
-            assert row["status"] == "proposed"
+            assert row["status"] == "skipped"
+            assert row["skip_reason"] == "invalid_ownership_contract"
         finally:
             db.close()
 

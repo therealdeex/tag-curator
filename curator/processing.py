@@ -43,12 +43,16 @@ Design contracts enforced here:
   ``desired = (current - managed) ∪ derived ∪ protected``: external
   assignments -- including canonical-taxonomy tags attached by hand or by
   pre-D21 builds -- survive every rebuild.  Additive phases (standalone
-  enrichment, PRESERVE statuses) acquire ownership of what they add and
-  never retire anything.  Dictionary membership defines vocabulary, never
-  ownership of an assignment.  Ownership transitions are journaled as
-  'pending' ``mutations`` rows before each ``sceneUpdate`` and committed
-  atomically with the applied status after it; crashed pendings are
-  reconciled (adopted or reverted) at the next execute.  Known limit: an
+  enrichment, local audit, PRESERVE statuses) acquire ownership of what
+  they add and never retire anything.  Dictionary membership defines
+  vocabulary, never ownership of an assignment.  Ownership transitions are
+  journaled as 'pending' ``mutations`` rows before each ``sceneUpdate`` and
+  committed atomically with the applied status after it; crashed pendings
+  AND ambiguous write outcomes are reconciled (adopted, or reverted as
+  "unconfirmed") at the next execute, an unresolved pending defers all
+  further writes to its scene, and a proposal without a complete ownership
+  contract is rejected ("fresh dry-run required") instead of being trusted
+  with a possibly-destructive pre-D21 desired set.  Known limit: an
   assignment the curator already manages cannot be distinguished from the
   same tag the user also wants kept manually -- retaining it against future
   derivation changes requires explicit protection (D18).
@@ -79,6 +83,7 @@ from .enrichment import (
     derive_married_irl,
     derive_weight_tags,
 )
+from .graphql_client import GraphQLAuthError, GraphQLError
 from .graphql_queries import (
     FIND_SCENES_PAGE,
     FIND_SCENE_BY_ID,
@@ -262,8 +267,16 @@ class ExecuteReport:
         mutations_applied: count of ``sceneUpdate`` calls that succeeded.
         conflicts: list of ``{"scene_id": ..., "reason": ...}`` entries.
         reconciliation: D21 crash-recovery summary for pending intents left
-            by earlier crashed runs (``{"adopted": n, "reverted": m}``).
-        aborted: True if the entire execute aborted (global revalidation fail).
+            by earlier crashed runs (``{"adopted": n, "reverted": m,
+            "superseded": k, "baseline_stale": j, "deferred": d,
+            "adopted_with_metadata": i}``).
+        deferred_scenes: scene ids whose pending mutations could not be
+            resolved during recovery; every write to these scenes is
+            deferred until a later run resolves them.
+        recovery_errors: per-scene recovery failure details
+            (``{"scene_id": ..., "error": ...}``).
+        aborted: True if the entire execute aborted (global revalidation fail
+            or pending-intent enumeration failure).
         abort_reason: explanation when ``aborted`` is True.
     """
 
@@ -286,6 +299,8 @@ class ExecuteReport:
         self.mutations_applied = mutations_applied
         self.conflicts: list[dict[str, Any]] = [dict(c) for c in (conflicts or [])]
         self.reconciliation: dict[str, int] = {}
+        self.deferred_scenes: list[int] = []
+        self.recovery_errors: list[dict[str, Any]] = []
         self.aborted = aborted
         self.abort_reason = abort_reason
 
@@ -298,6 +313,8 @@ class ExecuteReport:
             "mutations_applied": self.mutations_applied,
             "conflicts": list(self.conflicts),
             "reconciliation": dict(self.reconciliation),
+            "deferred_scenes": list(self.deferred_scenes),
+            "recovery_errors": list(self.recovery_errors),
             "aborted": self.aborted,
             "abort_reason": self.abort_reason,
         }
@@ -760,6 +777,14 @@ class RebuildEngine:
             # (_map_raw_tags) so the proposal reflects "what would change if
             # I re-applied my rules to my existing tags?" -- with zero
             # ``scrapeMultiScenes`` calls.  Fast inner-loop dry run.
+            #
+            # NON-DESTRUCTIVE by design: the attached display names are raw
+            # INPUTS, not provider evidence, so a canonical assignment whose
+            # name has no raw-input mapping is NOT proof that the provider
+            # stopped supporting it.  The proposal therefore keeps every
+            # attached assignment and only ADDS newly mapped/derived tags
+            # (the dry-run batch records 'acquire' ownership for this scope;
+            # only an authoritative provider rebuild may retire).
             out: dict[str, ProviderResult] = {}
             for s in batch:
                 if not isinstance(s, Mapping) or s.get("id") is None:
@@ -1531,58 +1556,229 @@ class RebuildEngine:
 
     def _reconcile_pending_mutations(
         self, actual_run_id: str, report: ExecuteReport
-    ) -> None:
-        """Reconcile crashed 'pending' intents before executing (D21).
+    ) -> bool:
+        """Reconcile crashed/ambiguous 'pending' intents before executing (D21).
 
-        For every pending row left by an earlier killed run: probe the scene
-        in Stash and compare its current tag ids to the intended set.
+        For every pending row left by an earlier killed run (or by an
+        ambiguous ``sceneUpdate`` failure): probe the scene in Stash and
+        compare its current tag ids to the intended set.
 
         * match        -> the Stash write landed; adopt the row's ownership
-          transition (finalize) so the curator knows it owns those tags.
+          transition (finalize) so the curator knows it owns those tags --
+          but only after validating the row's recorded ownership baseline;
+          a stale 'replace' transition is refused so it can never overwrite
+          newer ledger state.
         * no match     -> the write never landed (or was edited afterwards);
-          revert the row WITHOUT applying its ownership transition.
+          the row is marked reverted WITHOUT applying its ownership
+          transition.  Nothing is undone in Stash -- the wording is
+          deliberately "unconfirmed ... ownership not adopted".
         * scene gone   -> revert (the ghost purge handles local state).
 
-        Per-row failures never abort the execute: the row stays pending and
-        is retried by the next run.
+        Several historical pendings may exist for one scene (overlap created
+        before per-scene serialization existed).  They are resolved as a
+        group, deterministically: the NEWEST intent (created_at, then
+        run_id) whose tag set matches the scene is adopted; every other
+        pending for the scene is reverted as superseded.  Database row
+        order is never relied on.
+
+        A scene whose pendings cannot be resolved (probe/parse failure) is
+        DEFERRED: the caller must not write to it this run.  Unrelated
+        scenes continue.  If the pending rows cannot even be enumerated,
+        this returns False and the caller must abort the execute.
+
+        Returns ``True`` when execution may proceed; ``False`` when the
+        pending set could not be enumerated (abort).
         """
         try:
             rows = list(self._journal.pending_mutations())
-        except Exception:
-            return
+        except Exception as exc:
+            report.aborted = True
+            report.abort_reason = (
+                "could not enumerate pending mutation intents for crash "
+                f"recovery ({exc}); refusing to write on top of unresolved "
+                "scene mutations"
+            )
+            return False
+
+        by_scene: dict[int, list[Any]] = {}
         for row in rows:
             try:
-                scene_id = int(row["scene_id"])
-                scene = self._find_scene_by_id(scene_id)
-                if scene is None:
-                    self._journal.revert_pending_mutation(
-                        row["run_id"], scene_id,
-                        by_run_id=actual_run_id,
-                        reason="crash reconciliation: scene missing",
-                    )
-                    report.reconciliation["reverted"] = (
-                        report.reconciliation.get("reverted", 0) + 1
-                    )
-                    continue
-                intended = json.loads(row["new_tag_ids_json"] or "[]")
-                intended_ids = sorted({str(t) for t in intended})
-                if _scene_tag_ids(scene) == intended_ids:
-                    self._journal.finalize_pending_mutation(row["run_id"], scene_id)
-                    report.reconciliation["adopted"] = (
-                        report.reconciliation.get("adopted", 0) + 1
-                    )
-                else:
-                    self._journal.revert_pending_mutation(
-                        row["run_id"], scene_id,
-                        by_run_id=actual_run_id,
-                        reason="crash reconciliation: intended tag set not present",
-                    )
-                    report.reconciliation["reverted"] = (
-                        report.reconciliation.get("reverted", 0) + 1
-                    )
-            except Exception:
-                # Transport/parse trouble on this row -- leave it pending.
+                by_scene.setdefault(int(row["scene_id"]), []).append(row)
+            except (KeyError, TypeError, ValueError) as exc:
+                report.recovery_errors.append({
+                    "scene_id": None,
+                    "error": f"unreadable pending row: {exc}",
+                })
                 continue
+
+        deferred: list[int] = []
+        for scene_id in sorted(by_scene):
+            try:
+                self._reconcile_scene_pendings(
+                    scene_id, by_scene[scene_id], actual_run_id, report,
+                )
+            except Exception as exc:
+                deferred.append(scene_id)
+                report.reconciliation["deferred"] = (
+                    report.reconciliation.get("deferred", 0) + 1
+                )
+                report.recovery_errors.append({
+                    "scene_id": scene_id,
+                    "error": f"recovery failed; scene deferred: {exc}",
+                })
+        if deferred:
+            report.deferred_scenes = sorted(set(deferred))
+        return True
+
+    def _reconcile_scene_pendings(
+        self,
+        scene_id: int,
+        rows: "list[Any]",
+        actual_run_id: str,
+        report: ExecuteReport,
+    ) -> None:
+        """Resolve every pending intent for ONE scene (to a terminal state).
+
+        Raises on an unresolvable scene (probe/parse failure) -- the caller
+        defers the scene and leaves its pendings for the next run.
+        """
+        reconciliation = report.reconciliation
+        scene = self._find_scene_by_id(scene_id)  # may raise -> defer
+        if scene is None:
+            for row in rows:
+                self._journal.revert_pending_mutation(
+                    row["run_id"], scene_id,
+                    by_run_id=actual_run_id,
+                    reason=(
+                        "unconfirmed: scene missing from Stash; ownership "
+                        "not adopted (nothing was undone in Stash)"
+                    ),
+                )
+            reconciliation["reverted"] = (
+                reconciliation.get("reverted", 0) + len(rows)
+            )
+            return
+
+        current_ids = _scene_tag_ids(scene)
+        # Newest first, deterministically: created_at DESC with run_id as a
+        # stable tie-break.  Never rely on the database's row order.
+        ordered = sorted(
+            rows,
+            key=lambda r: (str(r["created_at"] or ""), str(r["run_id"])),
+            reverse=True,
+        )
+        adopted: Any = None
+        for row in ordered:
+            intended = json.loads(row["new_tag_ids_json"] or "[]")  # may raise
+            if sorted({str(t) for t in intended}) == current_ids:
+                adopted = row
+                break
+        if adopted is None:
+            for row in ordered:
+                self._journal.revert_pending_mutation(
+                    row["run_id"], scene_id,
+                    by_run_id=actual_run_id,
+                    reason=(
+                        "unconfirmed: intended tag set not present on "
+                        "scene; ownership not adopted (nothing was undone "
+                        "in Stash)"
+                    ),
+                )
+            reconciliation["reverted"] = (
+                reconciliation.get("reverted", 0) + len(ordered)
+            )
+            return
+
+        # Exactly one intent is adopted: the newest matching one.  Every
+        # other pending for this scene is superseded (its transition must
+        # never run on top of the newer state).
+        for row in ordered:
+            if row["run_id"] == adopted["run_id"]:
+                continue
+            self._journal.revert_pending_mutation(
+                row["run_id"], scene_id,
+                by_run_id=actual_run_id,
+                reason=(
+                    f"superseded by newer intent {adopted['run_id']}; "
+                    "ownership not adopted"
+                ),
+            )
+            reconciliation["superseded"] = (
+                reconciliation.get("superseded", 0) + 1
+            )
+
+        # Baseline validation: the intent recorded the ledger state it was
+        # computed against.  If the ledger has moved on since (newer
+        # ownership exists), a 'replace' transition would erase that newer
+        # state and is refused -- the landed tags stay external
+        # (conservatively preserved).  An 'acquire' transition only unions,
+        # so it cannot erase anything and stays safe on a moved ledger.
+        try:
+            baseline_raw = json.loads(adopted["old_managed_ids_json"] or "null")
+        except (TypeError, ValueError):
+            baseline_raw = None
+        mode = (adopted["ledger_mode"] or "acquire").strip()
+        baseline_known = isinstance(baseline_raw, list)
+        baseline = (
+            sorted({str(t) for t in baseline_raw}) if baseline_known else None
+        )
+        if mode == "replace" and not baseline_known:
+            self._journal.revert_pending_mutation(
+                adopted["run_id"], scene_id,
+                by_run_id=actual_run_id,
+                reason=(
+                    "stale ownership baseline: intent has no recorded "
+                    "baseline; replace transition refused, ownership not "
+                    "adopted"
+                ),
+            )
+            reconciliation["baseline_stale"] = (
+                reconciliation.get("baseline_stale", 0) + 1
+            )
+            return
+        if (
+            mode == "replace"
+            and baseline_known
+            and baseline != self._state.managed_tag_ids(scene_id)
+        ):
+            self._journal.revert_pending_mutation(
+                adopted["run_id"], scene_id,
+                by_run_id=actual_run_id,
+                reason=(
+                    "stale ownership baseline: ledger changed after the "
+                    "intent was recorded; replace transition refused, "
+                    "ownership not adopted"
+                ),
+            )
+            reconciliation["baseline_stale"] = (
+                reconciliation.get("baseline_stale", 0) + 1
+            )
+            return
+
+        # Adopt.  A matching tag set proves the tag write landed; when the
+        # same intent carried metadata fields, matching tags alone cannot
+        # prove those landed -- say so on the audit row instead of claiming
+        # a clean apply.
+        try:
+            carried_metadata = bool(
+                json.loads(adopted["new_metadata_json"] or "null")
+            )
+        except (TypeError, ValueError):
+            carried_metadata = False
+        if carried_metadata:
+            self._journal.finalize_pending_mutation(
+                adopted["run_id"], scene_id,
+                note=(
+                    "recovered by crash reconciliation: tag set confirmed "
+                    "landed; carried metadata outcome unconfirmed"
+                ),
+            )
+            reconciliation["adopted_with_metadata"] = (
+                reconciliation.get("adopted_with_metadata", 0) + 1
+            )
+        else:
+            self._journal.finalize_pending_mutation(adopted["run_id"], scene_id)
+        reconciliation["adopted"] = reconciliation.get("adopted", 0) + 1
 
     def _scene_update(
         self,
@@ -1738,19 +1934,25 @@ class RebuildEngine:
                 continue
 
             # D21: read the ownership ledger baseline and decide authority.
-            # A UNIQUE_MATCH from scrape (or local_audit) is authoritative
-            # ('replace'); enrich_only synthesises UNIQUE_MATCH but is an
-            # additive phase ('acquire'), as are all PRESERVE statuses.
+            # A UNIQUE_MATCH from a real provider scrape is authoritative
+            # ('replace'); enrich_only and local_audit synthesise
+            # UNIQUE_MATCH but are ADDITIVE phases ('acquire'): their
+            # inputs cannot prove that an existing managed assignment lost
+            # provider support (local_audit re-maps attached display names,
+            # and a canonical output name need not map back to a raw
+            # input).  All PRESERVE statuses are additive too.
             managed_now = self._state.managed_tag_ids(sid)
             authoritative = (
-                result.status == UNIQUE_MATCH and not scope.enrich_only
+                result.status == UNIQUE_MATCH
+                and not scope.enrich_only
+                and not scope.local_audit
             )
             (
                 proposed_names, unmapped, markers, ownership_reasons,
             ) = self._compute_proposed_names(
                 scene,
                 result,
-                preserve_existing=scope.enrich_only,
+                preserve_existing=scope.enrich_only or scope.local_audit,
                 managed_ids=managed_now,
             )
             managed_fp = _fingerprint_tag_ids(managed_now)
@@ -1946,9 +2148,15 @@ class RebuildEngine:
             return report
 
         # D21 crash recovery FIRST: pending intents from earlier crashed
-        # runs are reconciled before any proposal executes, so ownership
-        # decisions below read an up-to-date ledger.
-        self._reconcile_pending_mutations(actual_run_id, report)
+        # runs (and from ambiguous write failures) are reconciled before any
+        # proposal executes, so ownership decisions below read an
+        # up-to-date ledger.  An enumeration failure aborts the whole
+        # execute: writing on top of an unresolvable scene mutation is
+        # never safe.
+        if not self._reconcile_pending_mutations(actual_run_id, report):
+            self._progress_fn(progress_cap)
+            return report
+        deferred_scenes = set(report.deferred_scenes)
 
         total = len(proposals)
         done = 0
@@ -1987,6 +2195,20 @@ class RebuildEngine:
                 )
                 continue
 
+            # Per-scene revalidation (a0): deferred scenes (D21 hardening).
+            # Crash/ambiguity recovery could not resolve this scene's
+            # pending mutation, so NO further write or ownership update may
+            # touch it this run -- a later run reconciles, then proceeds.
+            if sid in deferred_scenes:
+                report.scenes_skipped["deferred_pending_recovery"] = (
+                    report.scenes_skipped.get("deferred_pending_recovery", 0) + 1
+                )
+                self._mark_proposal_status(
+                    proposed_run_id, sid, "skipped",
+                    skip_reason="deferred_pending_recovery",
+                )
+                continue
+
             # Per-scene revalidation (a): expiry.
             expires_at = proposal.get("expires_at")
             if expires_at:
@@ -2004,6 +2226,38 @@ class RebuildEngine:
                         proposed_run_id, sid, "skipped", skip_reason="expired",
                     )
                     continue
+
+            # Per-scene revalidation (a2): the ownership contract (D21
+            # hardening).  A proposal without a complete contract predates
+            # D21 (a pre-upgrade row, or one migrated from a pre-D21
+            # schema): its desired tag set may have been computed under
+            # destructive pre-D21 semantics, so executing it could delete
+            # external assignments.  Never default it to a mode -- require
+            # a fresh dry-run instead.  This enforcement is independent of
+            # the migration's invalidation of legacy proposals, so
+            # schema-v5 databases with straggler rows are protected too.
+            ownership_mode = proposal.get("ownership_mode")
+            managed_fp = proposal.get("managed_fp") or ""
+            if (
+                ownership_mode not in ("replace", "acquire")
+                or not managed_fp
+            ):
+                report.scenes_skipped["invalid_ownership_contract"] = (
+                    report.scenes_skipped.get("invalid_ownership_contract", 0) + 1
+                )
+                report.conflicts.append({
+                    "scene_id": sid_str,
+                    "reason": (
+                        "proposal lacks a valid ownership contract; "
+                        "fresh dry-run required"
+                    ),
+                    "ownership_mode": ownership_mode,
+                })
+                self._mark_proposal_status(
+                    proposed_run_id, sid, "skipped",
+                    skip_reason="invalid_ownership_contract",
+                )
+                continue
 
             # Per-scene revalidation (b): scene_state_fp baseline (D10).
             # Checked BEFORE name re-resolution so an externally-edited scene
@@ -2238,21 +2492,41 @@ class RebuildEngine:
                 )
                 mutation_ok = True
             except Exception as exc:
-                # Ambiguous transport failure -- the mutation MAY have applied.
-                # Nothing is reconciled here: the scene's state is not marked
-                # successful, so the next run re-selects and re-derives it
-                # (idempotent full-replacement converges).  The pending intent
-                # is discarded: if the write landed anyway, its tags are
-                # treated as external (conservative -- preserved, never
-                # removed by later rebuilds).
                 mutation_ok = False
-                self._journal.discard_pending_mutation(actual_run_id, sid)
-                report.scenes_skipped["mutation_failure"] = (
-                    report.scenes_skipped.get("mutation_failure", 0) + 1
+                # Two very different failures share this path:
+                #
+                # * DEFINITIVE rejection (the server answered with a GraphQL
+                #   error / auth failure): the write did not land.  Record
+                #   the rejected intent for audit -- never delete it -- and
+                #   skip the scene.
+                # * AMBIGUOUS outcome (transport failure; the server may
+                #   have committed before the response was lost): KEEP the
+                #   pending intent.  Recovery reconciles it at the next
+                #   execute (adopting the intended ownership if the write
+                #   landed), and per-scene serialization defers any further
+                #   writes until then.  Discarding the intent here would
+                #   permanently lose the ownership evidence for tags that
+                #   may have landed.
+                definitive = isinstance(
+                    exc, (GraphQLError, GraphQLAuthError),
                 )
+                if definitive:
+                    self._journal.reject_pending_mutation(
+                        actual_run_id, sid,
+                        by_run_id=actual_run_id,
+                        reason=f"rejected by Stash: {exc}",
+                    )
+                    report.scenes_skipped["mutation_failure"] = (
+                        report.scenes_skipped.get("mutation_failure", 0) + 1
+                    )
+                else:
+                    report.scenes_skipped["mutation_outcome_unknown"] = (
+                        report.scenes_skipped.get("mutation_outcome_unknown", 0) + 1
+                    )
                 report.conflicts.append({
                     "scene_id": sid_str,
                     "reason": "mutation_failure",
+                    "outcome": "rejected" if definitive else "unknown",
                     "error": str(exc),
                 })
                 self._record_scene_state_failure(

@@ -20,6 +20,8 @@ There are two write patterns:
   :meth:`Journal.pending_mutations` + :meth:`Journal.revert_pending_mutation`
   power the execute-time reconciliation of crashed runs; tag-state safety
   itself still relies on idempotent full replacement, not on this journal.
+  Ambiguous ``sceneUpdate`` outcomes (transport failure with unknown server
+  side effect) also stay pending and are reconciled the same way.
 
 Crash safety of TAGS never depended on this table: the pipeline is
 idempotent (full-replacement ``sceneUpdate`` from re-derived provider data),
@@ -153,9 +155,11 @@ class Journal:
         ``ledger_mode`` 'replace' or 'acquire').
 
         The pipeline MUST call :meth:`finalize_pending_mutation` after Stash
-        confirms the write, or :meth:`discard_pending_mutation` when the
-        write fails.  A row still 'pending' at the next run's start is a
-        crash leftover and is reconciled by the engine.
+        confirms the write, or :meth:`reject_pending_mutation` when Stash
+        DEFINITIVELY rejects it (an ambiguous transport failure keeps the
+        row pending for the next execute's reconciliation).  A row still
+        'pending' at the next run's start is a crash leftover or an
+        unresolved outcome and is reconciled by the engine.
         """
         now = _now_iso()
         old_meta_json = json.dumps(old_metadata) if old_metadata else None
@@ -192,7 +196,9 @@ class Journal:
                 ),
             )
 
-    def finalize_pending_mutation(self, run_id: str, scene_id: int) -> bool:
+    def finalize_pending_mutation(
+        self, run_id: str, scene_id: int, *, note: "str | None" = None,
+    ) -> bool:
         """Commit a pending intent: mark it applied AND apply its ledger transition.
 
         One SQLite transaction: the ``mutations`` row flips ``pending`` ->
@@ -200,6 +206,11 @@ class Journal:
         applied via :meth:`StateDB.apply_ledger_transition`.  This is what
         makes "Stash write succeeded, then SIGKILL before bookkeeping" a
         recoverable state instead of a silent ownership loss.
+
+        ``note`` records an audit caveat on the applied row (stored in
+        ``revert_reason``, which doubles as the free-text audit note column).
+        Crash recovery uses it for metadata-bearing writes, where matching
+        tags confirm the tag set but cannot prove the metadata outcome.
 
         Returns ``True`` when a pending row was finalized; ``False`` when no
         pending row exists for ``(run_id, scene_id)`` (idempotent).
@@ -222,24 +233,35 @@ class Journal:
             mode = row["ledger_mode"] or "acquire"
             self._db._apply_ledger_transition_locked(scene_id, run_id, mode, pairs)
             self._db.connection.execute(
-                "UPDATE mutations SET status = 'applied', applied_at = ? "
+                "UPDATE mutations SET status = 'applied', applied_at = ?, "
+                "revert_reason = COALESCE(?, revert_reason) "
                 "WHERE run_id = ? AND scene_id = ? AND status = 'pending'",
-                (now, run_id, scene_id),
+                (now, note, run_id, scene_id),
             )
         return True
 
-    def discard_pending_mutation(self, run_id: str, scene_id: int) -> None:
-        """Delete a pending intent whose ``sceneUpdate`` failed.
+    def reject_pending_mutation(
+        self,
+        run_id: str,
+        scene_id: int,
+        *,
+        by_run_id: str,
+        reason: str,
+    ) -> None:
+        """Record a pending intent whose ``sceneUpdate`` was DEFINITIVELY
+        rejected by Stash (the server processed the mutation and errored).
 
-        The write is ambiguous on transport failure; the conservative choice
-        is to claim no ownership (tags that may have landed are treated as
-        external and preserved) and let the next run re-derive the scene.
+        The row is kept as audit history with ``status='reverted'`` and the
+        rejection reason -- never deleted.  The write did not land and no
+        ownership was adopted, so the ledger is untouched.
         """
+        now = _now_iso()
         with self._db._txn():
             self._db.connection.execute(
-                "DELETE FROM mutations "
+                "UPDATE mutations SET status = 'reverted', reverted_at = ?, "
+                " reverted_by_run_id = ?, revert_reason = ? "
                 "WHERE run_id = ? AND scene_id = ? AND status = 'pending'",
-                (run_id, scene_id),
+                (now, by_run_id, reason, run_id, scene_id),
             )
 
     def revert_pending_mutation(

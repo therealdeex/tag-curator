@@ -636,6 +636,20 @@ class StateDB:
                         self._conn.execute(
                             f"ALTER TABLE mutations ADD COLUMN {col} TEXT"
                         )
+                # Invalidate outstanding proposals: every row written before
+                # this migration predates D21, so its desired tag set may
+                # have been computed under destructive pre-D21 semantics.
+                # Executing one could delete external assignments.  They are
+                # kept as audit history (status 'skipped', reason
+                # 'invalid_ownership_contract') and a fresh dry-run is
+                # required.  Execution enforces the same contract
+                # independently, so schema-v5 databases with straggler rows
+                # are protected too.
+                self._conn.execute(
+                    "UPDATE dry_run_proposals SET status = 'skipped', "
+                    "skip_reason = 'invalid_ownership_contract' "
+                    "WHERE status = 'proposed'"
+                )
                 self._conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_scene_managed_tags_tag "
                     "ON scene_managed_tags(tag_id)"

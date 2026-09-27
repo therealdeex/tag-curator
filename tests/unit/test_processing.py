@@ -1618,11 +1618,16 @@ class TestSceneMissing:
 
 
 class TestMutationFailure:
-    """A failed sceneUpdate leaves the mutation row ``pending`` (D16)."""
+    """A failed sceneUpdate keeps its audit record; ambiguous outcomes stay
+    pending for recovery (D21 hardening)."""
 
-    def test_scene_update_failure_writes_no_history_row(
+    def test_ambiguous_failure_keeps_pending_intent(
         self, state: StateDB,
     ) -> None:
+        # RuntimeError == transport-style failure with unknown server-side
+        # outcome: the intent stays PENDING (not deleted) so the next
+        # execute can reconcile it; the scene is not marked successful, so
+        # the next run re-selects and re-derives it (idempotent convergence).
         scene = _minimal_scene(
             1,
             performers=[_performer("p001")],
@@ -1641,20 +1646,61 @@ class TestMutationFailure:
         engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
         report = engine.run_execute("prop-1", run_id="run-1")
         assert report.mutations_applied == 0
-        assert report.scenes_skipped.get("mutation_failure") == 1
-        # No history row is written for a failed mutation (history records
-        # successes only); the scene is not marked successful, so the next
-        # run re-selects and re-derives it (idempotent convergence).
+        assert report.scenes_skipped.get("mutation_outcome_unknown") == 1
         row = state.connection.execute(
             "SELECT status FROM mutations WHERE run_id = ? AND scene_id = ?",
             ("run-1", 1),
         ).fetchone()
-        assert row is None
+        assert row is not None and row["status"] == "pending"
         # scene_state marked failed.
         ss = state.connection.execute(
             "SELECT status FROM scene_state WHERE scene_id = 1",
         ).fetchone()
         assert ss is not None and ss["status"] == "failed"
+
+    def test_definitive_rejection_recorded_not_deleted(
+        self, state: StateDB,
+    ) -> None:
+        # A GraphQL error is reliable evidence the server rejected the
+        # write: the intent is recorded with its rejection reason (audit
+        # trail preserved, never deleted) and no ownership is adopted.
+        from curator.graphql_client import GraphQLError
+
+        scene = _minimal_scene(
+            1,
+            performers=[_performer("p001")],
+            tags=[("100", "Blowjob")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob"], remote_site_id="x")]],
+            },
+            fail_scene_update_for={"1"},
+        )
+        original_submit = client.submit
+
+        def _graphql_reject(query: str, variables=None):
+            if "SceneUpdate" in query:
+                raise GraphQLError("validation failed: invalid tag id")
+            return original_submit(query, variables)
+
+        client.submit = _graphql_reject  # type: ignore[method-assign]
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS, "ACT: Blowjob": "200"},
+        })
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        assert report.scenes_skipped.get("mutation_failure") == 1
+        row = state.connection.execute(
+            "SELECT status, revert_reason FROM mutations "
+            "WHERE run_id = ? AND scene_id = ?",
+            ("run-1", 1),
+        ).fetchone()
+        assert row is not None, "audit row preserved"
+        assert row["status"] == "reverted"
+        assert "rejected" in row["revert_reason"]
+        assert state.managed_tag_ids(1) == []
 
 
 # ---------------------------------------------------------------------------

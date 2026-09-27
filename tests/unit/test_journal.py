@@ -157,20 +157,28 @@ class TestPendingLifecycle:
         # Finalize is idempotent once applied.
         assert journal.finalize_pending_mutation("run-1", 5) is False
 
-    def test_discard_deletes_intent_and_leaves_ledger_alone(
+    def test_reject_records_intent_without_ledger_or_delete(
         self, journal: Journal,
     ) -> None:
+        # A DEFINITIVELY rejected write (server answered with an error) is
+        # recorded for audit, never deleted; no ownership is adopted.
         journal.record_pending_mutation(
             run_id="run-1", scene_id=5, old_tag_ids=[], new_tag_ids=["9"],
             raw_tags=[], rules_sha="sha",
             new_managed=[("9", "X")], ledger_mode="acquire",
         )
-        journal.discard_pending_mutation("run-1", 5)
+        journal.reject_pending_mutation(
+            "run-1", 5, by_run_id="run-1", reason="rejected by Stash: bad id",
+        )
         assert list(journal.pending_mutations()) == []
-        n = journal._db.connection.execute(
-            "SELECT COUNT(*) FROM mutations WHERE run_id = 'run-1'"
-        ).fetchone()[0]
-        assert n == 0
+        row = journal._db.connection.execute(
+            "SELECT status, revert_reason, reverted_by_run_id FROM mutations "
+            "WHERE run_id = 'run-1'"
+        ).fetchone()
+        assert row is not None, "audit row preserved"
+        assert row["status"] == "reverted"
+        assert row["revert_reason"] == "rejected by Stash: bad id"
+        assert row["reverted_by_run_id"] == "run-1"
         assert journal._db.managed_tag_ids(5) == []
 
     def test_revert_marks_row_without_applying_ledger(

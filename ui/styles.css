@@ -1608,6 +1608,15 @@
   text-decoration: line-through;
 }
 
+/* Preserved (external / protected) assignments in the run diff and
+   preview: tags that are KEPT, muted so the +/- changes stand out.
+   A tooltip explains the ownership reason. */
+.stash-tag-curator-chip-preserved {
+  color: var(--curator-muted-fg);
+  opacity: 0.8;
+  cursor: default;
+}
+
 /* ------------------------------------------------------------------ */
 /* Recent-runs rows                                                    */
 /* ------------------------------------------------------------------ */
