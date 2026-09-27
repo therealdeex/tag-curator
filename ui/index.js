@@ -1038,9 +1038,15 @@
     const run = props.run; // run_history entry
     const detail = props.detail; // run_detail snapshot payload
     const proposalDetail = props.proposalDetail; // proposal_detail snapshot
-    // The proposal-set ids the displayed (preview) run produced; used to
-    // verify the proposal snapshot actually belongs to THIS preview.
-    const proposalRunIds = props.proposalRunIds || [];
+    // The proposal sets the displayed (preview) run produced, as
+    // [{proposed_run_id, phase}] (run_history phase_proposals); falls back
+    // to bare ids from older run entries.  Used to verify the proposal
+    // snapshot covers EVERY phase of THIS preview before any conclusion.
+    const proposalPhases =
+      props.proposalPhases ||
+      (Array.isArray(props.proposalRunIds)
+        ? props.proposalRunIds.map((id) => ({ proposed_run_id: id, phase: null }))
+        : []);
     const needsDecision = props.needsDecision;
     const onDismiss = props.onDismiss;
     const onGotoDictionary = props.onGotoDictionary;
@@ -1133,55 +1139,69 @@
     }
 
     // Preview diff rows: what WOULD change, with ownership reasons, from
-    // the proposal_detail snapshot.  The snapshot reports totals over the
-    // ENTIRE proposal set (changed_total / without_reasons / truncated),
-    // so a zero-change claim is only made on complete, matching,
-    // fully-reasoned data -- never on a truncated or stale subset.
+    // the proposal_detail snapshot.  The completeness decision lives in
+    // ui/preview-logic.js (executable tests: tests/ui/preview_logic.test.js):
+    // a preview spans one proposal set PER PHASE, so a "no tag changes"
+    // claim requires every phase of THIS run to be covered, complete, and
+    // fully reasoned.  Anything else renders rows plus an explicit
+    // loading/stale/legacy/incomplete notice -- never a zero-change claim.
     function previewBody() {
-      if (!proposalDetail) {
+      const logic = window.StashTagCuratorPreviewLogic || {};
+      const decision = logic.previewCompleteness
+        ? logic.previewCompleteness(proposalDetail, proposalPhases)
+        : { status: proposalDetail ? "legacy" : "loading" };
+      if (decision.status === "loading") {
         return h(
           "div",
           { className: "stash-tag-curator-muted" },
           "Proposal details load after the preview finishes…"
         );
       }
-      // Snapshot identity check: a snapshot from a different preview (e.g.
-      // a stale asset) must not be presented as this preview's outcome.
-      const ids = Array.isArray(proposalRunIds) ? proposalRunIds : [];
-      if (ids.length > 0 && ids.indexOf(proposalDetail.proposed_run_id) === -1) {
+      if (decision.status === "unverified") {
+        return h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          "Cannot verify these proposal details belong to this preview — refresh to update."
+        );
+      }
+      if (decision.status === "stale") {
         return h(
           "div",
           { className: "stash-tag-curator-muted" },
           "Proposal details don't match this preview yet — refresh to update."
         );
       }
-      const changedTotal = proposalDetail.changed_total || 0;
-      const withoutReasons = proposalDetail.without_reasons || 0;
-      const truncated = !!proposalDetail.truncated;
-      const incomplete = truncated || withoutReasons > 0;
-      if (changedTotal === 0 && !incomplete) {
+      if (decision.status === "legacy") {
         return h(
           "div",
           { className: "stash-tag-curator-muted" },
-          "No tag changes are proposed for this preview; preserved assignments are kept."
+          "Proposal details are from an older snapshot — refresh to update."
         );
       }
-      const proposals = proposalDetail.proposals || [];
-      // Changed scenes arrive first from the report, so the rows below
-      // always show every change the page carries.
+      const body = [];
+      if (decision.status === "no_changes") {
+        body.push(h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          "No tag changes are proposed for this preview; preserved assignments are kept."
+        ));
+        return body;
+      }
+      // status === "review": changes present and/or incomplete detail.
+      const proposals = (proposalDetail && proposalDetail.proposals) || [];
       const changing = proposals.filter(
         (p) => (p.added_by_curator || []).length || (p.removed_managed || []).length
       );
-      const body = [];
-      if (incomplete) {
+      if (decision.truncated || decision.withoutReasons > 0) {
         const parts = [];
-        if (truncated) {
+        if (decision.truncated) {
           parts.push("showing the first " + proposals.length + " of " +
-            (proposalDetail.total_proposals || proposals.length) + " scenes");
+            ((proposalDetail && proposalDetail.total_proposals) ||
+              proposals.length) + " proposals");
         }
-        if (withoutReasons > 0) {
-          parts.push(withoutReasons + " scene" +
-            (withoutReasons === 1 ? "" : "s") +
+        if (decision.withoutReasons > 0) {
+          parts.push(decision.withoutReasons + " proposal" +
+            (decision.withoutReasons === 1 ? "" : "s") +
             " without ownership reasons (older data)");
         }
         body.push(h(
@@ -1191,11 +1211,14 @@
         ));
       }
       body.push(...changing.slice(0, 50).map((p) => {
+        const label = logic.phaseLabel
+          ? logic.phaseLabel(p.phase)
+          : p.phase || null;
         const children = [
           h(
             "span",
             { className: "stash-tag-curator-diff-scene" },
-            "Scene " + p.scene_id
+            "Scene " + p.scene_id + (label ? " \u00b7 " + label : "")
           ),
         ];
         (p.removed_managed || []).forEach((t) =>
@@ -1205,16 +1228,16 @@
         children.push(...preservedChips(p));
         return h(
           "div",
-          { key: p.scene_id, className: "stash-tag-curator-diff-row" },
+          { key: p.proposed_run_id + "-" + p.scene_id, className: "stash-tag-curator-diff-row" },
           children
         );
       }));
-      if (changedTotal > 50) {
+      if (decision.changedTotal > 50) {
         body.push(h(
           "div",
           { className: "stash-tag-curator-muted small" },
-          "Showing the first 50 of " + changedTotal +
-            " scenes with proposed tag changes."
+          "Showing the first 50 of " + decision.changedTotal +
+            " proposals with tag changes."
         ));
       }
       if (!changing.length) {
@@ -1222,9 +1245,9 @@
         body.push(h(
           "div",
           { className: "stash-tag-curator-muted" },
-          truncated
-            ? "No changes appear in the listed scenes; the full proposal set is larger."
-            : "No confirmed tag changes in this proposal set."
+          decision.truncated
+            ? "No changes appear in the listed proposals; the full preview covers more."
+            : "No confirmed tag changes in these proposal details."
         ));
       }
       return body;
@@ -2750,6 +2773,7 @@
             run: doneRun,
             detail: runDetail.data,
             proposalDetail: proposalDetail.data,
+            proposalPhases: doneRun.phase_proposals || [],
             proposalRunIds: doneRun.proposed_run_ids || [],
             needsDecision: dictionary.data
               ? (dictionary.data.stats || {}).needs_decision

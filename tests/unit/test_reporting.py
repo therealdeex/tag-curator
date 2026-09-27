@@ -1418,6 +1418,8 @@ class TestOwnershipReasonReporting:
     ) -> None:
         detail = engine.generate_proposal_detail()
         assert detail["proposed_run_id"] is None
+        assert detail["proposed_run_ids"] == []
+        assert detail["sets"] == []
         assert detail["proposals"] == []
         assert detail["total_proposals"] == 0
 
@@ -1436,6 +1438,8 @@ class TestOwnershipReasonReporting:
         assert mirror.exists()
         data = json.loads(auth.read_text(encoding="utf-8"))
         assert data["proposed_run_id"] is None
+        assert data["proposed_run_ids"] == []
+        assert data["sets"] == []
         assert data["proposals"] == []
         assert data["total_proposals"] == 0
 
@@ -1553,8 +1557,9 @@ class TestOwnershipReasonReporting:
     def test_run_history_exposes_proposed_run_ids(
         self, state: StateDB, engine: ReportEngine,
     ) -> None:
-        # The UI needs to know WHICH proposal set a (preview) run produced
-        # so it can verify the snapshot it renders belongs to that preview.
+        # The UI needs to know WHICH proposal sets a (preview) run produced
+        # — with their PHASES — so it can verify the snapshot it renders
+        # covers every phase of that preview.
         totals = json.dumps({
             "mode": "curate_library",
             "scene_phases": {
@@ -1570,9 +1575,104 @@ class TestOwnershipReasonReporting:
         history = engine.generate_run_history()
         entry = next(r for r in history["runs"] if r["run_id"] == "run-1")
         assert entry["proposed_run_ids"] == ["prop-a", "prop-b"]
+        assert entry["phase_proposals"] == [
+            {"proposed_run_id": "prop-a", "phase": "never_processed"},
+            {"proposed_run_id": "prop-b", "phase": "performer_enrichment"},
+        ]
 
         detail = engine.generate_run_detail("run-1")
         assert detail["run"]["proposed_run_ids"] == ["prop-a", "prop-b"]
+        assert len(detail["run"]["phase_proposals"]) == 2
+
+    def test_proposal_detail_covers_every_phase_of_latest_run(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # THE review finding: a preview spans one proposal set per phase.
+        # The snapshot must cover ALL of the latest run's phases — with
+        # phase labels — including a phase that produced ZERO proposals,
+        # so the UI can never mistake "the last phase had no changes" for
+        # "the whole preview has no changes".
+        conn = state.connection
+        # Rebuild phase (never_processed): 2 proposals, one with a removal.
+        for scene_id, reasons in (
+            (1, {
+                "added": [], "removed_managed": ["ACT: Old"],
+                "preserved_external": [], "preserved_protected": [],
+            }),
+            (2, {
+                "added": [], "removed_managed": [],
+                "preserved_external": ["Favorite"], "preserved_protected": [],
+            }),
+        ):
+            self._insert_proposal(
+                conn, "prop-a", scene_id,
+                "2026-09-27T00:00:00+00:00", reasons,
+            )
+        # Enrichment phase (performer_enrichment): zero proposals (nothing
+        # to write), but its set id is still part of the run.
+        totals = json.dumps({
+            "mode": "curate_library",
+            "scene_phases": {
+                "never_processed": {
+                    "dry_run": {"proposed_run_id": "prop-a",
+                                "proposals_written": 2},
+                },
+                "performer_enrichment": {
+                    "dry_run": {"proposed_run_id": "prop-b",
+                                "proposals_written": 0},
+                },
+            },
+        })
+        _insert_run(state.connection, "run-1", totals_json=totals)
+        conn.commit()
+
+        detail = engine.generate_proposal_detail()
+        assert detail["proposed_run_ids"] == ["prop-a", "prop-b"]
+        assert [s["phase"] for s in detail["sets"]] == [
+            "never_processed", "performer_enrichment",
+        ]
+        by_id = {s["proposed_run_id"]: s for s in detail["sets"]}
+        assert by_id["prop-a"]["changed_total"] == 1
+        assert by_id["prop-a"]["total_proposals"] == 2
+        assert by_id["prop-b"]["total_proposals"] == 0, (
+            "a zero-proposal phase is accounted for, not missing"
+        )
+        assert by_id["prop-b"]["changed_total"] == 0
+        # Flattened page: entries carry phase labels; the change is present.
+        first = detail["proposals"][0]
+        assert first["scene_id"] == 1 and first["has_change"] is True
+        assert first["phase"] == "never_processed"
+        assert first["removed_managed"] == ["ACT: Old"]
+
+    def test_proposal_detail_multi_set_page_is_changed_first_across_phases(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # A change in an EARLIER phase must appear on the page even when a
+        # LATER phase fills it with unchanged rows (changed-first holds
+        # across sets, and same-scene entries stay per-phase proposals).
+        conn = state.connection
+        for prop_id, phase_rows in (
+            ("prop-a", [(1, {
+                "added": ["ACT: Blowjob"], "removed_managed": [],
+                "preserved_external": [], "preserved_protected": [],
+            })]),
+            ("prop-b", [(i, {
+                "added": [], "removed_managed": [],
+                "preserved_external": ["Favorite"], "preserved_protected": [],
+            }) for i in range(100, 104)]),
+        ):
+            for scene_id, reasons in phase_rows:
+                self._insert_proposal(
+                    conn, prop_id, scene_id,
+                    "2026-09-27T00:00:00+00:00", reasons,
+                )
+        conn.commit()
+        detail = engine.generate_proposal_detail(["prop-b", "prop-a"])
+        assert detail["changed_total"] == 1
+        first = detail["proposals"][0]
+        assert first["scene_id"] == 1 and first["proposed_run_id"] == "prop-a"
+        assert len(detail["proposals"]) == 5
+        assert detail["total_proposals"] == 5
 
     def test_proposal_detail_snapshot_written_by_refresh(
         self, tmp_ctx, rules: Rules,
@@ -1589,5 +1689,7 @@ class TestOwnershipReasonReporting:
         assert mirror.exists()
         data = json.loads(auth.read_text(encoding="utf-8"))
         assert data["proposed_run_id"] is None
+        assert data["proposed_run_ids"] == []
+        assert data["sets"] == []
         assert data["proposals"] == []
         assert data["total_proposals"] == 0

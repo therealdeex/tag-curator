@@ -38,6 +38,7 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -609,9 +610,11 @@ class ReportEngine:
                 entry["unmapped_count"] = extracted["unmapped_count"]
                 entry["tags_deleted"] = extracted["tags_deleted"]
                 entry["proposals_written"] = extracted["proposals_written"]
-                entry["proposed_run_ids"] = self._extract_proposed_run_ids(
-                    totals
-                )
+                phases = self._extract_phase_proposals(totals)
+                entry["proposed_run_ids"] = [
+                    str(p["proposed_run_id"]) for p in phases
+                ]
+                entry["phase_proposals"] = phases
                 runs.append(entry)
 
             return {
@@ -663,6 +666,7 @@ class ReportEngine:
                     "tags_deleted": extracted["tags_deleted"],
                     "proposals_written": extracted["proposals_written"],
                     "proposed_run_ids": self._extract_proposed_run_ids(totals),
+                    "phase_proposals": self._extract_phase_proposals(totals),
                 }
 
             total_rows = self._count(
@@ -785,104 +789,174 @@ class ReportEngine:
         return by_scene
 
     def generate_proposal_detail(
-        self, proposed_run_id: "str | None" = None, limit: int = 500,
+        self,
+        proposed_run_ids: "str | Sequence[str] | None" = None,
+        limit: int = 500,
     ) -> dict[str, Any]:
-        """Ownership-reason detail for a dry-run proposal set (preview diff).
+        """Ownership-reason detail for a curate preview's proposal sets.
 
         This powers the dashboard's PREVIEW view: before the user approves a
         run it explains why each tag will be added, removed, or preserved
         (``added by curator`` / ``managed assignment no longer derived`` /
         ``preserved external assignment`` / ``preserved protected
-        assignment``).  When ``proposed_run_id`` is omitted, the LATEST
-        proposal set is used.
+        assignment``).
 
-        Completeness is explicit so the UI can never reassure the user from
-        an incomplete subset:
+        A preview produces ONE proposal set per phase, so completeness is
+        reported per phase and identity is explicit:
 
-        * ``changed_total`` counts proposals with additions/removals across
-          the ENTIRE set (not just the returned page);
-        * ``without_reasons`` counts rows with no parseable reason data
-          (pre-D21 rows) -- "explanations unavailable", never "no change";
-        * the returned page is ordered changed-scenes-FIRST (then by scene
-          id), so a change beyond the ``limit`` boundary is still visible;
-        * ``truncated`` reports whether the page covers the whole set.
+        * ``sets`` carries one section per proposal set with its phase name
+          and FULL-set totals (``changed_total``, ``without_reasons``,
+          ``total_proposals``); a requested phase with zero proposals still
+          gets its section, so it is accounted for.
+        * ``proposed_run_ids`` lists every set this snapshot covers -- the
+          UI verifies the displayed run's phases are all present before any
+          conclusion is drawn.
+        * ``proposals`` is one flattened page across the sets, ordered
+          changed-scenes-FIRST (phase order, then scene id), so the page
+          limit can never hide a change beyond its boundary.  Each entry
+          carries ``phase`` and ``proposed_run_id``; the same scene may
+          legitimately appear once per phase -- entries are proposals, and
+          per-phase rows are never summed into a "net result".
 
-        Consumers must treat a zero ``changed_total`` as a confirmed
-        no-change claim ONLY when ``truncated`` is false and
-        ``without_reasons`` is zero.
+        When ``proposed_run_ids`` is omitted, the phases of the most recent
+        run that produced proposal sets are used (falling back to the
+        single latest set for databases predating phase metadata).
+        ``proposed_run_id`` (singular) remains the LAST set, for
+        compatibility.  Consumers may treat zero changes as confirmed ONLY
+        when every expected phase is covered, ``truncated`` is false, and
+        every ``without_reasons`` is zero -- see
+        ``ui/preview-logic.js``.
         """
         conn = self._state.read_only()
         try:
-            target = proposed_run_id or self._latest_proposed_run_id(conn)
-            if not target:
+            labels: dict[str, "str | None"] = {}
+            if isinstance(proposed_run_ids, str):
+                targets: list[str] = [proposed_run_ids]
+            elif proposed_run_ids:
+                targets = [str(t) for t in proposed_run_ids]
+            else:
+                phase_props = self._latest_run_phase_proposals(conn)
+                targets = [
+                    str(p["proposed_run_id"]) for p in phase_props
+                ]
+                labels = {
+                    str(p["proposed_run_id"]): p["phase"]
+                    for p in phase_props
+                }
+                if not targets:
+                    # Databases predating phase metadata: fall back to the
+                    # single latest proposal set (unlabeled).
+                    latest = self._latest_proposed_run_id(conn)
+                    if latest:
+                        targets = [latest]
+            if not targets:
                 return {
                     "generated_at": _now_iso(),
                     "proposed_run_id": None,
+                    "proposed_run_ids": [],
+                    "sets": [],
                     "proposals": [],
                     "total_proposals": 0,
                     "changed_total": 0,
                     "without_reasons": 0,
                     "truncated": False,
                 }
-            rows = conn.execute(
-                "SELECT scene_id, provider_match_status, status, skip_reason, "
-                "ownership_mode, ownership_reasons_json "
-                "FROM dry_run_proposals WHERE proposed_run_id = ? "
-                "ORDER BY scene_id",
-                (target,),
-            ).fetchall()
 
-            entries: list[dict[str, Any]] = []
-            changed_total = 0
-            without_reasons = 0
-            for row in rows:
-                reasons = (
-                    self._parse_ownership_reasons(
-                        row["ownership_reasons_json"]
+            all_entries: list[dict[str, Any]] = []
+            sets: list[dict[str, Any]] = []
+            for section_idx, target in enumerate(targets):
+                rows = conn.execute(
+                    "SELECT scene_id, provider_match_status, status, "
+                    "skip_reason, ownership_mode, ownership_reasons_json "
+                    "FROM dry_run_proposals WHERE proposed_run_id = ? "
+                    "ORDER BY scene_id",
+                    (target,),
+                ).fetchall()
+                changed_total = 0
+                without_reasons = 0
+                for row in rows:
+                    reasons = (
+                        self._parse_ownership_reasons(
+                            row["ownership_reasons_json"]
+                        )
+                        or {}
                     )
-                    or {}
-                )
-                has_reasons = bool(reasons)
-                if not has_reasons:
-                    without_reasons += 1
-                added = reasons.get("added", [])
-                removed = reasons.get("removed_managed", [])
-                has_change = bool(added or removed)
-                if has_change:
-                    changed_total += 1
-                mode = row["ownership_mode"]
-                entries.append({
-                    "scene_id": row["scene_id"],
-                    "provider_match_status": row["provider_match_status"],
-                    "status": row["status"],
-                    "skip_reason": row["skip_reason"],
-                    "ownership_mode": (
-                        mode if isinstance(mode, str) and mode else None
-                    ),
-                    "has_reasons": has_reasons,
-                    "has_change": has_change,
-                    "added_by_curator": added,
-                    "removed_managed": removed,
-                    "preserved_external": reasons.get("preserved_external", []),
-                    "preserved_protected": reasons.get(
-                        "preserved_protected", []
-                    ),
+                    has_reasons = bool(reasons)
+                    if not has_reasons:
+                        without_reasons += 1
+                    added = reasons.get("added", [])
+                    removed = reasons.get("removed_managed", [])
+                    has_change = bool(added or removed)
+                    if has_change:
+                        changed_total += 1
+                    mode = row["ownership_mode"]
+                    all_entries.append({
+                        "scene_id": row["scene_id"],
+                        "provider_match_status": row["provider_match_status"],
+                        "status": row["status"],
+                        "skip_reason": row["skip_reason"],
+                        "ownership_mode": (
+                            mode if isinstance(mode, str) and mode else None
+                        ),
+                        "has_reasons": has_reasons,
+                        "has_change": has_change,
+                        "added_by_curator": added,
+                        "removed_managed": removed,
+                        "preserved_external": reasons.get(
+                            "preserved_external", []
+                        ),
+                        "preserved_protected": reasons.get(
+                            "preserved_protected", []
+                        ),
+                        "phase": labels.get(target),
+                        "proposed_run_id": target,
+                    })
+                sets.append({
+                    "proposed_run_id": target,
+                    "phase": labels.get(target),
+                    "total_proposals": len(rows),
+                    "changed_total": changed_total,
+                    "without_reasons": without_reasons,
                 })
 
             # Changed scenes first so a page boundary can never hide a
-            # change; ties ordered by scene id for stable output.
-            entries.sort(
-                key=lambda e: (0 if e["has_change"] else 1, e["scene_id"])
+            # change; ties keep phase order, then scene id.
+            all_entries.sort(
+                key=lambda e: (
+                    0 if e["has_change"] else 1,
+                    targets.index(str(e["proposed_run_id"])),
+                    e["scene_id"],
+                )
             )
-            total = len(entries)
+            page = all_entries[:limit]
+            total_proposals = len(all_entries)
+            changed_total_all = sum(s["changed_total"] for s in sets)
+            without_reasons_all = sum(s["without_reasons"] for s in sets)
+            # A set whose rows did not all fit on the page is marked so the
+            # UI can say the page is partial for that phase.
+            included: dict[str, int] = {}
+            for entry in page:
+                included[entry["proposed_run_id"]] = (
+                    included.get(entry["proposed_run_id"], 0) + 1
+                )
+            for section in sets:
+                section["truncated"] = (
+                    included.get(section["proposed_run_id"], 0)
+                    < section["total_proposals"]
+                )
             return {
                 "generated_at": _now_iso(),
-                "proposed_run_id": target,
-                "proposals": entries[:limit],
-                "total_proposals": total,
-                "changed_total": changed_total,
-                "without_reasons": without_reasons,
-                "truncated": total > limit,
+                "proposed_run_id": targets[-1],
+                "proposed_run_ids": list(targets),
+                "sets": sets,
+                "proposals": page,
+                "total_proposals": total_proposals,
+                # Aggregate counts are sums over PER-PHASE proposals: one
+                # scene touched by two phases is counted once per phase and
+                # is NOT a distinct-scene claim.
+                "changed_total": changed_total_all,
+                "without_reasons": without_reasons_all,
+                "truncated": total_proposals > limit,
             }
         finally:
             conn.close()
@@ -1159,30 +1233,76 @@ class ReportEngine:
         return acc
 
     @staticmethod
-    def _extract_proposed_run_ids(totals: Any) -> list[str]:
-        """Collect the ``proposed_run_id`` values embedded in a totals blob.
+    def _extract_phase_proposals(totals: Any) -> list[dict[str, "str | None"]]:
+        """Collect the proposal sets embedded in a run's totals blob, with
+        their phase names.
 
-        Curate runs write one dry report per phase, each carrying its own
-        proposal set id (``scene_phases.<phase>.dry_run.proposed_run_id``).
-        The UI compares these against the ``proposal_detail`` snapshot's
-        ``proposed_run_id`` so it never renders one preview's conclusions
-        over a different preview.  First-seen order, de-duplicated.
+        Curate runs write one dry report per phase under
+        ``scene_phases.<phase>.dry_run.proposed_run_id``.  The returned list
+        preserves encounter order, de-duplicates by id, and maps each id to
+        its phase so the UI can label per-phase preview sections.  Phases
+        with zero proposals produce no totals entry -- callers that need
+        them accounted for must pass the expected ids explicitly (see
+        :meth:`generate_proposal_detail`).
         """
-        out: list[str] = []
+        out: list[dict[str, "str | None"]] = []
+        seen: set[str] = set()
 
-        def _walk(node: Any) -> None:
+        def _walk(node: Any, phase: "str | None") -> None:
             if isinstance(node, dict):
                 value = node.get("proposed_run_id")
-                if isinstance(value, str) and value and value not in out:
-                    out.append(value)
-                for child in node.values():
-                    _walk(child)
+                if isinstance(value, str) and value and value not in seen:
+                    seen.add(value)
+                    out.append({"proposed_run_id": value, "phase": phase})
+                for key, child in node.items():
+                    if key == "scene_phases" and isinstance(child, dict):
+                        for phase_name, sub in child.items():
+                            _walk(sub, str(phase_name))
+                    else:
+                        _walk(child, phase)
             elif isinstance(node, list):
                 for item in node:
-                    _walk(item)
+                    _walk(item, phase)
 
-        _walk(totals)
+        _walk(totals, None)
         return out
+
+    @classmethod
+    def _extract_proposed_run_ids(cls, totals: Any) -> list[str]:
+        """Collect the ``proposed_run_id`` values embedded in a totals blob
+        (first-seen order, de-duplicated).  See
+        :meth:`_extract_phase_proposals` for the phase-aware variant."""
+        return [
+            str(p["proposed_run_id"])
+            for p in cls._extract_phase_proposals(totals)
+        ]
+
+    def _latest_run_phase_proposals(
+        self, conn: Any
+    ) -> "list[dict[str, str | None]]":
+        """Phase proposal sets of the most recent run that produced any.
+
+        Walks ``runs`` newest-first and returns the first run's phase
+        proposal list (``[{"proposed_run_id", "phase"}]``); ``[]`` when no
+        run carries proposal ids.  This lets a freshly generated
+        ``proposal_detail`` snapshot cover EVERY phase of the latest
+        (preview) run, not just the last-written set.
+        """
+        try:
+            rows = conn.execute(
+                "SELECT totals_json FROM runs "
+                "WHERE totals_json IS NOT NULL ORDER BY started_at DESC"
+            ).fetchall()
+        except Exception:
+            return []
+        for row in rows:
+            totals = self._parse_json(row["totals_json"])
+            if not totals:
+                continue
+            phases = self._extract_phase_proposals(totals)
+            if phases:
+                return phases
+        return []
 
     @staticmethod
     def _extract_scope_name(scope_json: Any) -> str | None:

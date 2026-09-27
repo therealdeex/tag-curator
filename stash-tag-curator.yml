@@ -15,6 +15,7 @@ errLog: error
 
 ui:
   javascript:
+    - ui/preview-logic.js
     - ui/index.js
   css:
     - ui/styles.css

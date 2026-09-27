@@ -28,16 +28,23 @@ schema).
   reason recorded, landed tags stay external). New acquire intents also
   journal only the actual acquisition delta — replay-safe by construction
   — but baseline validation remains mandatory for every pending record.
-- **Preview completeness is explicit (D21 hardening).** `proposal_detail`
-  now reports change totals across the ENTIRE proposal set
-  (`changed_total`, `without_reasons`, `truncated`) and returns
-  changed scenes first, so the default 500-scene page can never hide a
-  change beyond its boundary. The UI only claims "no tag changes" on a
-  complete, matching, fully-reasoned set; truncated or legacy rows without
-  reason data render an explicit incompleteness notice instead of a false
-  zero-change reassurance, and the proposal snapshot is verified to belong
-  to the displayed preview (`run_history`/`run_detail` entries now carry
-  the run's `proposed_run_ids`) before its conclusions are shown.
+- **Preview completeness is explicit, across every phase (D21 hardening).**
+  A curate preview produces one proposal set per phase, so per-phase detail
+  is now first-class: `proposal_detail` covers ALL of the latest run's
+  phase sets (`sets` with phase labels and full-set totals, including
+  phases with zero proposals), verifies coverage via `proposed_run_ids`,
+  and returns one flattened changed-first page whose entries carry their
+  phase (per-phase rows are never summed into a net result). The decision
+  logic lives in `ui/preview-logic.js` (manifest-loaded before `index.js`,
+  executed directly by Node tests in `tests/ui/`): the UI claims "no tag
+  changes" ONLY when every phase of the displayed preview is covered,
+  complete, and fully reasoned — a single unchanged phase, a snapshot from
+  another preview, an older snapshot without per-set totals, or a run
+  without verifiable proposal ids each render an explicit
+  loading/stale/legacy/unverified notice instead. Truncation and rows
+  without reason data keep rendering an incompleteness notice, and
+  `run_history`/`run_detail` entries expose `phase_proposals` so the check
+  is per-phase, not id-in-any-phase.
 - **Ownership-contract enforcement (D21 hardening).** Execution now rejects
   any proposal lacking a complete ownership contract (`ownership_mode` of
   `replace`/`acquire` plus a `managed_fp` baseline) with a clear
