@@ -105,6 +105,16 @@ CREATE TABLE IF NOT EXISTS scene_state(
     current_tag_ids_json        TEXT
 );
 
+-- Per-scene assignment-ownership ledger (D21) -------------------------------
+CREATE TABLE IF NOT EXISTS scene_managed_tags(
+    scene_id         INTEGER NOT NULL,
+    tag_id           TEXT    NOT NULL,
+    tag_name         TEXT,
+    acquired_at      TEXT,
+    acquired_run_id  TEXT,
+    PRIMARY KEY (scene_id, tag_id)
+);
+
 -- Current successful provider raw tags -------------------------------------
 CREATE TABLE IF NOT EXISTS scene_raw_tags_current(
     scene_id         INTEGER NOT NULL,
@@ -180,6 +190,11 @@ CREATE TABLE IF NOT EXISTS mutations(
     -- v3 (Milestone 2): scene-metadata enrichment journaling for rollback.
     old_metadata_json     TEXT,
     new_metadata_json     TEXT,
+    -- v5 (D21): intended ownership transition (pre-write pending journal).
+    old_managed_ids_json  TEXT,
+    new_managed_ids_json  TEXT,
+    ledger_mode           TEXT,
+    revert_reason         TEXT,
     created_at            TEXT,
     applied_at            TEXT,
     reverted_at           TEXT,
@@ -207,6 +222,10 @@ CREATE TABLE IF NOT EXISTS dry_run_proposals(
     -- v2 (Milestone 1): scene-metadata enrichment (fill-empty) proposals.
     proposed_metadata_json   TEXT,
     applied_metadata_json    TEXT,
+    -- v5 (D21): ownership contract of the proposal.
+    ownership_mode           TEXT,
+    managed_fp               TEXT,
+    ownership_reasons_json   TEXT,
     PRIMARY KEY (proposed_run_id, scene_id)
 );
 
@@ -293,6 +312,8 @@ CREATE INDEX IF NOT EXISTS idx_mutations_reverted
     ON mutations(reverted_at);
 CREATE INDEX IF NOT EXISTS idx_scene_state_rules_sha
     ON scene_state(rules_sha);
+CREATE INDEX IF NOT EXISTS idx_scene_managed_tags_tag
+    ON scene_managed_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_scene_raw_tags_current_tag
     ON scene_raw_tags_current(raw_tag);
 """
@@ -302,6 +323,7 @@ EXPECTED_TABLES = (
     "schema_meta",
     "runs",
     "scene_state",
+    "scene_managed_tags",
     "scene_raw_tags_current",
     "scene_raw_tags_history",
     "raw_tag_catalog",

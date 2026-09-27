@@ -30,18 +30,41 @@ left off.
 The curator reads provider metadata for your scenes through Stash's
 `scrapeMultiScenes` stash-box integration, normalizes the raw tags, and maps
 each one through the active v3 rules file into a canonical tag set. It then
-writes that set back with Stash's full-replacement `sceneUpdate`, preserving
-any tag whose name carries a protected prefix (default `MANUAL:`) or that
-already belongs to the canonical taxonomy. Empty metadata fields (title,
-date, code, details, director, urls) are filled but **never overwritten**.
+writes the result back with Stash's full-replacement `sceneUpdate`. Empty
+metadata fields (title, date, code, details, director, urls) are filled but
+**never overwritten**.
+
+**Your manual tag assignments are safe (assignment ownership).** The curator
+removes only tag *assignments* it has recorded itself managing — a per-scene
+ownership ledger (`scene_managed_tags`) keyed on tag IDs. Anything else
+attached to a scene — tags you added by hand, tags attached by hand that
+happen to be canonical, tags written by older curator builds — is treated as
+external and survives every rebuild. Concretely, a successful rebuild writes
+`current-external tags + newly-derived tags + protected tags`; a managed
+assignment is retired only when its derivation stops producing it. The
+dictionary defines vocabulary; it never establishes ownership of an
+assignment on a particular scene.
 
 Because every scene write is a full replacement of the desired final set,
 re-running a scene is idempotent: unchanged scenes are detected and skipped
 with zero API calls. This is what makes "just re-run it" the repair tool for
 everything.
 
-Protected prefixes are the exception: tags like `MANUAL: Foo` are yours and
-are never touched by any phase.
+Two limits worth knowing (both deliberate):
+
+- **Deleting a curator-generated tag directly in Stash is not a permanent
+  exclusion** — while the derivation still produces it, the next rebuild may
+  re-add it. Permanent per-scene keep/exclude controls are a future feature.
+- **An already-managed assignment can't reveal overlapping manual intent.**
+  If the curator attached a tag and you also want it kept even if the
+  derivation changes, protect it (below). A plain tag set cannot express
+  "both".
+
+Protected prefixes are the explicit override: tags like `MANUAL: Foo` are
+yours and are never touched by any phase, whatever the ledger says. Note
+that tags are **shared entities** — to protect a scene's tag you attach a
+separate `MANUAL: …` tag to that scene; you do not rename the shared tag
+itself (that would affect every scene using it).
 
 ### JAV identification
 
@@ -63,9 +86,10 @@ deterministic signals, evaluated in the enrichment phase:
    code lives only in the filename, e.g. `VKO-209 ....mp4`).
 
 The block lives in the active rules file under `derived:`; removing it
-disables the subsystem. To override a decision you disagree with, rename
-the tag on the scene to a protected name (e.g. `MANUAL: JAV`) — protected
-tags are never removed or re-derived.
+disables the subsystem. To override a decision you disagree with, attach a
+protected tag to the scene (e.g. `MANUAL: JAV`) and remove the derived one —
+protected tags are never removed or re-derived. (Attach a separate tag;
+don't rename the shared `JAV` entity, which would affect every scene.)
 
 
 ## Install
@@ -162,7 +186,7 @@ Plugin settings live in **Settings > Plugins > stash-tag-curator**:
 | `enabled_providers` | STRING | `stashdb,tpdb` | Comma-separated provider keys used during enrichment. |
 | `default_provider_batch_size` | STRING | `50` | Scenes sent to each provider lookup per request. |
 | `strict_version` | STRING | `true` | Refuses to run against mismatched rule-schema versions. |
-| `preserve_protected` | STRING | `true` | Tags with protected prefixes (e.g. `MANUAL:`) are never removed. |
+| `preserve_protected` | STRING | `true` | Tags with protected prefixes (e.g. `MANUAL:`) are never removed — including ones the curator manages. Externally-assigned tags are always preserved regardless (ownership, not naming, protects them). |
 | `provider_priority` | STRING | blank | Provider tokens in priority order for metadata-field merge tie-breaking. |
 | `max_performer_creates_per_run` | NUMBER | `50` | Max new performers created per run. |
 | `max_studio_creates_per_run` | NUMBER | `20` | Max new studios created per run. |

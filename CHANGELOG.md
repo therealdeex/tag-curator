@@ -8,6 +8,27 @@ schema).
 
 ## Unreleased
 
+- **Assignment-ownership preservation (D21, schema v5).** Manually attached
+  scene tags are no longer erased by rebuilds. A new per-scene ownership
+  ledger (`scene_managed_tags`, keyed on scene + tag id) records which
+  assignments the curator manages; a successful rebuild now writes
+  `current-external ∪ derived ∪ protected`, so external assignments —
+  including canonical tags attached by hand or by pre-D21 builds — survive
+  every rebuild and later rule changes. Managed assignments retire when
+  their derivation stops producing them, even if the tag leaves the
+  dictionary. Additive phases (standalone enrichment, PRESERVE statuses)
+  acquire only what they add and never retire. Migration is conservative:
+  the ledger ships empty, so every legacy assignment is external (stale
+  legacy generated tags linger until separately reviewed). Ownership
+  transitions are journaled as `pending` mutations rows before each
+  `sceneUpdate` and committed atomically after it; crashed pendings are
+  reconciled (adopted/reverted) at the next execute, and dry-run proposals
+  now carry an ownership baseline that invalidates them if the ledger
+  changes before execution. Dry-run proposals record per-tag reasons
+  (added / removed-managed / preserved-external / preserved-protected).
+  Behavior change: `preserve_protected=false` no longer removes
+  externally-assigned protected tags — it only affects tags the curator
+  itself manages.
 - Follow-up taxonomy decisions (2026-09-24): define `ACT: Blowbang` as
   3+ penises (the two-penis threesome variants return to ignore), add
   `THEME: Parody` for `parody` / `rule 34` (cosplay and character stay in

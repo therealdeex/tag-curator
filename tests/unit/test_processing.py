@@ -149,6 +149,14 @@ class StatefulScenesClient:
         self._fail_scene_update_for = fail_scene_update_for or set()
         self.calls: list[dict[str, Any]] = []
         self.scene_update_calls: list[dict[str, Any]] = []
+        # id -> tag name, harvested from initial scenes + every update, so
+        # persisted sceneUpdate tags keep their real names (see SceneUpdate).
+        self._tag_names: dict[str, str] = {
+            str(t.get("id")): str(t.get("name"))
+            for s in (scenes or [])
+            for t in (s.get("tags") or [])
+            if isinstance(t, dict) and t.get("id") is not None and t.get("name")
+        }
 
     def submit(
         self, query: str, variables: Mapping[str, Any] | None = None
@@ -183,10 +191,18 @@ class StatefulScenesClient:
                     f"mock sceneUpdate failure for scene {sid}"
                 )
             # Persist the update so subsequent findScenes reflects the change.
+            # Tag NAMES are preserved per id (real Stash keeps the entity's
+            # name across sceneUpdate); unknown ids fall back to a
+            # placeholder.  Multi-run tests depend on names surviving (e.g.
+            # D18 protected-prefix matching on a re-fetched scene).
             scene = self._scenes.get(sid)
             if scene is not None:
+                for t in scene.get("tags") or []:
+                    if isinstance(t, dict) and t.get("name"):
+                        self._tag_names[str(t["id"])] = str(t["name"])
                 scene["tags"] = [
-                    {"id": str(t), "name": f"tag-{t}"} for t in tag_ids
+                    {"id": str(t), "name": self._tag_names.get(str(t), f"tag-{t}")}
+                    for t in tag_ids
                 ]
             return {"sceneUpdate": {"id": sid}}
         if sig == "FindScenesPage":
@@ -1207,7 +1223,13 @@ class TestProtectedTagPreservation:
         update = client.scene_update_calls[-1]
         assert "800" in update["tag_ids"], "MANUAL: tag must survive (D18)"
 
-    def test_preserve_protected_false_drops_manual_tag(self, state: StateDB) -> None:
+    def test_preserve_protected_false_keeps_external_manual_tag(
+        self, state: StateDB,
+    ) -> None:
+        # D18/D21 interaction: preserve_protected=false no longer licenses
+        # removal of tags the curator does not OWN.  An externally-attached
+        # MANUAL: tag is an external assignment and survives every rebuild
+        # regardless of the protection setting.
         scene = _minimal_scene(
             1,
             performers=[_performer("p001")],
@@ -1232,7 +1254,62 @@ class TestProtectedTagPreservation:
         report = engine.run_execute("prop-1", run_id="run-1")
         assert report.mutations_applied == 1
         update = client.scene_update_calls[-1]
+        assert "800" in update["tag_ids"], (
+            "external assignment survives regardless of preserve_protected (D21)"
+        )
+
+    def test_preserve_protected_false_drops_managed_manual_tag(
+        self, state: StateDB,
+    ) -> None:
+        # The destructive opt-in still applies to tags the curator itself
+        # manages: with preservation disabled, a managed MANUAL: tag that is
+        # no longer derived is retired by the next authoritative rebuild.
+        scene = _minimal_scene(
+            1,
+            performers=[_performer("p001")],
+            tags=[("800", "MANUAL: Curated Pick")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob"], remote_site_id="stashdb-0001")]],
+            },
+        )
+        engine, _ = _engine(client, state, settings={
+            "tag_name_to_id": {
+                **MARKER_IDS,
+                **ENRICHMENT_TAG_IDS,
+                "ACT: Blowjob": "200",
+                "MANUAL: Curated Pick": "800",
+            },
+        })
+        # Run 1 (protection ON): the MANUAL tag is preserved and becomes
+        # managed only if derived -- it is not, so it stays external.  Seed
+        # ownership directly to simulate the curator having created it.
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        engine.run_execute("prop-1", run_id="run-1")
+        # Simulate the curator having created the MANUAL tag itself (run 1
+        # preserved it as external; a manual ledger acquire makes it managed).
+        state.apply_ledger_transition(1, "seed", "acquire", [("800", "MANUAL: Curated Pick")])
+        # Run 2 (protection OFF): managed + not derived -> removed.
+        engine2, _ = _engine(client, state, settings={
+            "tag_name_to_id": {
+                **MARKER_IDS,
+                **ENRICHMENT_TAG_IDS,
+                "ACT: Blowjob": "200",
+                "MANUAL: Curated Pick": "800",
+            },
+            "preserve_protected": False,
+        })
+        engine2.run_dry(SCOPE_ALL, proposed_run_id="prop-2", run_id="run-2")
+        report = engine2.run_execute("prop-2", run_id="run-2")
+        assert report.mutations_applied == 1
+        update = client.scene_update_calls[-1]
         assert "800" not in update["tag_ids"]
+        # The retired assignment leaves the ledger; still-derived managed
+        # assignments (e.g. the mapped ACT tag) are retained.
+        assert "800" not in state.managed_tag_ids(1)
+        assert "200" in state.managed_tag_ids(1)
 
 
 # ---------------------------------------------------------------------------

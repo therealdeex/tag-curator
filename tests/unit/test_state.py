@@ -61,6 +61,7 @@ EXPECTED_TABLES = (
     "schema_meta",
     "runs",
     "scene_state",
+    "scene_managed_tags",
     "scene_raw_tags_current",
     "scene_raw_tags_history",
     "raw_tag_catalog",
@@ -891,3 +892,80 @@ class TestAcquireOrReclaim:
         # Clean release of the reclaimed lock, then a normal acquire.
         assert db.release_lock("r-fresh")
         assert db.acquire_lock("r-final", "rebuild", "sha") is True
+
+
+# ---------------------------------------------------------------------------
+# Assignment-ownership ledger (D21)
+# ---------------------------------------------------------------------------
+
+
+class TestManagedTagsLedger:
+    def test_ledger_starts_empty_and_acquire_replaces_distinctly(
+        self, db: StateDB,
+    ) -> None:
+        assert db.managed_tag_ids(1) == []
+        db.apply_ledger_transition(1, "run-1", "acquire", [("2", "B"), ("1", "A")])
+        assert db.managed_tag_ids(1) == ["1", "2"]
+        # Acquire unions; existing rows (other phases' ownership) survive.
+        db.apply_ledger_transition(1, "run-2", "acquire", [("3", "C")])
+        assert db.managed_tag_ids(1) == ["1", "2", "3"]
+        # Replace becomes exactly the supplied set.
+        db.apply_ledger_transition(1, "run-3", "replace", [("2", "B")])
+        assert db.managed_tag_ids(1) == ["2"]
+
+    def test_ledger_rows_are_per_scene(self, db: StateDB) -> None:
+        db.apply_ledger_transition(1, "run-1", "acquire", [("5", "X")])
+        db.apply_ledger_transition(2, "run-1", "acquire", [("5", "X")])
+        assert db.managed_tag_ids(1) == ["5"]
+        assert db.managed_tag_ids(2) == ["5"]
+        db.apply_ledger_transition(1, "run-2", "replace", [])
+        assert db.managed_tag_ids(1) == []
+        assert db.managed_tag_ids(2) == ["5"], "scene 2 untouched"
+
+    def test_purge_missing_scene_drops_ledger_rows(self, db: StateDB) -> None:
+        db.apply_ledger_transition(7, "run-1", "acquire", [("5", "X")])
+        db.purge_missing_scene(7)
+        assert db.managed_tag_ids(7) == []
+
+    def test_migration_from_v4_starts_ledger_empty(
+        self, db_path: Path,
+    ) -> None:
+        # Build a genuine v4 database: full v5 open, then rewind the D21
+        # objects and stamp user_version=4.  Reopening must run the 4->5
+        # migration: table + columns exist, NO legacy ownership is invented.
+        s = StateDB(str(db_path))
+        s.upsert_scene_state(
+            1, status="success", last_successful_run_id="legacy",
+            current_tag_ids_json='["200", "5001"]',
+        )
+        s.close()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("DROP TABLE scene_managed_tags")
+        for col in ("ownership_mode", "managed_fp", "ownership_reasons_json"):
+            conn.execute(f"ALTER TABLE dry_run_proposals DROP COLUMN {col}")
+        for col in ("old_managed_ids_json", "new_managed_ids_json",
+                    "ledger_mode", "revert_reason"):
+            conn.execute(f"ALTER TABLE mutations DROP COLUMN {col}")
+        conn.execute("PRAGMA user_version = 4")
+        conn.commit()
+        conn.close()
+
+        s2 = StateDB(str(db_path))
+        assert s2.user_version == SCHEMA_VERSION
+        assert s2.managed_tag_ids(1) == [], "conservative migration: no backfill"
+        assert "scene_managed_tags" in {
+            r[0] for r in s2.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        for col in ("ownership_mode", "managed_fp", "ownership_reasons_json"):
+            assert col in s2.table_columns("dry_run_proposals")
+        for col in ("old_managed_ids_json", "new_managed_ids_json",
+                    "ledger_mode", "revert_reason"):
+            assert col in s2.table_columns("mutations")
+        # scene_state legacy snapshot untouched by migration.
+        row = s2.connection.execute(
+            "SELECT current_tag_ids_json FROM scene_state WHERE scene_id = 1"
+        ).fetchone()
+        assert row["current_tag_ids_json"] == '["200", "5001"]'
+        s2.close()

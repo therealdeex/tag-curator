@@ -14,6 +14,7 @@ can run without importing production code):
 * ``schema_meta``             -- key/value meta (including ``user_version``)
 * ``runs``                    -- per-run lifecycle row
 * ``scene_state``             -- **exactly one** current row per scene (UPSERT)
+* ``scene_managed_tags``      -- per-scene assignment-ownership ledger (D21)
 * ``scene_raw_tags_current``  -- current successful provider raw tags per scene
 * ``scene_raw_tags_history``  -- append-only observation log (every run)
 * ``raw_tag_catalog``         -- disposition catalog (NO ``occurrence_count``)
@@ -58,7 +59,7 @@ __all__ = ["StateDB", "SCHEMA_VERSION", "AcquireResult"]
 
 #: Bumped on every schema change.  Migrations chain from ``PRAGMA user_version``
 #: up to this value (see :meth:`StateDB._migrate`).
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 #: Heartbeat staleness threshold (seconds) beyond which a held run lock is
 #: considered reclaimable.  The heartbeat thread refreshes every 15s
@@ -109,6 +110,21 @@ CREATE TABLE IF NOT EXISTS scene_state(
     processed_at                TEXT,
     source_metadata_fingerprint TEXT,
     current_tag_ids_json        TEXT
+);
+
+-- Per-scene assignment-ownership ledger (D21) -------------------------------
+-- Records which tag ASSIGNMENTS the curator manages for a scene.  Identity is
+-- (scene_id, tag_id); tag_name is display/audit only.  The ledger ships EMPTY
+-- on migration: every pre-existing assignment is treated as external and is
+-- therefore preserved (conservative migration -- provenance of legacy writes
+-- cannot be established reliably).
+CREATE TABLE IF NOT EXISTS scene_managed_tags(
+    scene_id         INTEGER NOT NULL,
+    tag_id           TEXT    NOT NULL,
+    tag_name         TEXT,
+    acquired_at      TEXT,
+    acquired_run_id  TEXT,
+    PRIMARY KEY (scene_id, tag_id)
 );
 
 -- Current successful provider raw tags -------------------------------------
@@ -186,6 +202,13 @@ CREATE TABLE IF NOT EXISTS mutations(
     -- v3 (Milestone 2): scene-metadata enrichment journaling for rollback.
     old_metadata_json     TEXT,
     new_metadata_json     TEXT,
+    -- v5 (D21): intended ownership transition, journaled as 'pending'
+    -- BEFORE the sceneUpdate so a crash between the Stash write and the
+    -- local ledger commit can be reconciled (see Journal).
+    old_managed_ids_json  TEXT,
+    new_managed_ids_json  TEXT,
+    ledger_mode           TEXT,
+    revert_reason         TEXT,
     created_at            TEXT,
     applied_at            TEXT,
     reverted_at           TEXT,
@@ -213,6 +236,14 @@ CREATE TABLE IF NOT EXISTS dry_run_proposals(
     -- v2 (Milestone 1): scene-metadata enrichment (fill-empty) proposals.
     proposed_metadata_json   TEXT,
     applied_metadata_json    TEXT,
+    -- v5 (D21): ownership contract of the proposal.  ownership_mode drives
+    -- the execute-time ledger transition ('replace' authoritative /
+    -- 'acquire' additive); managed_fp is the ledger fingerprint baseline
+    -- (a mismatch at execute skips the scene as a conflict);
+    -- ownership_reasons_json explains preserved/added/removed assignments.
+    ownership_mode           TEXT,
+    managed_fp               TEXT,
+    ownership_reasons_json   TEXT,
     PRIMARY KEY (proposed_run_id, scene_id)
 );
 
@@ -299,6 +330,8 @@ CREATE INDEX IF NOT EXISTS idx_mutations_reverted
     ON mutations(reverted_at);
 CREATE INDEX IF NOT EXISTS idx_scene_state_rules_sha
     ON scene_state(rules_sha);
+CREATE INDEX IF NOT EXISTS idx_scene_managed_tags_tag
+    ON scene_managed_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_scene_raw_tags_current_tag
     ON scene_raw_tags_current(raw_tag);
 CREATE INDEX IF NOT EXISTS idx_dry_run_proposals_status
@@ -560,6 +593,59 @@ class StateDB:
                 )
             self._set_user_version(4)
             current = 4
+        # Migration 4 -> 5: assignment-ownership ledger (D21).  Creates the
+        # ``scene_managed_tags`` table and adds the ownership columns to
+        # ``dry_run_proposals`` + ``mutations``.  Deliberately NO backfill:
+        # existing scenes have no reliable assignment provenance, so the
+        # ledger starts EMPTY and every legacy assignment is preserved as
+        # external.  Stale legacy generated tags therefore linger until
+        # separately reviewed -- the conservative direction by design.
+        if current < 5:
+            proposal_cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(dry_run_proposals)"
+                ).fetchall()
+            }
+            mutation_cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(mutations)"
+                ).fetchall()
+            }
+            with self._txn():
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS scene_managed_tags("
+                    "    scene_id         INTEGER NOT NULL,"
+                    "    tag_id           TEXT    NOT NULL,"
+                    "    tag_name         TEXT,"
+                    "    acquired_at      TEXT,"
+                    "    acquired_run_id  TEXT,"
+                    "    PRIMARY KEY (scene_id, tag_id)"
+                    ")"
+                )
+                for col in ("ownership_mode", "managed_fp",
+                            "ownership_reasons_json"):
+                    if col not in proposal_cols:
+                        self._conn.execute(
+                            f"ALTER TABLE dry_run_proposals ADD COLUMN {col} TEXT"
+                        )
+                for col in ("old_managed_ids_json", "new_managed_ids_json",
+                            "ledger_mode", "revert_reason"):
+                    if col not in mutation_cols:
+                        self._conn.execute(
+                            f"ALTER TABLE mutations ADD COLUMN {col} TEXT"
+                        )
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_scene_managed_tags_tag "
+                    "ON scene_managed_tags(tag_id)"
+                )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
+                    ("user_version", "5"),
+                )
+            self._set_user_version(5)
+            current = 5
 
     # -- transactions -------------------------------------------------------
 
@@ -1007,6 +1093,8 @@ class StateDB:
 
         * ``scene_state`` row (drives ``stale_rules`` / ``failed``);
         * ``scene_raw_tags_current`` rows (drive ``affected_by_mapping``);
+        * ``scene_managed_tags`` rows (the D21 ownership ledger -- the scene
+          no longer exists, so its assignments cannot be managed);
         * still-``proposed`` ``dry_run_proposals`` rows are expired as
           ``skipped(scene_missing)`` instead of deleted (they are audit
           history once terminal).
@@ -1020,6 +1108,10 @@ class StateDB:
             )
             self._conn.execute(
                 "DELETE FROM scene_raw_tags_current WHERE scene_id = ?",
+                (scene_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM scene_managed_tags WHERE scene_id = ?",
                 (scene_id,),
             )
             self._conn.execute(
@@ -1083,6 +1175,78 @@ class StateDB:
                     source_metadata_fingerprint,
                     current_tag_ids_json,
                 ),
+            )
+
+    # ------------------------------------------------------------------
+    # Assignment-ownership ledger (D21)
+    # ------------------------------------------------------------------
+
+    def managed_tag_ids(self, scene_id: int) -> list[str]:
+        """Return the curator-managed tag ids for ``scene_id`` (sorted).
+
+        An empty list means every currently-attached assignment on the scene
+        is external (either never processed, or processed only by pre-D21
+        builds whose writes cannot be attributed reliably).
+        """
+        rows = self._conn.execute(
+            "SELECT tag_id FROM scene_managed_tags WHERE scene_id = ?",
+            (scene_id,),
+        ).fetchall()
+        return sorted({str(r["tag_id"]) for r in rows})
+
+    def apply_ledger_transition(
+        self,
+        scene_id: int,
+        run_id: str,
+        mode: str,
+        entries: Iterable[tuple[str, "str | None"]],
+    ) -> None:
+        """Apply one ownership transition to the ledger, atomically.
+
+        ``mode='replace'`` (authoritative rebuild): the scene's ledger rows
+        become exactly ``entries`` -- still-supported managed assignments are
+        re-supplied by the caller, stale ones disappear, and newly-acquired
+        assignments appear.  ``mode='acquire'`` (additive phase): ``entries``
+        are unioned in via ``INSERT OR IGNORE``; existing rows -- including
+        ones owned by other phases -- are never removed or overwritten.
+
+        ``entries`` is an iterable of ``(tag_id, tag_name)``; the name is
+        display/audit only, never identity.
+        """
+        normalized = sorted({(str(tid), name) for tid, name in entries})
+        with self._txn():
+            self._apply_ledger_transition_locked(
+                scene_id, run_id, mode, normalized
+            )
+
+    def _apply_ledger_transition_locked(
+        self,
+        scene_id: int,
+        run_id: str,
+        mode: str,
+        normalized: "list[tuple[str, str | None]]",
+    ) -> None:
+        """Ledger write for an ALREADY-OPEN transaction (see the public method).
+
+        Callers holding a ``_txn()`` (e.g. the Journal's atomic
+        finalize-pending path) use this to fold the ledger write into their
+        transaction; everyone else goes through :meth:`apply_ledger_transition`.
+        """
+        now = _now_iso()
+        if mode == "replace":
+            self._conn.execute(
+                "DELETE FROM scene_managed_tags WHERE scene_id = ?",
+                (scene_id,),
+            )
+        if normalized:
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO scene_managed_tags "
+                "(scene_id, tag_id, tag_name, acquired_at, acquired_run_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    (scene_id, tid, name, now, run_id)
+                    for tid, name in normalized
+                ],
             )
 
     def replace_scene_raw_tags_current(

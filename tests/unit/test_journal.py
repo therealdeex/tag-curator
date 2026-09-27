@@ -127,3 +127,79 @@ class TestPerPhaseRunIds:
         _record(journal, "run-1", 101)
         with pytest.raises(sqlite3.IntegrityError):
             _record(journal, "run-1", 101)
+
+
+# ---------------------------------------------------------------------------
+# Pending-intent lifecycle (D21)
+# ---------------------------------------------------------------------------
+
+
+class TestPendingLifecycle:
+    def test_finalize_marks_applied_and_writes_ledger(self, journal: Journal) -> None:
+        journal.record_pending_mutation(
+            run_id="run-1", scene_id=5,
+            old_tag_ids=["1"], new_tag_ids=["1", "2"],
+            raw_tags=[], rules_sha="sha",
+            old_managed_ids=["1"],
+            new_managed=[("1", "A"), ("2", "B")],
+            ledger_mode="replace",
+        )
+        assert len(list(journal.pending_mutations())) == 1
+        assert journal.finalize_pending_mutation("run-1", 5) is True
+        row = journal._db.connection.execute(
+            "SELECT status, applied_at FROM mutations "
+            "WHERE run_id = 'run-1' AND scene_id = 5"
+        ).fetchone()
+        assert row["status"] == "applied"
+        assert row["applied_at"] is not None
+        assert journal._db.managed_tag_ids(5) == ["1", "2"]
+        assert list(journal.pending_mutations()) == []
+        # Finalize is idempotent once applied.
+        assert journal.finalize_pending_mutation("run-1", 5) is False
+
+    def test_discard_deletes_intent_and_leaves_ledger_alone(
+        self, journal: Journal,
+    ) -> None:
+        journal.record_pending_mutation(
+            run_id="run-1", scene_id=5, old_tag_ids=[], new_tag_ids=["9"],
+            raw_tags=[], rules_sha="sha",
+            new_managed=[("9", "X")], ledger_mode="acquire",
+        )
+        journal.discard_pending_mutation("run-1", 5)
+        assert list(journal.pending_mutations()) == []
+        n = journal._db.connection.execute(
+            "SELECT COUNT(*) FROM mutations WHERE run_id = 'run-1'"
+        ).fetchone()[0]
+        assert n == 0
+        assert journal._db.managed_tag_ids(5) == []
+
+    def test_revert_marks_row_without_applying_ledger(
+        self, journal: Journal,
+    ) -> None:
+        journal.record_pending_mutation(
+            run_id="run-1", scene_id=5, old_tag_ids=[], new_tag_ids=["9"],
+            raw_tags=[], rules_sha="sha",
+            new_managed=[("9", "X")], ledger_mode="replace",
+        )
+        journal.revert_pending_mutation(
+            "run-1", 5, by_run_id="run-2", reason="crash reconciliation: test",
+        )
+        row = journal._db.connection.execute(
+            "SELECT status, revert_reason, reverted_by_run_id FROM mutations "
+            "WHERE run_id = 'run-1' AND scene_id = 5"
+        ).fetchone()
+        assert row["status"] == "reverted"
+        assert row["revert_reason"] == "crash reconciliation: test"
+        assert row["reverted_by_run_id"] == "run-2"
+        assert journal._db.managed_tag_ids(5) == [], "no adoption on revert"
+
+    def test_acquire_mode_unions_existing_ledger(self, journal: Journal) -> None:
+        journal._db.apply_ledger_transition(5, "seed", "acquire", [("1", "A")])
+        journal.record_pending_mutation(
+            run_id="run-1", scene_id=5, old_tag_ids=["1"], new_tag_ids=["1", "2"],
+            raw_tags=[], rules_sha="sha",
+            old_managed_ids=["1"], new_managed=[("2", "B")],
+            ledger_mode="acquire",
+        )
+        journal.finalize_pending_mutation("run-1", 5)
+        assert journal._db.managed_tag_ids(5) == ["1", "2"]

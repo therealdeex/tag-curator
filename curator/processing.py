@@ -1,10 +1,10 @@
 """Processing engine for the stash-tag-curator plugin (T17).
 
 Implements the per-scene optimistic-safety rebuild pipeline (D10), the D2
-per-status replacement-policy table, the narrow ethnicity override (D9), the
-finite derived-tag pre-pass (D6), the dry-run -> execute contract (D10),
-the SIGKILL-safe mutation state machine (D16) and protected-tag preservation
-(D18).
+per-status replacement-policy table, the narrow ethnicity override (D9),
+the finite derived-tag pre-pass (D6), the dry-run -> execute contract (D10),
+the SIGKILL-safe mutation state machine (D16), protected-tag preservation
+(D18) and assignment-ownership preservation (D21).
 
 Design contracts enforced here:
 
@@ -37,6 +37,21 @@ Design contracts enforced here:
   match ``protected.tag_names`` or start with a ``protected.prefixes`` entry
   (default ``MANUAL:``) are added to the proposed set unless
   ``preserve_protected="false"``.
+* **Assignment ownership** (D21): the curator removes only tag ASSIGNMENTS
+  it has recorded itself managing (the ``scene_managed_tags`` ledger,
+  per scene + tag id).  An authoritative rebuild proposes
+  ``desired = (current - managed) ∪ derived ∪ protected``: external
+  assignments -- including canonical-taxonomy tags attached by hand or by
+  pre-D21 builds -- survive every rebuild.  Additive phases (standalone
+  enrichment, PRESERVE statuses) acquire ownership of what they add and
+  never retire anything.  Dictionary membership defines vocabulary, never
+  ownership of an assignment.  Ownership transitions are journaled as
+  'pending' ``mutations`` rows before each ``sceneUpdate`` and committed
+  atomically with the applied status after it; crashed pendings are
+  reconciled (adopted or reverted) at the next execute.  Known limit: an
+  assignment the curator already manages cannot be distinguished from the
+  same tag the user also wants kept manually -- retaining it against future
+  derivation changes requires explicit protection (D18).
 * **No parallelism** (D6): scenes are processed strictly sequentially.
 * **No cancel poll** (D5): kill is the path -- there is no cancellation flag
   to poll; the SQLite journal + heartbeat is the recovery substrate.
@@ -49,7 +64,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -246,6 +261,8 @@ class ExecuteReport:
             ``scene_missing``).
         mutations_applied: count of ``sceneUpdate`` calls that succeeded.
         conflicts: list of ``{"scene_id": ..., "reason": ...}`` entries.
+        reconciliation: D21 crash-recovery summary for pending intents left
+            by earlier crashed runs (``{"adopted": n, "reverted": m}``).
         aborted: True if the entire execute aborted (global revalidation fail).
         abort_reason: explanation when ``aborted`` is True.
     """
@@ -256,11 +273,11 @@ class ExecuteReport:
         run_id: str,
         proposed_run_id: str,
         scenes_processed: int = 0,
-        scenes_skipped: Mapping[str, int] | None = None,
+        scenes_skipped: "Mapping[str, int] | None" = None,
         mutations_applied: int = 0,
-        conflicts: Sequence[Mapping[str, Any]] | None = None,
+        conflicts: "Sequence[Mapping[str, Any]] | None" = None,
         aborted: bool = False,
-        abort_reason: str | None = None,
+        abort_reason: "str | None" = None,
     ) -> None:
         self.run_id = run_id
         self.proposed_run_id = proposed_run_id
@@ -268,6 +285,7 @@ class ExecuteReport:
         self.scenes_skipped: dict[str, int] = dict(scenes_skipped or {})
         self.mutations_applied = mutations_applied
         self.conflicts: list[dict[str, Any]] = [dict(c) for c in (conflicts or [])]
+        self.reconciliation: dict[str, int] = {}
         self.aborted = aborted
         self.abort_reason = abort_reason
 
@@ -279,6 +297,7 @@ class ExecuteReport:
             "scenes_skipped": dict(self.scenes_skipped),
             "mutations_applied": self.mutations_applied,
             "conflicts": list(self.conflicts),
+            "reconciliation": dict(self.reconciliation),
             "aborted": self.aborted,
             "abort_reason": self.abort_reason,
         }
@@ -1035,10 +1054,11 @@ class RebuildEngine:
         provider_result: ProviderResult,
         *,
         preserve_existing: bool = False,
-    ) -> tuple[list[str], list[str], list[str]]:
+        managed_ids: "Collection[str]" = (),
+    ) -> tuple[list[str], list[str], list[str], dict[str, list[str]]]:
         """Compute the proposed tag-name set for one scene.
 
-        Returns ``(proposed_names, unmapped_raw, markers)``.
+        Returns ``(proposed_names, unmapped_raw, markers, ownership_reasons)``.
 
         For ``UNIQUE_MATCH`` the computed set is the canonical mapped names
         (after the narrow ethnicity override) + enrichment + markers.  In
@@ -1049,9 +1069,21 @@ class RebuildEngine:
         For every PRESERVE status the computed set is the scene's currently-
         attached tag names + markers (D2/Issue 8 -- marker-only additions go
         through ``sceneUpdate`` full-replacement of the union).
+
+        D21 assignment preservation: an authoritative rebuild additionally
+        preserves every currently-attached tag the ownership ledger does NOT
+        manage (``managed_ids``) -- external assignments survive; only
+        managed ones may be replaced by the recomputed set.  Additive paths
+        (``preserve_existing`` / PRESERVE statuses) preserve all attached
+        tags as before.
+
+        ``ownership_reasons`` explains the decision per attached/derived tag:
+        ``added`` (curator will attach), ``removed_managed`` (managed, no
+        longer derived), ``preserved_external``, ``preserved_protected``.
         """
         status = provider_result.status
         current_name_to_id = _scene_tag_name_to_id(scene)
+        managed = {str(t) for t in managed_ids}
 
         markers = self._markers_for_status(
             status, has_unmapped=False  # patched below for UNIQUE_MATCH
@@ -1065,31 +1097,42 @@ class RebuildEngine:
             markers = self._markers_for_status(status, has_unmapped=bool(unmapped))
             proposed: list[str] = []
             seen: set[str] = set()
-            if preserve_existing:
-                for tag in scene.get("tags") or []:
-                    if not isinstance(tag, Mapping):
-                        continue
-                    existing_name = tag.get("name")
-                    if (
-                        isinstance(existing_name, str)
-                        and existing_name
-                        and existing_name not in seen
-                    ):
-                        seen.add(existing_name)
-                        proposed.append(existing_name)
+            # D21: preserve externally-assigned tags.  ``preserve_existing``
+            # (enrich_only) keeps ALL attached tags; an authoritative rebuild
+            # keeps only the ones the ledger does not manage.  Original-cased
+            # names are used so the dry-run report stays readable.  ``seen``
+            # holds casefolded keys so the protected supplement (which yields
+            # casefolded names) cannot duplicate a preserved original.
+            for tag in scene.get("tags") or []:
+                if not isinstance(tag, Mapping):
+                    continue
+                existing_name = tag.get("name")
+                existing_id = tag.get("id")
+                if not isinstance(existing_name, str) or not existing_name:
+                    continue
+                external = existing_id is None or str(existing_id) not in managed
+                if (preserve_existing or external) and existing_name.casefold() not in seen:
+                    seen.add(existing_name.casefold())
+                    proposed.append(existing_name)
             for name in canonical + enrichment + markers:
-                if name not in seen:
-                    seen.add(name)
+                if name.casefold() not in seen:
+                    seen.add(name.casefold())
                     proposed.append(name)
             # D18: protected-tag preservation -- add currently-attached
             # protected tag NAMES so they survive full-replacement.
             for name in self._protected_supplement(current_name_to_id):
                 # ``name`` is casefolded; we can't recover the original case,
                 # but resolution is case-insensitive so this is consistent.
-                if name not in seen:
-                    seen.add(name)
+                if name.casefold() not in seen:
+                    seen.add(name.casefold())
                     proposed.append(name)
-            return proposed, unmapped, markers
+            reasons = self._ownership_reasons(
+                scene,
+                proposed,
+                canonical + enrichment + markers,
+                managed=managed,
+            )
+            return proposed, unmapped, markers, reasons
 
         # PRESERVE statuses -- proposed = current tag names + markers.
         proposed: list[str] = []
@@ -1117,8 +1160,73 @@ class RebuildEngine:
                 if self._is_protected_name(name_cf) and name_cf not in seen:
                     seen.add(name_cf)
                     proposed.append(name_cf)
-        # PRESERVE statuses contribute no unmapped signal.
-        return proposed, [], markers
+        # PRESERVE statuses are additive: everything attached is preserved;
+        # only markers can be added.  Nothing is ever removed, so there are
+        # no ``removed_managed`` entries regardless of the ledger.
+        reasons = self._ownership_reasons(
+            scene, proposed, markers, managed=managed, additive=True,
+        )
+        return proposed, [], markers, reasons
+
+    def _ownership_reasons(
+        self,
+        scene: Mapping[str, Any],
+        proposed_names: Sequence[str],
+        derived_names: Sequence[str],
+        *,
+        managed: "Collection[str]",
+        additive: bool = False,
+    ) -> dict[str, list[str]]:
+        """Classify every attached/derived tag into a D21 reason bucket.
+
+        Buckets (all original-cased names, de-duplicated):
+
+        * ``added``               -- derived, not currently attached.
+        * ``removed_managed``     -- attached + managed + absent from the
+          proposal (only possible on an authoritative rebuild; additive
+          paths never remove).
+        * ``preserved_external``  -- attached, not ledger-managed, not
+          protected; survives because the curator does not own it.
+        * ``preserved_protected`` -- attached and protected (D18); survives
+          the protection override regardless of ownership.
+        """
+        reasons: dict[str, list[str]] = {
+            "added": [],
+            "removed_managed": [],
+            "preserved_external": [],
+            "preserved_protected": [],
+        }
+        proposed_cf = {n.casefold() for n in proposed_names}
+        seen_attached: set[str] = set()
+        for t in scene.get("tags") or []:
+            if not isinstance(t, Mapping):
+                continue
+            name = t.get("name")
+            tid = t.get("id")
+            if not isinstance(name, str) or not name or name.casefold() in seen_attached:
+                continue
+            seen_attached.add(name.casefold())
+            name_cf = name.casefold()
+            is_protected = self._is_protected_name(name_cf)
+            is_managed = tid is not None and str(tid) in managed
+            if is_protected and self._preserve_protected():
+                reasons["preserved_protected"].append(name)
+            elif is_managed and not additive and name_cf not in proposed_cf:
+                reasons["removed_managed"].append(name)
+            elif not is_managed:
+                # External assignment (a protected name with preservation
+                # disabled survives here too -- external preservation is
+                # ownership-driven and does not depend on D18).
+                reasons["preserved_external"].append(name)
+        for name in derived_names:
+            if (
+                isinstance(name, str)
+                and name
+                and name.casefold() not in seen_attached
+                and name not in reasons["added"]
+            ):
+                reasons["added"].append(name)
+        return reasons
 
     # ------------------------------------------------------------------
     # Run helpers
@@ -1345,43 +1453,136 @@ class RebuildEngine:
             )
 
     # ------------------------------------------------------------------
-    # Mutation primitives (D16)
+    # Mutation primitives (D16) + ownership transitions (D21)
     # ------------------------------------------------------------------
 
-    def _record_mutation_history(
+    def _ledger_transition_plan(
         self,
-        run_id: str,
-        scene_id: int,
-        old_tag_ids: Sequence[str],
-        new_tag_ids: Sequence[str],
-        old_tag_names: Sequence[str],
-        new_tag_names: Sequence[str],
-        raw_tags_payload: Sequence[Mapping[str, Any]],
-        *,
-        old_metadata: "dict[str, Any] | None" = None,
-        new_metadata: "dict[str, Any] | None" = None,
-    ) -> None:
-        """Record a SUCCESSFUL mutation as history (post-write).
+        proposal: Mapping[str, Any],
+        proposed_ids: Sequence[str],
+        current_tag_ids: Sequence[str],
+        managed_now: Sequence[str],
+        scene_name_to_id: Mapping[str, str],
+    ) -> tuple[str, list[tuple[str, "str | None"]]]:
+        """Compute the ownership transition for one execute-time write.
 
-        One row per (run_id, scene_id), written after the ``sceneUpdate``
-        confirms success.  There is no pre-write pending state: an ambiguous
-        scene after a crash is simply reprocessed on the next run (the
-        pipeline is idempotent), so the journal is pure history -- it powers
-        the run-detail diff view and audits.
+        Returns ``(ledger_mode, new_managed_entries)`` where entries carry
+        ``(tag_id, tag_name)`` pairs for the ledger/audit.
+
+        * ``replace`` (authoritative rebuild): the ledger becomes exactly
+          ``(M ∩ desired) ∪ (desired − C)`` -- still-derived managed
+          assignments are retained, curator-added ones are acquired, stale
+          managed ones are retired, and pre-existing external assignments are
+          NEVER adopted (they are in ``desired`` but already in ``C``).
+        * ``acquire`` (additive phase): only the newly-added ids
+          (``desired − C``) are unioned in; existing rows -- including other
+          phases' -- are untouched.
         """
-        self._journal.record_mutation(
-            run_id=run_id,
-            scene_id=scene_id,
-            old_tag_ids=list(old_tag_ids),
-            new_tag_ids=list(new_tag_ids),
-            status="applied",
-            raw_tags=[dict(r) for r in raw_tags_payload],
-            rules_sha=self._rules_sha,
-            old_tag_names=list(old_tag_names),
-            new_tag_names=list(new_tag_names),
-            old_metadata=old_metadata,
-            new_metadata=new_metadata,
+        mode = proposal.get("ownership_mode") or "acquire"
+        desired = set(proposed_ids)
+        current = set(current_tag_ids)
+        managed = set(managed_now)
+        added = desired - current
+        if mode == "replace":
+            new_managed = (managed & desired) | added
+        else:
+            new_managed = managed | added
+        # Recover display names: invert the scene's name->id map, then fall
+        # back to any proposed name that resolves to the id.
+        id_to_name: dict[str, str] = {
+            str(tid): name for name, tid in scene_name_to_id.items()
+        }
+        entries: list[tuple[str, "str | None"]] = []
+        for tid in sorted(new_managed):
+            entries.append((tid, id_to_name.get(tid)))
+        return mode, entries
+
+    def _apply_noop_ledger_update(
+        self,
+        scene_id: int,
+        run_id: str,
+        proposal: Mapping[str, Any],
+        proposed_ids: Sequence[str],
+        current_tag_ids: Sequence[str],
+        managed_now: Sequence[str],
+    ) -> None:
+        """Ledger bookkeeping for the idempotent no-op path (D21).
+
+        No Stash write happens, so there is nothing to journal; but an
+        authoritative proposal whose desired set already matches the scene
+        should still retire ledger entries whose tags are no longer attached
+        (stale managed rows from manual tag removals in Stash).  Additive
+        proposals acquire nothing new here by construction (``desired ==
+        current``).  The write is skipped entirely when the ledger would not
+        change.
+        """
+        mode = proposal.get("ownership_mode") or "acquire"
+        if mode != "replace":
+            return
+        managed = set(managed_now)
+        desired = set(proposed_ids)
+        current = set(current_tag_ids)
+        new_managed = (managed & desired) | (desired - current)
+        if new_managed == managed:
+            return
+        self._state.apply_ledger_transition(
+            scene_id, run_id, "replace", [(tid, None) for tid in sorted(new_managed)]
         )
+
+    def _reconcile_pending_mutations(
+        self, actual_run_id: str, report: ExecuteReport
+    ) -> None:
+        """Reconcile crashed 'pending' intents before executing (D21).
+
+        For every pending row left by an earlier killed run: probe the scene
+        in Stash and compare its current tag ids to the intended set.
+
+        * match        -> the Stash write landed; adopt the row's ownership
+          transition (finalize) so the curator knows it owns those tags.
+        * no match     -> the write never landed (or was edited afterwards);
+          revert the row WITHOUT applying its ownership transition.
+        * scene gone   -> revert (the ghost purge handles local state).
+
+        Per-row failures never abort the execute: the row stays pending and
+        is retried by the next run.
+        """
+        try:
+            rows = list(self._journal.pending_mutations())
+        except Exception:
+            return
+        for row in rows:
+            try:
+                scene_id = int(row["scene_id"])
+                scene = self._find_scene_by_id(scene_id)
+                if scene is None:
+                    self._journal.revert_pending_mutation(
+                        row["run_id"], scene_id,
+                        by_run_id=actual_run_id,
+                        reason="crash reconciliation: scene missing",
+                    )
+                    report.reconciliation["reverted"] = (
+                        report.reconciliation.get("reverted", 0) + 1
+                    )
+                    continue
+                intended = json.loads(row["new_tag_ids_json"] or "[]")
+                intended_ids = sorted({str(t) for t in intended})
+                if _scene_tag_ids(scene) == intended_ids:
+                    self._journal.finalize_pending_mutation(row["run_id"], scene_id)
+                    report.reconciliation["adopted"] = (
+                        report.reconciliation.get("adopted", 0) + 1
+                    )
+                else:
+                    self._journal.revert_pending_mutation(
+                        row["run_id"], scene_id,
+                        by_run_id=actual_run_id,
+                        reason="crash reconciliation: intended tag set not present",
+                    )
+                    report.reconciliation["reverted"] = (
+                        report.reconciliation.get("reverted", 0) + 1
+                    )
+            except Exception:
+                # Transport/parse trouble on this row -- leave it pending.
+                continue
 
     def _scene_update(
         self,
@@ -1536,9 +1737,24 @@ class RebuildEngine:
                 )
                 continue
 
-            proposed_names, unmapped, markers = self._compute_proposed_names(
-                scene, result, preserve_existing=scope.enrich_only
+            # D21: read the ownership ledger baseline and decide authority.
+            # A UNIQUE_MATCH from scrape (or local_audit) is authoritative
+            # ('replace'); enrich_only synthesises UNIQUE_MATCH but is an
+            # additive phase ('acquire'), as are all PRESERVE statuses.
+            managed_now = self._state.managed_tag_ids(sid)
+            authoritative = (
+                result.status == UNIQUE_MATCH and not scope.enrich_only
             )
+            (
+                proposed_names, unmapped, markers, ownership_reasons,
+            ) = self._compute_proposed_names(
+                scene,
+                result,
+                preserve_existing=scope.enrich_only,
+                managed_ids=managed_now,
+            )
+            managed_fp = _fingerprint_tag_ids(managed_now)
+            ownership_mode = "replace" if authoritative else "acquire"
             scene_state_fp = self._scene_state_fp(scene)
             raw_tags_payload = [
                 {"value": getattr(t, "value", ""),
@@ -1584,8 +1800,9 @@ class RebuildEngine:
                     " scene_state_fp, proposed_tag_names_json, "
                     " proposed_marker_names_json, provider_match_status, "
                     " raw_tags_json, created_at, expires_at, status, "
-                    " proposed_metadata_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " proposed_metadata_json, "
+                    " ownership_mode, managed_fp, ownership_reasons_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         proposed_run_id,
                         sid,
@@ -1600,6 +1817,9 @@ class RebuildEngine:
                         expires_at,
                         "proposed",
                         meta_json,
+                        ownership_mode,
+                        managed_fp,
+                        json.dumps(ownership_reasons),
                     ),
                 )
             report.proposals_written += 1
@@ -1725,6 +1945,11 @@ class RebuildEngine:
             )
             return report
 
+        # D21 crash recovery FIRST: pending intents from earlier crashed
+        # runs are reconciled before any proposal executes, so ownership
+        # decisions below read an up-to-date ledger.
+        self._reconcile_pending_mutations(actual_run_id, report)
+
         total = len(proposals)
         done = 0
         self._emit_progress_scaled(0, max(total, 1), floor=progress_floor, cap=progress_cap)
@@ -1803,16 +2028,48 @@ class RebuildEngine:
                 )
                 continue
 
+            # Per-scene revalidation (d): ownership baseline (D21).  The
+            # proposal's desired set was computed against the ledger state
+            # at dry-run time; if another run revised ownership in between,
+            # the preserved-external computation is stale -> conflict skip.
+            managed_now = self._state.managed_tag_ids(sid)
+            expected_managed_fp = proposal.get("managed_fp") or ""
+            if (
+                expected_managed_fp
+                and _fingerprint_tag_ids(managed_now) != expected_managed_fp
+            ):
+                report.scenes_skipped["conflict"] = (
+                    report.scenes_skipped.get("conflict", 0) + 1
+                )
+                report.conflicts.append({
+                    "scene_id": sid_str,
+                    "reason": "ownership ledger changed since dry-run",
+                    "expected_managed_fp": expected_managed_fp,
+                    "current_managed_fp": _fingerprint_tag_ids(managed_now),
+                })
+                self._mark_proposal_status(
+                    proposed_run_id, sid, "conflicted",
+                    skip_reason="managed_fp_mismatch",
+                )
+                continue
+
             # Per-scene revalidation (c): re-resolve proposed names -> ids.
             # Tag names that match currently-attached tags reuse the scene's
-            # existing ids (handles PRESERVE-status proposals where the
-            # current tags are carried forward by name).
+            # existing ids (handles PRESERVE-status proposals and D21
+            # preserved-external names carried forward by name).  Distinct
+            # names MAY resolve to the same id (an attached external name and
+            # its canonical spelling are the same tag) -- that is fine; only
+            # a name that resolves to NOTHING is a missing tag.
             proposed_names = json.loads(proposal["proposed_tag_names_json"] or "[]")
             scene_name_to_id = _scene_tag_name_to_id(scene)
-            proposed_ids = self._resolve_tag_ids_with_fallback(
-                proposed_names, scene_name_to_id
-            )
-            if len(proposed_ids) != len(set(proposed_names)):
+            unresolved = [
+                name for name in proposed_names
+                if (
+                    self._resolve_tag_id(name) is None
+                    and scene_name_to_id.get(str(name).casefold()) is None
+                )
+            ]
+            if unresolved:
                 # A name did not resolve (tag was deleted/renamed between
                 # dry-run and execute) -> per-scene skip (D10).
                 report.scenes_skipped["missing_tags"] = (
@@ -1822,6 +2079,9 @@ class RebuildEngine:
                     proposed_run_id, sid, "skipped", skip_reason="missing_tags",
                 )
                 continue
+            proposed_ids = self._resolve_tag_ids_with_fallback(
+                proposed_names, scene_name_to_id
+            )
             # Idempotency: current == proposed -> no tag mutation needed (D3).
             # BUT metadata enrichment may still have eligible fields, so we
             # can't skip the scene entirely if metadata is pending.
@@ -1895,6 +2155,14 @@ class RebuildEngine:
                 report.scenes_skipped["idempotent_noop"] = (
                     report.scenes_skipped.get("idempotent_noop", 0) + 1
                 )
+                # D21: no Stash write happens, but authoritative proposals
+                # still tighten the ledger -- stale managed entries whose
+                # tags are no longer attached are retired; nothing external
+                # is touched.
+                self._apply_noop_ledger_update(
+                    sid, actual_run_id, proposal, proposed_ids,
+                    current_tag_ids, managed_now,
+                )
                 self._mark_proposal_status(
                     proposed_run_id, sid, "applied",
                     skip_reason="idempotent_noop",
@@ -1935,6 +2203,30 @@ class RebuildEngine:
                 if name  # proposed order preserved for the diff view
             ]
 
+            # D21: compute the intended ownership transition and journal it
+            # as a PENDING intent BEFORE the Stash write.  If the process
+            # dies between a successful sceneUpdate and the local commit,
+            # the next execute's reconciliation adopts it from this row.
+            ledger_mode, new_managed_entries = self._ledger_transition_plan(
+                proposal, proposed_ids, current_tag_ids, managed_now,
+                scene_name_to_id,
+            )
+            self._journal.record_pending_mutation(
+                run_id=actual_run_id,
+                scene_id=sid,
+                old_tag_ids=list(current_tag_ids),
+                new_tag_ids=list(proposed_ids),
+                raw_tags=[dict(r) for r in raw_tags_payload],
+                rules_sha=self._rules_sha,
+                old_tag_names=list(old_tag_names),
+                new_tag_names=list(new_tag_names),
+                old_metadata=journal_old_meta,
+                new_metadata=journal_new_meta,
+                old_managed_ids=managed_now,
+                new_managed=new_managed_entries,
+                ledger_mode=ledger_mode,
+            )
+
             # MUTATE: sceneUpdate full-replacement + metadata fields.
             # If tags are idempotent, we still send them (full-replacement =
             # same set = no-op for tags) alongside the metadata fields.  This
@@ -1949,9 +2241,12 @@ class RebuildEngine:
                 # Ambiguous transport failure -- the mutation MAY have applied.
                 # Nothing is reconciled here: the scene's state is not marked
                 # successful, so the next run re-selects and re-derives it
-                # (idempotent full-replacement converges).  No journal row is
-                # written for failures.
+                # (idempotent full-replacement converges).  The pending intent
+                # is discarded: if the write landed anyway, its tags are
+                # treated as external (conservative -- preserved, never
+                # removed by later rebuilds).
                 mutation_ok = False
+                self._journal.discard_pending_mutation(actual_run_id, sid)
                 report.scenes_skipped["mutation_failure"] = (
                     report.scenes_skipped.get("mutation_failure", 0) + 1
                 )
@@ -1979,6 +2274,11 @@ class RebuildEngine:
                     self._store_applied_metadata(proposed_run_id, sid, failed_result)
                 continue
 
+            # Commit the intent in ONE transaction: mark the row applied AND
+            # write the ownership ledger (D21).  A crash before this point
+            # leaves the pending row for the next execute's reconciliation.
+            self._journal.finalize_pending_mutation(actual_run_id, sid)
+
             # Build + store the applied-metadata result blob.
             if proposed_meta:
                 eligible_for_result = reevaluate_diff_at_execute(proposed_meta, scene)
@@ -1988,18 +2288,6 @@ class RebuildEngine:
                 )
                 self._store_applied_metadata(proposed_run_id, sid, applied_meta_result)
 
-            # History: record the successful mutation (post-write).
-            self._record_mutation_history(
-                run_id=actual_run_id,
-                scene_id=sid,
-                old_tag_ids=current_tag_ids,
-                new_tag_ids=proposed_ids,
-                old_tag_names=old_tag_names,
-                new_tag_names=new_tag_names,
-                raw_tags_payload=raw_tags_payload,
-                old_metadata=journal_old_meta,
-                new_metadata=journal_new_meta,
-            )
             if not tags_idempotent:
                 report.mutations_applied += 1
             report.scenes_processed += 1
