@@ -8,6 +8,36 @@ schema).
 
 ## Unreleased
 
+- **Write-outcome classification corrected (D21 hardening).** Only an HTTP
+  auth failure (`GraphQLAuthError` — the request never reached GraphQL
+  execution) is treated as a definitive sceneUpdate rejection. Generic
+  `GraphQLError` is now classified AMBIGUOUS and keeps its pending intent:
+  the client raises it for malformed HTTP-success payloads (missing or
+  non-object `data`) and for responses carrying errors alongside partial
+  data, none of which establishes that the mutation failed to commit.
+  Previously a landed write followed by a malformed success response lost
+  its ownership evidence (the intent was closed as "rejected"); now it
+  reconciles at the next execute and the acquired assignment stays
+  retirable by later rule changes.
+- **Additive recovery baselines validated (D21 hardening).** Pending-intent
+  recovery now validates the recorded ownership baseline for BOTH modes,
+  not just `replace`. Historical acquire intents journal the full managed
+  set (baseline + additions), so replaying one against a changed ledger
+  could resurrect ownership newer work had deliberately retired. On a
+  mismatched or unknown baseline the transition is refused (row reverted,
+  reason recorded, landed tags stay external). New acquire intents also
+  journal only the actual acquisition delta — replay-safe by construction
+  — but baseline validation remains mandatory for every pending record.
+- **Preview completeness is explicit (D21 hardening).** `proposal_detail`
+  now reports change totals across the ENTIRE proposal set
+  (`changed_total`, `without_reasons`, `truncated`) and returns
+  changed scenes first, so the default 500-scene page can never hide a
+  change beyond its boundary. The UI only claims "no tag changes" on a
+  complete, matching, fully-reasoned set; truncated or legacy rows without
+  reason data render an explicit incompleteness notice instead of a false
+  zero-change reassurance, and the proposal snapshot is verified to belong
+  to the displayed preview (`run_history`/`run_detail` entries now carry
+  the run's `proposed_run_ids`) before its conclusions are shown.
 - **Ownership-contract enforcement (D21 hardening).** Execution now rejects
   any proposal lacking a complete ownership contract (`ownership_mode` of
   `replace`/`acquire` plus a `managed_fp` baseline) with a clear

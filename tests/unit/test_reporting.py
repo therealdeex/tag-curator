@@ -1438,3 +1438,156 @@ class TestOwnershipReasonReporting:
         assert data["proposed_run_id"] is None
         assert data["proposals"] == []
         assert data["total_proposals"] == 0
+
+    # -- Proposal-set completeness (preview must never lie) -------------
+
+    def _insert_proposal(
+        self,
+        conn: Any,
+        prop_id: str,
+        scene_id: int,
+        created: str,
+        reasons: "dict[str, list[str]] | None",
+        *,
+        mode: str = "replace",
+    ) -> None:
+        conn.execute(
+            "INSERT INTO dry_run_proposals "
+            "(proposed_run_id, scene_id, rules_sha, provider_fingerprint, "
+            " scene_state_fp, proposed_tag_names_json, "
+            " proposed_marker_names_json, provider_match_status, "
+            " raw_tags_json, created_at, expires_at, status, "
+            " ownership_mode, ownership_reasons_json) "
+            "VALUES (?, ?, 'abc', 'fp', 'x', '[]', '[]', 'UNIQUE_MATCH', "
+            " '[]', ?, '2026-09-29T00:00:00+00:00', 'proposed', ?, ?)",
+            (
+                prop_id,
+                scene_id,
+                created,
+                mode,
+                json.dumps(reasons) if reasons is not None else None,
+            ),
+        )
+
+    def test_proposal_detail_totals_cover_full_set_changed_first(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # 501 proposals: scenes 1-500 unchanged, scene 501 has a removal.
+        # The default 500-row page must NOT hide the change: totals cover
+        # the whole set and the changed scene is returned FIRST.
+        conn = state.connection
+        unchanged = {
+            "added": [], "removed_managed": [],
+            "preserved_external": ["Favorite"], "preserved_protected": [],
+        }
+        for scene_id in range(1, 501):
+            self._insert_proposal(
+                conn, "prop-1", scene_id,
+                "2026-09-27T00:00:00+00:00", unchanged,
+            )
+        self._insert_proposal(
+            conn, "prop-1", 501, "2026-09-27T00:00:00+00:00",
+            {
+                "added": [], "removed_managed": ["ACT: Old"],
+                "preserved_external": [], "preserved_protected": [],
+            },
+        )
+        conn.commit()
+
+        detail = engine.generate_proposal_detail("prop-1")
+        assert detail["total_proposals"] == 501
+        assert detail["changed_total"] == 1, "totals cover the FULL set"
+        assert detail["without_reasons"] == 0
+        assert detail["truncated"] is True
+        first = detail["proposals"][0]
+        assert first["scene_id"] == 501, "changed scenes are returned first"
+        assert first["removed_managed"] == ["ACT: Old"]
+
+    def test_proposal_detail_without_reasons_is_not_zero_change(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # Legacy rows without reason data mean "explanations unavailable",
+        # never "confirmed no change".
+        conn = state.connection
+        self._insert_proposal(
+            conn, "prop-1", 1, "2026-09-27T00:00:00+00:00",
+            {
+                "added": ["ACT: Blowjob"], "removed_managed": [],
+                "preserved_external": [], "preserved_protected": [],
+            },
+        )
+        self._insert_proposal(
+            conn, "prop-1", 2, "2026-09-27T00:00:00+00:00", None,
+        )
+        self._insert_proposal(
+            conn, "prop-1", 3, "2026-09-27T00:00:00+00:00", None,
+        )
+        conn.commit()
+        detail = engine.generate_proposal_detail("prop-1")
+        assert detail["total_proposals"] == 3
+        assert detail["changed_total"] == 1
+        assert detail["without_reasons"] == 2
+        assert detail["truncated"] is False
+
+    def test_proposal_detail_complete_unchanged_set_is_confirmable(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # A complete, fully-reasoned set with no additions/removals is the
+        # ONLY shape on which a zero-change claim is allowed.
+        conn = state.connection
+        unchanged = {
+            "added": [], "removed_managed": [],
+            "preserved_external": ["Favorite"], "preserved_protected": [],
+        }
+        for scene_id in (1, 2, 3):
+            self._insert_proposal(
+                conn, "prop-1", scene_id,
+                "2026-09-27T00:00:00+00:00", unchanged,
+            )
+        conn.commit()
+        detail = engine.generate_proposal_detail("prop-1")
+        assert detail["changed_total"] == 0
+        assert detail["without_reasons"] == 0
+        assert detail["truncated"] is False
+
+    def test_run_history_exposes_proposed_run_ids(
+        self, state: StateDB, engine: ReportEngine,
+    ) -> None:
+        # The UI needs to know WHICH proposal set a (preview) run produced
+        # so it can verify the snapshot it renders belongs to that preview.
+        totals = json.dumps({
+            "mode": "curate_library",
+            "scene_phases": {
+                "never_processed": {
+                    "dry_run": {"proposed_run_id": "prop-a", "proposals_written": 1},
+                },
+                "performer_enrichment": {
+                    "dry_run": {"proposed_run_id": "prop-b", "proposals_written": 2},
+                },
+            },
+        })
+        _insert_run(state.connection, "run-1", totals_json=totals)
+        history = engine.generate_run_history()
+        entry = next(r for r in history["runs"] if r["run_id"] == "run-1")
+        assert entry["proposed_run_ids"] == ["prop-a", "prop-b"]
+
+        detail = engine.generate_run_detail("run-1")
+        assert detail["run"]["proposed_run_ids"] == ["prop-a", "prop-b"]
+
+    def test_proposal_detail_snapshot_written_by_refresh(
+        self, tmp_ctx, rules: Rules,
+    ) -> None:
+        # Snapshot regeneration writes proposal_detail alongside the others,
+        # so the dashboard preview diff has data after every run/refresh.
+        from curator.main import _regenerate_snapshots
+
+        ctx, state, data_dir, plugin_dir = tmp_ctx
+        _regenerate_snapshots(ctx, rules, state)
+        auth = data_dir / "snapshots" / "proposal_detail.json"
+        mirror = plugin_dir / "assets" / "proposal_detail.json"
+        assert auth.exists()
+        assert mirror.exists()
+        data = json.loads(auth.read_text(encoding="utf-8"))
+        assert data["proposed_run_id"] is None
+        assert data["proposals"] == []
+        assert data["total_proposals"] == 0

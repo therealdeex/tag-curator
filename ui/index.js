@@ -1038,6 +1038,9 @@
     const run = props.run; // run_history entry
     const detail = props.detail; // run_detail snapshot payload
     const proposalDetail = props.proposalDetail; // proposal_detail snapshot
+    // The proposal-set ids the displayed (preview) run produced; used to
+    // verify the proposal snapshot actually belongs to THIS preview.
+    const proposalRunIds = props.proposalRunIds || [];
     const needsDecision = props.needsDecision;
     const onDismiss = props.onDismiss;
     const onGotoDictionary = props.onGotoDictionary;
@@ -1130,51 +1133,101 @@
     }
 
     // Preview diff rows: what WOULD change, with ownership reasons, from
-    // the proposal_detail snapshot (latest proposal set).
+    // the proposal_detail snapshot.  The snapshot reports totals over the
+    // ENTIRE proposal set (changed_total / without_reasons / truncated),
+    // so a zero-change claim is only made on complete, matching,
+    // fully-reasoned data -- never on a truncated or stale subset.
     function previewBody() {
-      const proposals = (proposalDetail && proposalDetail.proposals) || [];
-      const changing = proposals.filter(
-        (p) =>
-          (p.added_by_curator || []).length || (p.removed_managed || []).length
-      );
-      if (!changing.length) {
+      if (!proposalDetail) {
         return h(
           "div",
           { className: "stash-tag-curator-muted" },
-          proposalDetail
-            ? "No tag changes are proposed for this preview; preserved assignments are kept."
-            : "Proposal details load after the preview finishes…"
+          "Proposal details load after the preview finishes…"
         );
       }
-      return [
-        changing.slice(0, 50).map((p) => {
-          const children = [
-            h(
-              "span",
-              { className: "stash-tag-curator-diff-scene" },
-              "Scene " + p.scene_id
-            ),
-          ];
-          (p.removed_managed || []).forEach((t) =>
-            children.push(ownershipChip("removed", t, "\u2212")));
-          (p.added_by_curator || []).forEach((t) =>
-            children.push(ownershipChip("added", t, "+")));
-          children.push(...preservedChips(p));
-          return h(
-            "div",
-            { key: p.scene_id, className: "stash-tag-curator-diff-row" },
-            children
-          );
-        }),
-        changing.length > 50
-          ? h(
-              "div",
-              { className: "stash-tag-curator-muted small" },
-              "Showing the first 50 of " + changing.length +
-                " scenes with proposed tag changes."
-            )
-          : null,
-      ];
+      // Snapshot identity check: a snapshot from a different preview (e.g.
+      // a stale asset) must not be presented as this preview's outcome.
+      const ids = Array.isArray(proposalRunIds) ? proposalRunIds : [];
+      if (ids.length > 0 && ids.indexOf(proposalDetail.proposed_run_id) === -1) {
+        return h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          "Proposal details don't match this preview yet — refresh to update."
+        );
+      }
+      const changedTotal = proposalDetail.changed_total || 0;
+      const withoutReasons = proposalDetail.without_reasons || 0;
+      const truncated = !!proposalDetail.truncated;
+      const incomplete = truncated || withoutReasons > 0;
+      if (changedTotal === 0 && !incomplete) {
+        return h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          "No tag changes are proposed for this preview; preserved assignments are kept."
+        );
+      }
+      const proposals = proposalDetail.proposals || [];
+      // Changed scenes arrive first from the report, so the rows below
+      // always show every change the page carries.
+      const changing = proposals.filter(
+        (p) => (p.added_by_curator || []).length || (p.removed_managed || []).length
+      );
+      const body = [];
+      if (incomplete) {
+        const parts = [];
+        if (truncated) {
+          parts.push("showing the first " + proposals.length + " of " +
+            (proposalDetail.total_proposals || proposals.length) + " scenes");
+        }
+        if (withoutReasons > 0) {
+          parts.push(withoutReasons + " scene" +
+            (withoutReasons === 1 ? "" : "s") +
+            " without ownership reasons (older data)");
+        }
+        body.push(h(
+          "div",
+          { className: "stash-tag-curator-muted small" },
+          "Proposal details are incomplete (" + parts.join("; ") + ")."
+        ));
+      }
+      body.push(...changing.slice(0, 50).map((p) => {
+        const children = [
+          h(
+            "span",
+            { className: "stash-tag-curator-diff-scene" },
+            "Scene " + p.scene_id
+          ),
+        ];
+        (p.removed_managed || []).forEach((t) =>
+          children.push(ownershipChip("removed", t, "\u2212")));
+        (p.added_by_curator || []).forEach((t) =>
+          children.push(ownershipChip("added", t, "+")));
+        children.push(...preservedChips(p));
+        return h(
+          "div",
+          { key: p.scene_id, className: "stash-tag-curator-diff-row" },
+          children
+        );
+      }));
+      if (changedTotal > 50) {
+        body.push(h(
+          "div",
+          { className: "stash-tag-curator-muted small" },
+          "Showing the first 50 of " + changedTotal +
+            " scenes with proposed tag changes."
+        ));
+      }
+      if (!changing.length) {
+        // Incomplete data only: no confirmed zero-change claim here.
+        body.push(h(
+          "div",
+          { className: "stash-tag-curator-muted" },
+          truncated
+            ? "No changes appear in the listed scenes; the full proposal set is larger."
+            : "No confirmed tag changes in this proposal set."
+        ));
+      }
+      return body;
     }
 
     return h(
@@ -2697,6 +2750,7 @@
             run: doneRun,
             detail: runDetail.data,
             proposalDetail: proposalDetail.data,
+            proposalRunIds: doneRun.proposed_run_ids || [],
             needsDecision: dictionary.data
               ? (dictionary.data.stats || {}).needs_decision
               : null,

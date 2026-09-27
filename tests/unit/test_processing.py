@@ -1661,10 +1661,13 @@ class TestMutationFailure:
     def test_definitive_rejection_recorded_not_deleted(
         self, state: StateDB,
     ) -> None:
-        # A GraphQL error is reliable evidence the server rejected the
-        # write: the intent is recorded with its rejection reason (audit
-        # trail preserved, never deleted) and no ownership is adopted.
-        from curator.graphql_client import GraphQLError
+        # An HTTP auth failure is reliable evidence the request never
+        # reached GraphQL execution: the intent is recorded with its
+        # rejection reason (audit trail preserved, never deleted) and no
+        # ownership is adopted.  Generic GraphQLError is AMBIGUOUS (the
+        # client also raises it for malformed success payloads and partial
+        # responses) and is covered by the pending-path tests.
+        from curator.graphql_client import GraphQLAuthError
 
         scene = _minimal_scene(
             1,
@@ -1680,12 +1683,15 @@ class TestMutationFailure:
         )
         original_submit = client.submit
 
-        def _graphql_reject(query: str, variables=None):
+        def _auth_reject(query: str, variables=None):
             if "SceneUpdate" in query:
-                raise GraphQLError("validation failed: invalid tag id")
+                raise GraphQLAuthError(
+                    "Stash rejected authentication (HTTP 403)",
+                    http_status=403,
+                )
             return original_submit(query, variables)
 
-        client.submit = _graphql_reject  # type: ignore[method-assign]
+        client.submit = _auth_reject  # type: ignore[method-assign]
         engine, _ = _engine(client, state, settings={
             "tag_name_to_id": {**MARKER_IDS, **ENRICHMENT_TAG_IDS, "ACT: Blowjob": "200"},
         })

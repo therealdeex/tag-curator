@@ -38,7 +38,7 @@ from typing import Any
 
 import pytest
 
-from curator.graphql_client import GraphQLError
+from curator.graphql_client import GraphQLAuthError, GraphQLError
 from curator.journal import Journal
 from curator.processing import (
     SCOPE_ALL,
@@ -289,30 +289,36 @@ class _ProbeFailureClient(StatefulScenesClient):
 
 
 class _LandThenFailClient(StatefulScenesClient):
-    """sceneUpdate APPLIES the write, THEN raises a transport error -- the
-    ambiguous 'response lost after commit' failure mode.  Set
-    ``fail_updates = False`` to restore normal delivery."""
+    """sceneUpdate APPLIES the write, THEN raises -- the ambiguous 'response
+    lost / response malformed after commit' failure mode.  The raised
+    exception is configurable (``fail_with``); set ``fail_updates = False``
+    to restore normal delivery."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, fail_with: "Exception | None" = None,
+                 **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.fail_updates = True
+        self.fail_with = fail_with or RuntimeError("connection reset by peer")
 
     def submit(self, query: str, variables: "Mapping[str, Any] | None" = None
                ) -> dict[str, Any]:
         if self.fail_updates and "SceneUpdate" in query:
             super().submit(query, variables)  # lands the write
-            raise RuntimeError("connection reset by peer")
+            raise self.fail_with
         return super().submit(query, variables)
 
 
 class _RejectingClient(StatefulScenesClient):
-    """sceneUpdate is rejected by the server (GraphQL error) WITHOUT
-    landing -- definitive failure with reliable evidence."""
+    """sceneUpdate is DEFINITIVELY refused (HTTP auth failure -- the request
+    never reached GraphQL execution) WITHOUT landing."""
 
     def submit(self, query: str, variables: "Mapping[str, Any] | None" = None
                ) -> dict[str, Any]:
         if "SceneUpdate" in query:
-            raise GraphQLError("validation failed: invalid tag id")
+            raise GraphQLAuthError(
+                "Stash rejected authentication (HTTP 403)",
+                http_status=403,
+            )
         return super().submit(query, variables)
 
 
@@ -513,6 +519,95 @@ class TestRecoverySerialization:
         assert older["status"] == "reverted"
         assert "superseded" in older["revert_reason"]
 
+    def test_stale_acquire_baseline_does_not_resurrect_ownership(
+        self, state: StateDB,
+    ) -> None:
+        # Acquire intents historically journal the FULL managed set
+        # (baseline + additions).  Replaying a stale one against a changed
+        # ledger would resurrect ownership newer work deliberately retired,
+        # so the baseline must be validated for BOTH modes.
+        scene = _minimal_scene(
+            1,
+            performers=[_performer("p001")],
+            tags=[("900", "Favorite"), ("200", "ACT: Blowjob")],
+        )
+        client = StatefulScenesClient(
+            [scene],
+            scrape_responses={STASHDB: [[]]},  # NO_MATCH -> additive proposal
+        )
+        engine, _ = _ownership_engine(client, state)
+        _pending(
+            state, "crashed-run", 1, ["200", "900"],
+            old_managed=["900"],
+            new_managed=[("900", "Favorite"), ("200", "ACT: Blowjob")],
+            ledger_mode="acquire",
+        )
+        # Newer work retired the 900 ownership after the intent was
+        # recorded; the ledger no longer owns anything on this scene.
+        state.connection.execute("DELETE FROM scene_managed_tags")
+        state.connection.commit()
+
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        assert report.reconciliation.get("baseline_stale") == 1
+        ledger = state.managed_tag_ids(1)
+        assert "900" not in ledger, "retired ownership NOT resurrected"
+        assert "200" not in ledger, "stale acquire adoption refused"
+        row = state.connection.execute(
+            "SELECT status, revert_reason FROM mutations "
+            "WHERE run_id = 'crashed-run'"
+        ).fetchone()
+        assert row["status"] == "reverted"
+        assert "baseline" in row["revert_reason"]
+        assert report.deferred_scenes == []
+
+    def test_acquire_intent_journals_only_the_delta(self, state: StateDB,
+    ) -> None:
+        # New acquire intents journal only the assignments they ADD (not
+        # the full managed set), so replaying one can never resurrect
+        # anything by construction.  The baseline is still recorded and
+        # still validated.
+        scene = _minimal_scene(
+            1,
+            performers=[_performer("p001")],
+            tags=[("900", "Favorite"), ("200", "ACT: Blowjob"),
+                  ("5001", "CURATOR: Core Processed")],
+        )
+        client = _LandThenFailClient(
+            [scene],
+            scrape_responses={STASHDB: [[]]},  # NO_MATCH -> adds markers
+        )
+        engine, _ = _ownership_engine(client, state)
+        state.apply_ledger_transition(
+            1, "prior-run", "acquire",
+            [("200", "ACT: Blowjob"), ("5001", "CURATOR: Core Processed")],
+        )
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        assert report.scenes_skipped.get("mutation_outcome_unknown") == 1
+        row = state.connection.execute(
+            "SELECT old_managed_ids_json, new_managed_ids_json, ledger_mode "
+            "FROM mutations WHERE run_id = 'run-1'"
+        ).fetchone()
+        assert row["ledger_mode"] == "acquire"
+        assert json.loads(row["old_managed_ids_json"]) == ["200", "5001"], (
+            "baseline records the full managed set"
+        )
+        pairs = json.loads(row["new_managed_ids_json"])
+        delta_ids = {str(p[0]) for p in pairs}
+        assert "200" not in delta_ids and "5001" not in delta_ids, (
+            "acquire intent carries only the NEW acquisitions"
+        )
+        assert delta_ids, "the markers added by this run are the delta"
+
+        # Recovery on the next execute: baseline matches the ledger, so the
+        # delta is adopted on top of the untouched prior ownership.
+        report2 = engine.run_execute("prop-1", run_id="run-2")
+        assert report2.reconciliation.get("adopted") == 1
+        ledger = state.managed_tag_ids(1)
+        assert "200" in ledger and "5001" in ledger
+        assert delta_ids <= set(ledger)
+
     def test_multiple_pendings_no_match_all_reverted_scene_proceeds(
         self, state: StateDB,
     ) -> None:
@@ -617,6 +712,57 @@ class TestAmbiguousWriteFailures:
         assert "rejected" in row["revert_reason"]
         assert "100" in scene_tag_ids(client), "scene untouched"
         assert state.managed_tag_ids(1) == []
+
+    def test_malformed_success_graphql_error_keeps_pending(
+        self, state: StateDB,
+    ) -> None:
+        # The write LANDS, then the response is malformed: the client raises
+        # the same GraphQLError it uses for "no object data field" (here
+        # carrying errors AND partial data, as real responses can).  That is
+        # NOT evidence the mutation failed to commit -- the intent must stay
+        # pending, recover, and the assignment must stay retirable.
+        scene = _minimal_scene(1, performers=[_performer("p001")])
+        client = _LandThenFailClient(
+            [scene],
+            scrape_responses={
+                STASHDB: [[_scraped(["Blowjob"], remote_site_id="x")]],
+            },
+            fail_with=GraphQLError(
+                "GraphQL response did not contain an object 'data' field",
+                errors=[{"message": "internal resolver error"}],
+                data={"sceneUpdate": None},  # partial data alongside errors
+            ),
+        )
+        engine, _ = _ownership_engine(client, state)
+        engine.run_dry(SCOPE_ALL, proposed_run_id="prop-1", run_id="run-1")
+        report = engine.run_execute("prop-1", run_id="run-1")
+        assert report.scenes_skipped.get("mutation_outcome_unknown") == 1
+        assert client.scene_update_calls, "the write WAS issued"
+        assert row_status(state, "run-1") == "pending", (
+            "malformed-success GraphQLError is ambiguous, not a rejection"
+        )
+        assert state.managed_tag_ids(1) == []
+
+        # Recovery adopts the intended ownership.
+        report2 = engine.run_execute("prop-1", run_id="run-2")
+        assert report2.reconciliation.get("adopted") == 1
+        assert row_status(state, "run-1") == "applied"
+        assert "200" in state.managed_tag_ids(1)
+
+        # A later rule change retires the managed assignment normally.
+        client.fail_updates = False
+        client._scrape_responses = {
+            STASHDB: [[_scraped(["Vaginal Sex"], remote_site_id="x")]],
+        }
+        new_rules = _build_rules(mappings={
+            "vaginal sex": {"disposition": "map", "outputs": ["ACT: Vaginal Sex"]},
+        })
+        engine2, _ = _ownership_engine(client, state, rules=new_rules)
+        engine2.run_dry(SCOPE_ALL, proposed_run_id="prop-2", run_id="run-3")
+        report3 = engine2.run_execute("prop-2", run_id="run-3")
+        assert report3.aborted is False
+        assert "200" not in scene_tag_ids(client), "retirement works"
+        assert "200" not in state.managed_tag_ids(1)
 
     def test_external_edit_before_recovery_is_not_overwritten(
         self, state: StateDB,

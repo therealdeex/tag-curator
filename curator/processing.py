@@ -83,7 +83,7 @@ from .enrichment import (
     derive_married_irl,
     derive_weight_tags,
 )
-from .graphql_client import GraphQLAuthError, GraphQLError
+from .graphql_client import GraphQLAuthError
 from .graphql_queries import (
     FIND_SCENES_PAGE,
     FIND_SCENE_BY_ID,
@@ -1499,9 +1499,17 @@ class RebuildEngine:
           assignments are retained, curator-added ones are acquired, stale
           managed ones are retired, and pre-existing external assignments are
           NEVER adopted (they are in ``desired`` but already in ``C``).
-        * ``acquire`` (additive phase): only the newly-added ids
-          (``desired − C``) are unioned in; existing rows -- including other
-          phases' -- are untouched.
+        * ``acquire`` (additive phase): journals ONLY the newly-added ids
+          (``desired − C``) -- the actual acquisition delta.  The
+          transition itself unions into the ledger (existing rows --
+          including other phases' -- are never removed), and journaling the
+          delta rather than the full managed set makes a replayed intent
+          unable to resurrect retired ownership by construction.  The
+          pre-write baseline (``old_managed_ids``) is still recorded in
+          full and validated at recovery.
+
+        The intent's ``old_managed_ids`` baseline is the caller's
+        responsibility (it records ``managed_now`` alongside this plan).
         """
         mode = proposal.get("ownership_mode") or "acquire"
         desired = set(proposed_ids)
@@ -1511,7 +1519,7 @@ class RebuildEngine:
         if mode == "replace":
             new_managed = (managed & desired) | added
         else:
-            new_managed = managed | added
+            new_managed = added
         # Recover display names: invert the scene's name->id map, then fall
         # back to any proposed name that resolves to the id.
         id_to_name: dict[str, str] = {
@@ -1707,12 +1715,18 @@ class RebuildEngine:
                 reconciliation.get("superseded", 0) + 1
             )
 
-        # Baseline validation: the intent recorded the ledger state it was
-        # computed against.  If the ledger has moved on since (newer
-        # ownership exists), a 'replace' transition would erase that newer
-        # state and is refused -- the landed tags stay external
-        # (conservatively preserved).  An 'acquire' transition only unions,
-        # so it cannot erase anything and stays safe on a moved ledger.
+        # Baseline validation (BOTH modes): the intent recorded the ledger
+        # state it was computed against.  A stale 'replace' transition
+        # would erase newer ledger state outright; a stale 'acquire'
+        # transition is ALSO dangerous -- historical additive intents
+        # journal the full managed set (baseline + additions), so replaying
+        # one against a moved ledger resurrects ownership that newer work
+        # deliberately retired.  On mismatch (or an unknown baseline) the
+        # transition is refused: the row is reverted and the landed tags
+        # stay external (conservatively preserved).  New acquire intents
+        # journal only the acquisition delta (replay-safe by
+        # construction), but baseline validation remains mandatory for
+        # every pending record, old and new.
         try:
             baseline_raw = json.loads(adopted["old_managed_ids_json"] or "null")
         except (TypeError, ValueError):
@@ -1722,31 +1736,28 @@ class RebuildEngine:
         baseline = (
             sorted({str(t) for t in baseline_raw}) if baseline_known else None
         )
-        if mode == "replace" and not baseline_known:
+        current_ledger = self._state.managed_tag_ids(scene_id)
+        if not baseline_known:
             self._journal.revert_pending_mutation(
                 adopted["run_id"], scene_id,
                 by_run_id=actual_run_id,
                 reason=(
                     "stale ownership baseline: intent has no recorded "
-                    "baseline; replace transition refused, ownership not "
-                    "adopted"
+                    "baseline; ownership transition refused, ownership "
+                    "not adopted"
                 ),
             )
             reconciliation["baseline_stale"] = (
                 reconciliation.get("baseline_stale", 0) + 1
             )
             return
-        if (
-            mode == "replace"
-            and baseline_known
-            and baseline != self._state.managed_tag_ids(scene_id)
-        ):
+        if baseline != current_ledger:
             self._journal.revert_pending_mutation(
                 adopted["run_id"], scene_id,
                 by_run_id=actual_run_id,
                 reason=(
-                    "stale ownership baseline: ledger changed after the "
-                    "intent was recorded; replace transition refused, "
+                    f"stale ownership baseline: ledger changed after the "
+                    f"intent was recorded ({mode} transition refused), "
                     "ownership not adopted"
                 ),
             )
@@ -2495,21 +2506,24 @@ class RebuildEngine:
                 mutation_ok = False
                 # Two very different failures share this path:
                 #
-                # * DEFINITIVE rejection (the server answered with a GraphQL
-                #   error / auth failure): the write did not land.  Record
-                #   the rejected intent for audit -- never delete it -- and
-                #   skip the scene.
-                # * AMBIGUOUS outcome (transport failure; the server may
-                #   have committed before the response was lost): KEEP the
-                #   pending intent.  Recovery reconciles it at the next
+                # * DEFINITIVE rejection: the request never reached GraphQL
+                #   execution -- an HTTP auth failure (GraphQLAuthError) is
+                #   refused before any processing, so nothing can have
+                #   committed.  Record the rejected intent for audit --
+                #   never delete it -- and skip the scene.
+                # * AMBIGUOUS outcome: everything else, INCLUDING generic
+                #   GraphQLError.  The client raises GraphQLError for
+                #   malformed HTTP-success payloads (no object ``data``
+                #   field, non-object body) and for responses carrying
+                #   errors alongside partial data -- none of which
+                #   establishes that sceneUpdate failed to commit.  KEEP
+                #   the pending intent: recovery reconciles it at the next
                 #   execute (adopting the intended ownership if the write
-                #   landed), and per-scene serialization defers any further
-                #   writes until then.  Discarding the intent here would
-                #   permanently lose the ownership evidence for tags that
-                #   may have landed.
-                definitive = isinstance(
-                    exc, (GraphQLError, GraphQLAuthError),
-                )
+                #   landed), and per-scene serialization defers any
+                #   further writes until then.  Discarding the intent here
+                #   would permanently lose the ownership evidence for tags
+                #   that may have landed.
+                definitive = isinstance(exc, GraphQLAuthError)
                 if definitive:
                     self._journal.reject_pending_mutation(
                         actual_run_id, sid,

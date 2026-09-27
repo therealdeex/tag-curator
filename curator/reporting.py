@@ -609,6 +609,9 @@ class ReportEngine:
                 entry["unmapped_count"] = extracted["unmapped_count"]
                 entry["tags_deleted"] = extracted["tags_deleted"]
                 entry["proposals_written"] = extracted["proposals_written"]
+                entry["proposed_run_ids"] = self._extract_proposed_run_ids(
+                    totals
+                )
                 runs.append(entry)
 
             return {
@@ -659,6 +662,7 @@ class ReportEngine:
                     "unmapped_count": extracted["unmapped_count"],
                     "tags_deleted": extracted["tags_deleted"],
                     "proposals_written": extracted["proposals_written"],
+                    "proposed_run_ids": self._extract_proposed_run_ids(totals),
                 }
 
             total_rows = self._count(
@@ -790,8 +794,22 @@ class ReportEngine:
         (``added by curator`` / ``managed assignment no longer derived`` /
         ``preserved external assignment`` / ``preserved protected
         assignment``).  When ``proposed_run_id`` is omitted, the LATEST
-        proposal set is used.  Older rows without reason data degrade to
-        empty lists with ``has_reasons: false``.
+        proposal set is used.
+
+        Completeness is explicit so the UI can never reassure the user from
+        an incomplete subset:
+
+        * ``changed_total`` counts proposals with additions/removals across
+          the ENTIRE set (not just the returned page);
+        * ``without_reasons`` counts rows with no parseable reason data
+          (pre-D21 rows) -- "explanations unavailable", never "no change";
+        * the returned page is ordered changed-scenes-FIRST (then by scene
+          id), so a change beyond the ``limit`` boundary is still visible;
+        * ``truncated`` reports whether the page covers the whole set.
+
+        Consumers must treat a zero ``changed_total`` as a confirmed
+        no-change claim ONLY when ``truncated`` is false and
+        ``without_reasons`` is zero.
         """
         conn = self._state.read_only()
         try:
@@ -802,22 +820,21 @@ class ReportEngine:
                     "proposed_run_id": None,
                     "proposals": [],
                     "total_proposals": 0,
+                    "changed_total": 0,
+                    "without_reasons": 0,
                     "truncated": False,
                 }
-            total = self._count(
-                conn,
-                "SELECT COUNT(*) FROM dry_run_proposals "
-                "WHERE proposed_run_id = ?",
-                (target,),
-            )
             rows = conn.execute(
                 "SELECT scene_id, provider_match_status, status, skip_reason, "
                 "ownership_mode, ownership_reasons_json "
                 "FROM dry_run_proposals WHERE proposed_run_id = ? "
-                "ORDER BY scene_id LIMIT ?",
-                (target, limit),
+                "ORDER BY scene_id",
+                (target,),
             ).fetchall()
-            proposals: list[dict[str, Any]] = []
+
+            entries: list[dict[str, Any]] = []
+            changed_total = 0
+            without_reasons = 0
             for row in rows:
                 reasons = (
                     self._parse_ownership_reasons(
@@ -825,8 +842,16 @@ class ReportEngine:
                     )
                     or {}
                 )
+                has_reasons = bool(reasons)
+                if not has_reasons:
+                    without_reasons += 1
+                added = reasons.get("added", [])
+                removed = reasons.get("removed_managed", [])
+                has_change = bool(added or removed)
+                if has_change:
+                    changed_total += 1
                 mode = row["ownership_mode"]
-                proposals.append({
+                entries.append({
                     "scene_id": row["scene_id"],
                     "provider_match_status": row["provider_match_status"],
                     "status": row["status"],
@@ -834,20 +859,30 @@ class ReportEngine:
                     "ownership_mode": (
                         mode if isinstance(mode, str) and mode else None
                     ),
-                    "has_reasons": bool(reasons),
-                    "added_by_curator": reasons.get("added", []),
-                    "removed_managed": reasons.get("removed_managed", []),
+                    "has_reasons": has_reasons,
+                    "has_change": has_change,
+                    "added_by_curator": added,
+                    "removed_managed": removed,
                     "preserved_external": reasons.get("preserved_external", []),
                     "preserved_protected": reasons.get(
                         "preserved_protected", []
                     ),
                 })
+
+            # Changed scenes first so a page boundary can never hide a
+            # change; ties ordered by scene id for stable output.
+            entries.sort(
+                key=lambda e: (0 if e["has_change"] else 1, e["scene_id"])
+            )
+            total = len(entries)
             return {
                 "generated_at": _now_iso(),
                 "proposed_run_id": target,
-                "proposals": proposals,
+                "proposals": entries[:limit],
                 "total_proposals": total,
-                "truncated": total > len(proposals),
+                "changed_total": changed_total,
+                "without_reasons": without_reasons,
+                "truncated": total > limit,
             }
         finally:
             conn.close()
@@ -1122,6 +1157,32 @@ class ReportEngine:
 
         _walk(totals)
         return acc
+
+    @staticmethod
+    def _extract_proposed_run_ids(totals: Any) -> list[str]:
+        """Collect the ``proposed_run_id`` values embedded in a totals blob.
+
+        Curate runs write one dry report per phase, each carrying its own
+        proposal set id (``scene_phases.<phase>.dry_run.proposed_run_id``).
+        The UI compares these against the ``proposal_detail`` snapshot's
+        ``proposed_run_id`` so it never renders one preview's conclusions
+        over a different preview.  First-seen order, de-duplicated.
+        """
+        out: list[str] = []
+
+        def _walk(node: Any) -> None:
+            if isinstance(node, dict):
+                value = node.get("proposed_run_id")
+                if isinstance(value, str) and value and value not in out:
+                    out.append(value)
+                for child in node.values():
+                    _walk(child)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(totals)
+        return out
 
     @staticmethod
     def _extract_scope_name(scope_json: Any) -> str | None:
