@@ -4,7 +4,7 @@ description: >-
   tag dictionary, fills missing scene metadata, and keeps the library
   up to date. One button: Update Library — idempotent, resumable, and
   self-repairing by re-running. Targets Stash v0.31.1.
-version: 0.5.0
+version: 0.5.1
 url: https://example.invalid/stash-tag-curator
 
 exec:

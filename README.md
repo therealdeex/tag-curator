@@ -274,4 +274,4 @@ remain on your scenes after uninstall. Remove them via Stash's tag manager.
 
 ## Version
 
-0.5.0
+0.5.1

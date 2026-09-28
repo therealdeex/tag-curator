@@ -8,6 +8,16 @@ schema).
 
 ## Unreleased
 
+- **Fixed: the plugin is reachable from the nav again (0.5.1).** The dashboard
+  route moved from `/plugin/stash-tag-curator` to `/plugins/stash-tag-curator`:
+  Stash v0.31.1 serves the SPA shell only under the plural `/plugins/*` mount
+  (the singular `/plugin/*` mount serves plugin assets and hard-404s as a page
+  URL), so the nav tile led to a 404 and the real page rendered blank. The
+  legacy singular path stays registered as a client route for old bookmarks.
+  The nav tile itself is unchanged in placement — one entry in the icon rail
+  next to Scenes/Performers — and the MenuItems patch is now idempotent: if a
+  curator entry is already present in the menu (double install, stacked patch
+  renders), it skips appending instead of listing the plugin in two places.
 - **Write-outcome classification corrected (D21 hardening).** Only an HTTP
   auth failure (`GraphQLAuthError` — the request never reached GraphQL
   execution) is treated as a definitive sceneUpdate rejection. Generic

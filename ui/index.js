@@ -1,6 +1,6 @@
 // Stash Tag Curator - UI route.
 //
-// Registers `/plugin/stash-tag-curator` through Stash's experimental
+// Registers `/plugins/stash-tag-curator` through Stash's experimental
 // PluginApi route surface and renders the curator dashboard:
 //
 //   Home        - status, one primary action (Update Library), attention
@@ -42,8 +42,12 @@
   // ------------------------------------------------------------------
 
   const PLUGIN_ID = "stash-tag-curator";
-  const ROUTE_PATH = "/plugin/stash-tag-curator";
-  const ASSET_BASE = "/plugin/stash-tag-curator/assets/";
+  // Stash v0.31.1 serves the SPA shell only for /plugins/* (plural);
+  // the /plugin/* mount serves plugin assets. The legacy singular path is
+  // still registered so old bookmarks keep working via client routing.
+  const ROUTE_PATH = "/plugins/" + PLUGIN_ID;
+  const LEGACY_ROUTE_PATH = "/plugin/" + PLUGIN_ID;
+  const ASSET_BASE = "/plugin/" + PLUGIN_ID + "/assets/";
   const POLL_INTERVAL_MS = 1000;
 
   const TERMINAL_STATUSES = new Set([
@@ -2842,9 +2846,14 @@
   }
 
   // ------------------------------------------------------------------
-  // Nav-bar patch: Stash v0.31.1 plugin routes are client-side only, so
-  // users need an in-app link to enter /plugin/stash-tag-curator. The
-  // PluginApi.patch surface is experimental; this callback must always
+  // Nav-bar patch: Stash v0.31.1 does not auto-list plugin pages, so users
+  // need an in-app link to enter /plugins/stash-tag-curator. The tile lives
+  // in MainNavBar.MenuItems so it sits in the icon rail next to Scenes,
+  // Performers, etc. The patch is idempotent: if any Tag Curator entry is
+  // already present in the menu (double install, stacked patch renders), it
+  // leaves the props untouched instead of appending a second tile — patching
+  // more than one nav group is how plugins end up listed in two places.
+  // The PluginApi.patch surface is experimental; this callback must always
   // return a valid argument list and fall back to Stash's original props.
   // ------------------------------------------------------------------
 
@@ -2856,6 +2865,34 @@
       RRDOM.NavLink &&
       (typeof RRDOM.NavLink === "function" ||
         (typeof RRDOM.NavLink === "object" && RRDOM.NavLink.render));
+
+    // Depth-limited walk over rendered menu children looking for any
+    // element that already routes to the curator (NavLink `to`, anchor
+    // `href`, or nested children). React elements only.
+    function menuHasCuratorEntry(node, depth) {
+      try {
+        if (!node || depth > 6) return false;
+        if (Array.isArray(node)) {
+          return node.some(function (child) {
+            return menuHasCuratorEntry(child, depth + 1);
+          });
+        }
+        if (typeof node === "object" && node.props) {
+          var to = node.props.to;
+          var href = node.props.href;
+          if (
+            (typeof to === "string" && to.indexOf(PLUGIN_ID) !== -1) ||
+            (typeof href === "string" && href.indexOf(PLUGIN_ID) !== -1)
+          ) {
+            return true;
+          }
+          return menuHasCuratorEntry(node.props.children, depth + 1);
+        }
+      } catch (dedupeError) {
+        return false;
+      }
+      return false;
+    }
 
     if (
       api.patch &&
@@ -2871,6 +2908,9 @@
             return [{}];
           }
           var existing = props.children != null ? props.children : null;
+          if (menuHasCuratorEntry(existing, 0)) {
+            return [props];
+          }
           var icon =
             navIcon && typeof IconCmp === "function"
               ? h(IconCmp, {
@@ -2916,6 +2956,7 @@
 
   try {
     api.register.route(ROUTE_PATH, App);
+    api.register.route(LEGACY_ROUTE_PATH, App);
   } catch (error) {
     console.error("[stash-tag-curator] route registration failed", error);
   }

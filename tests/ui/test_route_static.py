@@ -61,12 +61,36 @@ def test_plugin_api_guard() -> None:
 
 
 def test_route_path_registered() -> None:
-    """Route registered at ``/plugin/stash-tag-curator`` (Stash convention)."""
+    """Page route uses the plural ``/plugins/<id>`` convention.
+
+    Stash v0.31.1 serves the SPA shell only for ``/plugins/*``; the singular
+    ``/plugin/*`` mount is for plugin assets and hard-404s as a page URL.
+    The legacy singular path is still registered for old bookmarks.
+    """
     text = _read_ui()
-    assert "/plugin/stash-tag-curator" in text, (
-        "route path must use Stash's singular /plugin/<id> convention"
+    assert '"/plugins/" + PLUGIN_ID' in text, (
+        "primary page route must use Stash's plural /plugins/<id> convention"
+    )
+    assert '"/plugin/" + PLUGIN_ID' in text, (
+        "legacy singular route must stay registered for old bookmarks"
     )
     assert "register.route" in text or ".route(" in text
+
+
+def test_nav_tile_targets_plural_route_and_is_single() -> None:
+    """The nav tile links to the plural route, sits in MenuItems only (so it
+    groups with the Scenes/Performers icon rail), and the patch skips
+    appending when a curator entry is already present in the menu."""
+    text = _read_ui()
+    assert 'api.patch.before("MainNavBar.MenuItems"' in text, (
+        "nav tile must live in MainNavBar.MenuItems (icon rail)"
+    )
+    assert "MainNavBar.UtilityItems" not in text, (
+        "patching UtilityItems too makes the entry appear twice"
+    )
+    assert "menuHasCuratorEntry" in text, (
+        "nav patch must dedupe: skip appending when an entry already exists"
+    )
 
 
 def test_no_second_react() -> None:
@@ -223,8 +247,9 @@ def test_bootstrap_used_not_bundled() -> None:
 def test_dashboard_asset_read_path() -> None:
     """All panels read via the D14 asset snapshot path (single fetcher)."""
     text = _read_ui()
-    assert "/plugin/stash-tag-curator/assets/" in text, (
-        "snapshots must be fetched as plugin assets (D14)"
+    assert '"/plugin/" + PLUGIN_ID + "/assets/"' in text, (
+        "snapshots must be fetched as plugin assets (D14) - the /plugin/* "
+        "mount owns assets; pages live under /plugins/*"
     )
     assert "dashboard" in text
     # One generic snapshot fetcher feeds every panel.
